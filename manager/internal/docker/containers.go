@@ -38,16 +38,14 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 
 	containerName := "demimine-" + sanitizeName(cfg.Name)
 
-	// Add panic recovery
 	defer func() {
 		if r := recover(); r != nil {
-		log.Printf("Recovered from panic in CreateServerContainer: %v", r)
-	}
+			log.Printf("Recovered from panic in CreateServerContainer: %v", r)
+		}
 	}()
 
 	existing, err := c.cli.ContainerInspect(ctx, containerName)
 	if err != nil {
-		// Container doesn't exist, which is fine
 	} else if existing.ID != "" {
 		_ = c.cli.ContainerRemove(ctx, containerName, container.RemoveOptions{
 			Force: true,
@@ -65,12 +63,20 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 		"TERM=xterm",
 	}
 
-	cmd := []string{
-		"java",
-		fmt.Sprintf("-Xmx%dM", cfg.RAMMB),
-		fmt.Sprintf("-Xms%dM", cfg.RAMMB/2),
-		"-jar", "server.jar",
-		"nogui",
+	var cmd []string
+	switch cfg.ServerType {
+	case "neoforge", "forge":
+		cmd = []string{"sh", "run.sh", "nogui"}
+	case "fabric":
+		cmd = []string{"java", fmt.Sprintf("-Xmx%dM", cfg.RAMMB), fmt.Sprintf("-Xms%dM", cfg.RAMMB/2), "-jar", "fabric-server-launch.jar", "nogui"}
+	default:
+		cmd = []string{
+			"java",
+			fmt.Sprintf("-Xmx%dM", cfg.RAMMB),
+			fmt.Sprintf("-Xms%dM", cfg.RAMMB/2),
+			"-jar", "server.jar",
+			"nogui",
+		}
 	}
 
 	config := &container.Config{

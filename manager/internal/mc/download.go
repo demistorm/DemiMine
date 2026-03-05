@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -87,7 +88,7 @@ func DownloadFabricJar(version, destPath string) error {
 	return downloadFile(installerURL, destPath)
 }
 
-func DownloadNeoForgeJar(version, destPath string) error {
+func DownloadNeoForgeJar(version, serverDir string) error {
 	versionsResp, err := httpClient.Get("https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge")
 	if err != nil {
 		return fmt.Errorf("failed to get neoforge versions: %w", err)
@@ -117,19 +118,25 @@ func DownloadNeoForgeJar(version, destPath string) error {
 		latestVersion, latestVersion,
 	)
 
-	installerPath := destPath + ".installer"
+	installerPath := filepath.Join(serverDir, "neoforge-installer.jar")
 	if err := downloadFile(downloadURL, installerPath); err != nil {
 		return err
 	}
+	defer os.Remove(installerPath)
 
-	if err := os.Rename(installerPath, destPath); err != nil {
-		return fmt.Errorf("failed to rename installer: %w", err)
+	cmd := exec.Command("java", "-jar", installerPath, "--installServer")
+	cmd.Dir = serverDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("neoforge installer failed: %w", err)
 	}
 
 	return nil
 }
 
-func DownloadForgeJar(version, destPath string) error {
+func DownloadForgeJar(version, serverDir string) error {
 	promosResp, err := httpClient.Get("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json")
 	if err != nil {
 		return fmt.Errorf("failed to get forge promotions: %w", err)
@@ -156,20 +163,27 @@ func DownloadForgeJar(version, destPath string) error {
 		version, forgeVersion, version, forgeVersion,
 	)
 
-	installerPath := destPath + ".installer"
+	installerPath := filepath.Join(serverDir, "forge-installer.jar")
 	if err := downloadFile(downloadURL, installerPath); err != nil {
 		return err
 	}
+	defer os.Remove(installerPath)
 
-	if err := os.Rename(installerPath, destPath); err != nil {
-		return fmt.Errorf("failed to rename installer: %w", err)
+	cmd := exec.Command("java", "-jar", installerPath, "--installServer")
+	cmd.Dir = serverDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("forge installer failed: %w", err)
 	}
 
 	return nil
 }
 
 func DownloadServerJar(serverType, version, destPath string) error {
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+	serverDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(serverDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -181,9 +195,9 @@ func DownloadServerJar(serverType, version, destPath string) error {
 	case "fabric":
 		return DownloadFabricJar(version, destPath)
 	case "neoforge":
-		return DownloadNeoForgeJar(version, destPath)
+		return DownloadNeoForgeJar(version, serverDir)
 	case "forge":
-		return DownloadForgeJar(version, destPath)
+		return DownloadForgeJar(version, serverDir)
 	default:
 		return fmt.Errorf("unsupported server type: %s", serverType)
 	}
