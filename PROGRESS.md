@@ -9,7 +9,10 @@
 
 ## Phase 2: Server Management ✅ COMPLETE
 - Version fetching (Paper/Purpur/Fabric/NeoForge/Forge)
-- Server jar download logic (Paper, Purpur direct download; Fabric/Forge/NeoForge need installer handling)
+- Server jar download logic
+  - **Paper/Purpur**: Direct download from API
+  - **Fabric**: Direct download from Fabric meta API (pre-built server jar)
+  - **Forge/NeoForge**: Download installer, run with `--installServer`, creates `run.sh` and libraries
 - server.properties generation
 - EULA auto-acceptance
 - Docker container creation with Java image selection
@@ -18,7 +21,11 @@
 - Command execution endpoint
 - File browser API (list, read, write, delete, download, rename, upload)
 - Added HostServersDir config for proper Docker bind mounts
-- Unit tests for mc package and versions, properties, java version detection
+- Unit tests for mc package (versions, properties, java version detection)
+- Fixed Java version detection for edge cases
+
+## Remaining: Fabric/Forge/NeoForge Notes
+The Forge/NeoForge installers are executed during server creation, which can take 1-2 minutes on first run. The installer downloads Minecraft server files and required libraries, then creates a `run.sh` script for launching the server.
 
 ## Phase 3: Web UI (NEXT)
 - Svelte frontend with TypeScript
