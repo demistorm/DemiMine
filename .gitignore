@@ -1,0 +1,9 @@
+data/
+servers/
+proxies/
+backups/
+java/
+*.db
+*.log
+manager/demimine
+.env

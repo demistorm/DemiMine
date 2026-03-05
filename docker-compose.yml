@@ -1,0 +1,33 @@
+version: "3.8"
+
+networks:
+  demimine_internal:
+    driver: bridge
+
+services:
+  manager:
+    build: .
+    container_name: demimine-manager
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-8080}:8080"
+    volumes:
+      - ./data:/data
+      - ./servers:/servers
+      - ./proxies:/proxies
+      - ./backups:/backups
+      - ./java:/java
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DEMIMINE_PORT=8080
+      - DEMIMINE_DATA_DIR=/data
+      - DEMIMINE_SERVERS_DIR=/servers
+      - DEMIMINE_PROXIES_DIR=/proxies
+      - DEMIMINE_BACKUPS_DIR=/backups
+      - DEMIMINE_JAVA_DIR=/java
+      - DEMIMINE_MAX_RAM_MB=0
+      - DEMIMINE_NETWORK=demimine_internal
+    labels:
+      - "demimine.managed=false"
+    networks:
+      - demimine_internal
