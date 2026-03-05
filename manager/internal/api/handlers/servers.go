@@ -1,22 +1,42 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/demimine/manager/internal/config"
+	"github.com/demimine/manager/internal/docker"
+	"github.com/demimine/manager/internal/java"
+	"github.com/demimine/manager/internal/mc"
 	"github.com/demimine/manager/internal/models"
 	"github.com/go-chi/chi/v5"
 )
 
 type ServerHandler struct {
-	db *sql.DB
+	db        *sql.DB
+	docker    *docker.Client
+	javaMgr   *java.Manager
+	cfg       *config.Config
 }
 
-func NewServerHandler(db *sql.DB) *ServerHandler {
-	return &ServerHandler{db: db}
+func NewServerHandler(db *sql.DB, dockerClient *docker.Client, cfg *config.Config) *ServerHandler {
+	if dockerClient == nil {
+		panic("dockerClient is nil in NewServerHandler")
+	}
+	return &ServerHandler{
+		db:      db,
+		docker:  dockerClient,
+		javaMgr: java.NewManager(db, cfg.JavaDir),
+		cfg:     cfg,
+	}
 }
 
 func nullStringToPtr(ns sql.NullString) *string {
@@ -39,13 +59,11 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "failed to list servers",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to list servers"})
 		return
 	}
 	defer rows.Close()
-	
+
 	servers := []models.ServerResponse{}
 	for rows.Next() {
 		var s models.ServerResponse
@@ -55,7 +73,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		var scheduledStart sql.NullString
 		var scheduledStop sql.NullString
 		var hostPort sql.NullInt64
-		
+
 		err := rows.Scan(
 			&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
@@ -64,7 +82,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		
+
 		if proxyID.Valid {
 			pid := int64(proxyID.Int64)
 			s.ProxyID = &pid
@@ -77,10 +95,10 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 			hp := int(hostPort.Int64)
 			s.HostPort = &hp
 		}
-		
+
 		servers = append(servers, s)
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(servers)
 }
@@ -104,39 +122,29 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid request body",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
 		return
 	}
-	
+
 	if req.Name == "" || req.Type == "" || req.Version == "" || req.RAMMB == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "name, type, version, and ram_mb are required",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "name, type, version, and ram_mb are required"})
 		return
 	}
-	
+
 	if req.ProxyID == nil && req.HostPort == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "either proxy_id or host_port must be specified",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "either proxy_id or host_port must be specified"})
 		return
 	}
-	
+
 	force := r.URL.Query().Get("force") == "true"
-	
+
 	if req.HostPort != nil && !force {
 		var existingName string
-		err := h.db.QueryRow(
-			"SELECT name FROM servers WHERE host_port = ?",
-			*req.HostPort,
-		).Scan(&existingName)
-		
+		err := h.db.QueryRow("SELECT name FROM servers WHERE host_port = ?", *req.HostPort).Scan(&existingName)
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
@@ -147,13 +155,9 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		
+
 		var proxyName string
-		err = h.db.QueryRow(
-			"SELECT name FROM proxies WHERE host_port = ?",
-			*req.HostPort,
-		).Scan(&proxyName)
-		
+		err = h.db.QueryRow("SELECT name FROM proxies WHERE host_port = ?", *req.HostPort).Scan(&proxyName)
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
@@ -165,31 +169,27 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	
+
 	var existingID int
 	err := h.db.QueryRow("SELECT id FROM servers WHERE name = ?", req.Name).Scan(&existingID)
 	if err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "server name already exists",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "server name already exists"})
 		return
 	}
-	
+
 	if req.ProxyID != nil {
 		var proxyExists bool
 		err = h.db.QueryRow("SELECT 1 FROM proxies WHERE id = ?", *req.ProxyID).Scan(&proxyExists)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "proxy not found",
-			})
+			json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
 			return
 		}
 	}
-	
+
 	validTypes := map[string]bool{
 		"paper": true, "purpur": true, "fabric": true, "neoforge": true, "forge": true,
 	}
@@ -201,28 +201,82 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	result, err := h.db.Exec(`
 		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
 	`, req.Name, req.Type, req.Version, req.ProxyID, req.HostPort, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop)
-	
+
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "failed to create server",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create server"})
 		return
 	}
-	
+
 	id, _ := result.LastInsertId()
-	
+
+	serverPath := filepath.Join(h.cfg.ServersDir, req.Name)
+	hostServerPath := filepath.Join(h.cfg.HostServersDir, req.Name)
+	if err := os.MkdirAll(serverPath, 0755); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create server directory"})
+		return
+	}
+
+	javaVersion := java.GetRequiredJavaVersion(req.Version)
+	javaPath, err := h.javaMgr.EnsureJavaVersion(javaVersion)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to download java %s: %v", javaVersion, err)})
+		return
+	}
+
+	jarPath := filepath.Join(serverPath, "server.jar")
+	if err := mc.DownloadServerJar(req.Type, req.Version, jarPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to download server jar: %v", err)})
+		return
+	}
+
+	props := mc.DefaultServerProperties()
+	props.WriteToFile(filepath.Join(serverPath, "server.properties"))
+
+	if err := os.WriteFile(filepath.Join(serverPath, "eula.txt"), []byte("eula=true\n"), 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create eula.txt"})
+		return
+	}
+
+	hostPort := 0
+	if req.HostPort != nil {
+		hostPort = *req.HostPort
+	}
+
+	_, err = h.docker.CreateServerContainer(context.Background(), docker.ServerContainerConfig{
+		Name:        req.Name,
+		ServerType:  req.Type,
+		Version:     req.Version,
+		RAMMB:       req.RAMMB,
+		JavaPath:    javaPath,
+		ServerPath:  hostServerPath,
+		NetworkName: h.cfg.NetworkName,
+		HostPort:    hostPort,
+	})
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to create container: %v", err)})
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]int64{
-		"id": id,
-	})
+	json.NewEncoder(w).Encode(map[string]int64{"id": id})
 }
 
 func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -231,12 +285,10 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid server id",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
 		return
 	}
-	
+
 	var s models.ServerResponse
 	var proxyID sql.NullInt64
 	var proxyName sql.NullString
@@ -244,7 +296,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var scheduledStart sql.NullString
 	var scheduledStop sql.NullString
 	var hostPort sql.NullInt64
-	
+
 	err = h.db.QueryRow(`
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
@@ -258,25 +310,21 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 		&hostPort, &s.Status, &s.CreatedAt, &s.PlayerCount,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "server not found",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
 		return
 	}
-	
+
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "failed to get server",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to get server"})
 		return
 	}
-	
+
 	if proxyID.Valid {
 		pid := proxyID.Int64
 		s.ProxyID = &pid
@@ -289,7 +337,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		hp := int(hostPort.Int64)
 		s.HostPort = &hp
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s)
 }
@@ -300,34 +348,649 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid server id",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
 		return
 	}
-	
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	ctx := context.Background()
+	if exists, _ := h.docker.ContainerExists(ctx, name); exists {
+		_ = h.docker.RemoveContainer(ctx, name)
+	}
+
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	_ = os.RemoveAll(serverPath)
+
 	result, err := h.db.Exec("DELETE FROM servers WHERE id = ?", id)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "failed to delete server",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete server"})
 		return
 	}
-	
+
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "server not found",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	var status string
+	err = h.db.QueryRow("SELECT name, status FROM servers WHERE id = ?", id).Scan(&name, &status)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	ctx := context.Background()
+	if err := h.docker.StartContainer(ctx, name); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to start server: %v", err)})
+		return
+	}
+
+	h.db.Exec("UPDATE servers SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
+		"message": fmt.Sprintf("Server %s started", name),
 	})
+}
+
+func (h *ServerHandler) Stop(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	ctx := context.Background()
+	timeout := 30
+	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to stop server: %v", err)})
+		return
+	}
+
+	h.db.Exec("UPDATE servers SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	ctx := context.Background()
+	timeout := 30
+	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
+	}
+
+	if err := h.docker.StartContainer(ctx, name); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to restart server: %v", err)})
+		return
+	}
+
+	h.db.Exec("UPDATE servers SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ServerHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	lines := 100
+	if l := r.URL.Query().Get("lines"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			lines = parsed
+		}
+	}
+
+	ctx := context.Background()
+	logs, err := h.docker.GetContainerLogs(ctx, name, lines)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to get logs"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string][]string{"logs": logs})
+}
+
+type CommandRequest struct {
+	Command string `json:"command"`
+}
+
+func (h *ServerHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	var req CommandRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.Command == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "command required"})
+		return
+	}
+
+	ctx := context.Background()
+	if err := h.docker.SendCommand(ctx, name, req.Command); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to execute command"})
+		return
+	}
+
+	h.db.Exec("INSERT INTO command_history (server_id, command) VALUES (?, ?)", id, req.Command)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ServerHandler) GetCommandHistory(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	rows, err := h.db.Query(
+		"SELECT command, executed_at FROM command_history WHERE server_id = ? ORDER BY executed_at DESC LIMIT ?",
+		id, limit,
+	)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to get history"})
+		return
+	}
+	defer rows.Close()
+
+	var commands []map[string]string
+	for rows.Next() {
+		var cmd, executedAt string
+		if err := rows.Scan(&cmd, &executedAt); err != nil {
+			continue
+		}
+		commands = append(commands, map[string]string{
+			"command":     cmd,
+			"executed_at": executedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"commands": commands})
+}
+
+func (h *ServerHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		relativePath = "/"
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(serverPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, serverPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	entries, err := os.ReadDir(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "directory not found"})
+		return
+	}
+
+	var files []map[string]interface{}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, map[string]interface{}{
+			"name":      entry.Name(),
+			"is_dir":    entry.IsDir(),
+			"size":      info.Size(),
+			"modified":  info.ModTime().Format("2006-01-02T15:04:05Z"),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"path":    relativePath,
+		"entries": files,
+	})
+}
+
+func (h *ServerHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+		return
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(serverPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, serverPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+
+	if !isTextFile(content) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "binary file"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"content": string(content)})
+}
+
+type FileContentRequest struct {
+	Content string `json:"content"`
+}
+
+func (h *ServerHandler) WriteFileContent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+		return
+	}
+
+	var req FileContentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(serverPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, serverPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	if err := os.WriteFile(fullPath, []byte(req.Content), 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to write file"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ServerHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+		return
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(serverPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, serverPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	if err := os.RemoveAll(fullPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ServerHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+		return
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(serverPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, serverPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	file, err := os.Open(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+	defer file.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(fullPath)))
+	io.Copy(w, file)
+}
+
+type RenameRequest struct {
+	OldPath  string `json:"old_path"`
+	NewName string `json:"new_name"`
+}
+
+func (h *ServerHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	var req RenameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.OldPath == "" || req.NewName == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "old_path and new_name required"})
+		return
+	}
+
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	oldPath := filepath.Join(serverPath, filepath.Clean("/"+req.OldPath))
+	newPath := filepath.Join(filepath.Dir(oldPath), req.NewName)
+
+	if !strings.HasPrefix(oldPath, serverPath) || !strings.HasPrefix(newPath, serverPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to rename"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func isTextFile(content []byte) bool {
+	if len(content) == 0 {
+		return true
+	}
+	
+	nullCount := 0
+	for i, b := range content {
+		if b == 0 {
+			nullCount++
+		}
+		if i > 8192 {
+			break
+		}
+	}
+	
+	return nullCount == 0
 }

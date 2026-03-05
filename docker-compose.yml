@@ -22,11 +22,12 @@ services:
       - DEMIMINE_PORT=8080
       - DEMIMINE_DATA_DIR=/data
       - DEMIMINE_SERVERS_DIR=/servers
+      - DEMIMINE_HOST_SERVERS_DIR=/home/strasburg/Documents/Projects/DemiMine/servers
       - DEMIMINE_PROXIES_DIR=/proxies
       - DEMIMINE_BACKUPS_DIR=/backups
       - DEMIMINE_JAVA_DIR=/java
       - DEMIMINE_MAX_RAM_MB=0
-      - DEMIMINE_NETWORK=demimine_internal
+      - DEMIMINE_NETWORK=demimine_demimine_internal
     labels:
       - "demimine.managed=false"
     networks:

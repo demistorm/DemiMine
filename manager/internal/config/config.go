@@ -13,6 +13,7 @@ type Config struct {
 	Port              string
 	DataDir           string
 	ServersDir        string
+	HostServersDir    string
 	ProxiesDir        string
 	BackupsDir        string
 	JavaDir           string
@@ -41,6 +42,7 @@ func Load() (*Config, error) {
 		v.SetDefault("PORT", "8080")
 		v.SetDefault("DATA_DIR", "/data")
 		v.SetDefault("SERVERS_DIR", "/servers")
+		v.SetDefault("HOST_SERVERS_DIR", "/servers")
 		v.SetDefault("PROXIES_DIR", "/proxies")
 		v.SetDefault("BACKUPS_DIR", "/backups")
 		v.SetDefault("JAVA_DIR", "/java")
@@ -68,17 +70,18 @@ func Load() (*Config, error) {
 		}
 		
 		cfg = &Config{
-			Port:        v.GetString("PORT"),
-			DataDir:     v.GetString("DATA_DIR"),
-			ServersDir:  v.GetString("SERVERS_DIR"),
-			ProxiesDir:  v.GetString("PROXIES_DIR"),
-			BackupsDir:  v.GetString("BACKUPS_DIR"),
-			JavaDir:     v.GetString("JAVA_DIR"),
-			NetworkName: v.GetString("NETWORK"),
-			MaxRAMMB:    v.GetInt("MAX_RAM_MB"),
-			JWTSecret:   jwtSecret,
-			SessionKey:  sessionKey,
-			DatabaseURL: v.GetString("DATABASE_URL"),
+			Port:          v.GetString("PORT"),
+			DataDir:       v.GetString("DATA_DIR"),
+			ServersDir:    v.GetString("SERVERS_DIR"),
+			HostServersDir: v.GetString("HOST_SERVERS_DIR"),
+			ProxiesDir:    v.GetString("PROXIES_DIR"),
+			BackupsDir:    v.GetString("BACKUPS_DIR"),
+			JavaDir:       v.GetString("JAVA_DIR"),
+			NetworkName:   v.GetString("NETWORK"),
+			MaxRAMMB:      v.GetInt("MAX_RAM_MB"),
+			JWTSecret:     jwtSecret,
+			SessionKey:    sessionKey,
+			DatabaseURL:   v.GetString("DATABASE_URL"),
 		}
 	})
 	return cfg, err
