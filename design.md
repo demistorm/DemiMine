@@ -301,11 +301,14 @@ CREATE TABLE servers (
     host_port INTEGER,            -- Nullable: port exposed to host (only for standalone servers)
     ram_mb INTEGER NOT NULL,
     domain TEXT,                  -- for forced hosts, e.g., "hardcore.example.com"
+    icon_path TEXT,             -- Path to custom server icon image (nullable)
     backup_interval_days INTEGER DEFAULT 0,
     auto_shutdown_minutes INTEGER DEFAULT 15,
     scheduled_start TEXT,         -- HH:MM format, nullable
     scheduled_stop TEXT,          -- HH:MM format, nullable
     status TEXT DEFAULT 'stopped', -- stopped, running, starting, crashed
+    canvas_x INTEGER DEFAULT 0,   -- X position on visual canvas
+    canvas_y INTEGER DEFAULT 0,   -- Y position on visual canvas
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (proxy_id) REFERENCES proxies(id) ON DELETE SET NULL
@@ -524,6 +527,20 @@ POST /api/servers/:id/duplicate
 POST /api/servers/:id/update-jar
   Response: { "success": true, "old_build": string, "new_build": string }
   Notes: Downloads latest server jar for the same MC version/type. Server must be stopped.
+
+PATCH /api/servers/:id/position
+  Body: { "canvas_x": number, "canvas_y": number }
+  Response: { "success": true }
+  Notes: Updates server position on visual canvas. Validates position doesn't overlap with other servers.
+
+POST /api/servers/:id/icon
+  Body: multipart/form-data (image file)
+  Response: { "success": true, "icon_path": string }
+  Notes: Uploads custom server icon. Accepts PNG/JPG, recommended 64x64 pixels.
+
+DELETE /api/servers/:id/icon
+  Response: { "success": true }
+  Notes: Removes custom icon, reverts to default placeholder.
 ```
 
 #### Server Console
@@ -1184,41 +1201,83 @@ When a server's `proxy_id` is changed:
 
 ## Web UI Design
 
-**Note**: The layout diagrams below are rough references for feature organization. Detailed UI mockups will be provided during implementation and may differ in layout while maintaining the same functionality.
+### Overview
 
-### Layout
+The Web UI provides a visual, interactive interface for managing Minecraft servers and proxies. The main servers page features a zoomable/pannable canvas with a visual tree representation of server relationships.
 
+### Main Servers Page (Canvas View)
+
+**Visual Layout:**
+- Infinite canvas with server tiles arranged in a 2D space
+- Server tiles display: custom icon, name, status (Online/Offline), player count in parentheses
+- Connection lines automatically drawn between proxies and their assigned servers
+- Standalone servers (no proxy) have no connection lines and can be placed anywhere
+- Top navigation bar with: DemiMine logo/brand, Servers (active), Settings
+- Left sidebar with "Create+" button for adding servers/proxies
+- Optional crash banner at bottom for unacknowledged crashes
+
+**Example Tree Structure:**
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ [≡] DemiMine                              [⟳] [📊] [⚙️] [🚪]   │ Header
-├────────────────┬────────────────────────────────────────────────┤
-│                │                                                │
-│  SEARCH...     │                                                │
-│                │                                                │
-│  PROXIES       │                                                │
-│  ▶ Main        │              Main Content                      │
-│    • Console   │                                                │
-│    • Servers   │                                                │
-│    • Plugins   │                                                │
-│    • Settings  │                                                │
-│                │                                                │
-│  SERVERS       │                                                │
-│  ▶ Hub         │                                                │
-│  ▶ Survival    │                                                │
-│  ▶ Creative    │                                                │
-│  ⏹ Hardcore    │                                                │
-│  ⏹ Standalone  │  (no proxy assigned)                           │
-│                │                                                │
-│  ─────────────  │                                                │
-│  [+ New Server]│                                                │
-│  [+ New Proxy] │                                                │
-│                │                                                │
-├────────────────┴────────────────────────────────────────────────┤
-│ ⚠ Hardcore crashed at 14:32 - [View Details] [Dismiss]         │ Crash Banner
-└─────────────────────────────────────────────────────────────────┘
+[Proxy] ──────┬─── [Login] ───┬─── [Survival - Online (5)]
+              │               ├─── [Hardcore - Online (2)]
+              │               ├─── [Lobby - Online (12)]
+              │               └─── [Creative - Offline (0)]
+              │
+[Dev 2 - Offline (0)]         [Dev - Offline (0)]
 ```
 
-### Color Scheme
+**Canvas Interactions:**
+
+| Action | Input | Behavior |
+|--------|-------|----------|
+| Pan canvas | Left-click drag on background | Moves viewport around the 2D space |
+| Move server | Shift + left-click drag on server tile | Moves server on invisible grid (snap-to-grid enabled) |
+| Zoom | Mouse wheel or pinch gesture | Scales view from 50% to 200% |
+| Select server | Click on server tile | Opens server detail page |
+
+**Grid System:**
+- Invisible grid for server placement (e.g., 100px increments)
+- Shift+drag snaps server position to nearest grid point
+- System prevents overlapping servers (minimum spacing enforced)
+- Grid spacing should feel natural and allow organized layouts
+
+**Connection Lines:**
+- Automatically drawn from proxy to all assigned servers
+- Lines update in real-time when servers are moved
+- Style: straight lines or right-angle connectors (TBD during implementation)
+- Visual distinction for proxy→server hierarchy
+
+**Server Tile Details:**
+- Custom icon (configurable in server settings, default placeholder if not set)
+- Server name
+- Status: "Online" or "Offline"
+- Player count in parentheses: "(5)" or "(0)"
+- Click anywhere on tile to open server detail page
+
+**Proxy Tiles:**
+- Proxies are visualized as tiles, same as servers
+- Proxies have their own detail pages (logs, commands, files, settings)
+- Connection lines originate from proxy tiles to their assigned servers
+
+### Aesthetic & Styling
+
+**Typography:**
+- Primary font: Helvetica or system sans-serif equivalent (clean, readable)
+- Avoid pixelated/blocky fonts for better readability
+
+**Minecraft Theme:**
+- Background textures: stone, wood, dirt block patterns (to be provided later)
+- Textures scale appropriately with window size
+- Textures should not overpower content - subtle, atmospheric background
+- Accent colors inspired by Minecraft palette (greens, browns, blues)
+
+**Responsive Design:**
+- All elements scale proportionally with window size
+- Works on any aspect ratio (16:9, 4:3, ultrawide, mobile)
+- Canvas view adapts to viewport dimensions
+- No fixed pixel widths for layout containers
+
+**Color Scheme:**
 
 ```css
 :root {
@@ -1229,12 +1288,28 @@ When a server's `proxy_id` is changed:
   --text-secondary: #a0a0a0;
   --accent: #3b82f6;       /* Blue */
   --accent-hover: #2563eb;
-  --success: #22c55e;      /* Green */
+  --success: #22c55e;      /* Green - Online status */
   --warning: #eab308;      /* Yellow */
-  --error: #ef4444;        /* Red */
+  --error: #ef4444;        /* Red - Offline/Crash */
   --border: #333333;
 }
 ```
+
+### Layout Structure
+
+**Top Navigation Bar:**
+- DemiMine logo/brand (left)
+- Main nav items: Servers (active), Settings
+- User menu/logout (right)
+
+**Left Sidebar:**
+- "Create+" button (opens modal to create server or proxy)
+- Optional: Quick filters or view toggles
+
+**Main Content Area:**
+- Canvas fills remaining space
+- No fixed sidebar list of servers (replaced by visual canvas)
+- Crash banner appears at bottom when needed
 
 ### Key Components
 
@@ -1395,19 +1470,18 @@ When a server's `proxy_id` is changed:
 | Route | Description |
 |-------|-------------|
 | `/login` | Password-only login, redirect to setup if first launch |
-| `/` | Dashboard: overview cards, resource graph, recent activity |
-| `/servers/:id` | Server detail, tabs for sub-pages |
-| `/servers/:id/console` | Live console, command input |
-| `/servers/:id/players` | Online players with skins |
-| `/servers/:id/files` | File browser with editor |
-| `/servers/:id/settings` | All server configuration |
-| `/servers/:id/backups` | Backup list, create, restore |
-| `/proxies` | List all proxies |
-| `/proxies/:id` | Proxy detail page |
+| `/` | **Main servers page**: Canvas view with visual tree, pan/zoom, server tiles |
+| `/servers/:id` | Server detail page with tabs for console, players, files, settings, backups |
+| `/servers/:id/console` | Live console with command input, log history |
+| `/servers/:id/players` | Online players with skins, kick/ban actions |
+| `/servers/:id/files` | File browser with code editor, upload/download |
+| `/servers/:id/settings` | Server configuration (RAM, port, auto-shutdown, icon upload, etc.) |
+| `/servers/:id/backups` | Backup list, create/restore/delete actions |
+| `/proxies/:id` | Proxy detail page with tabs |
 | `/proxies/:id/console` | Proxy console |
-| `/proxies/:id/servers` | Manage connected servers |
-| `/proxies/:id/plugins` | Plugin management |
-| `/proxies/:id/settings` | Proxy configuration |
+| `/proxies/:id/servers` | Manage connected servers (assign/unassign) |
+| `/proxies/:id/plugins` | Plugin management, upload/delete |
+| `/proxies/:id/settings` | Proxy configuration, velocity.toml editor |
 | `/admin/keys` | API key management |
 | `/admin/java` | Java version management |
 | `/admin/settings` | Manager settings |
@@ -1415,6 +1489,136 @@ When a server's `proxy_id` is changed:
 **Notes:**
 - No dedicated UI for whitelist/ops management - use console commands (`/whitelist add <player>`, `/op <player>`, etc.)
 - This keeps the UI simple and avoids duplicating Minecraft's built-in permission systems
+- The main page (`/`) IS the visual servers canvas, not a traditional dashboard
+
+### Server Detail Page
+
+When clicking a server tile from the main canvas, users are taken to the server detail page with tabbed navigation:
+
+**Tab Structure:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ← Back to Servers     [Server Name] - Online (5)           │
+├─────────────────────────────────────────────────────────────┤
+│  [Console] [Files] [Settings] [Backups]                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│                    Tab Content Area                         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Console Tab:**
+- Live log output with timestamps
+- Command input with history (arrow keys)
+- Auto-scroll to bottom (pauses when user scrolls up)
+- Log level color coding (INFO, WARN, ERROR)
+
+**Files Tab:**
+- File tree browser with directory navigation
+- Code/text editor for config files
+- Drag-and-drop upload support
+- Download, rename, delete actions
+- Breadcrumb path navigation
+
+**Settings Tab:**
+- Server icon upload
+- RAM allocation slider
+- Auto-shutdown timer configuration
+- Backup interval settings
+- Scheduled start/stop times
+- Domain configuration (for forced hosts)
+- Proxy assignment dropdown
+- Server JAR update button
+
+**Backups Tab:**
+- List of existing backups with size/date
+- Create new backup button
+- Restore button (with confirmation)
+- Delete backup button
+
+**Performance Monitoring:**
+- CPU usage graph (real-time)
+- Memory usage graph (real-time)
+- Uptime display
+- Player count history
+
+### Visual Tree Implementation
+
+**Canvas Rendering:**
+- Use HTML5 Canvas or SVG for server tiles and connection lines
+- Server positions stored in database or localStorage
+- Initial load: render all servers at saved positions
+- Connection lines rendered on top of background, behind server tiles
+
+**Position Storage:**
+```sql
+-- Add to servers table
+ALTER TABLE servers ADD COLUMN canvas_x INTEGER DEFAULT 0;
+ALTER TABLE servers ADD COLUMN canvas_y INTEGER DEFAULT 0;
+```
+
+**Connection Line Algorithm:**
+```
+For each proxy:
+  Get all servers assigned to proxy
+  For each server:
+    Draw line from (proxy.x, proxy.y) to (server.x, server.y)
+    Style: semi-transparent, smooth curves or straight lines
+```
+
+**Grid Snapping:**
+```javascript
+const GRID_SIZE = 100; // pixels
+
+function snapToGrid(x, y) {
+  return {
+    x: Math.round(x / GRID_SIZE) * GRID_SIZE,
+    y: Math.round(y / GRID_SIZE) * GRID_SIZE
+  };
+}
+```
+
+**Overlap Prevention:**
+- Minimum distance between server centers: 150px
+- On server move, check collision with all other servers
+- If collision detected, snap to nearest valid grid position
+- Visual feedback during drag (ghost outline at snap position)
+
+**Zoom Implementation:**
+- Transform scale on canvas container
+- Range: 0.5 (50%) to 2.0 (200%)
+- Mouse wheel: adjust scale in 0.1 increments
+- Preserve server positions (scale relative to canvas center)
+
+**Pan Implementation:**
+- Track mouse position on mousedown
+- On mousemove (while dragging background): adjust canvas offset
+- Cursor changes to "grab" on hover, "grabbing" while dragging
+
+### Implementation Notes
+
+**Frontend Library Recommendations:**
+- **Canvas rendering**: Consider using Konva.js, Fabric.js, or raw HTML5 Canvas API
+- **State management**: Svelte stores for server positions, zoom level, pan offset
+- **WebSocket**: Real-time updates for server status changes, player counts
+- **Persistence**: Save canvas positions to database via API on drag end
+
+**Key Implementation Tasks:**
+1. Create main canvas component with pan/zoom functionality
+2. Implement server tile component with icon, name, status, player count
+3. Add grid snapping logic with overlap detection
+4. Render connection lines between proxies and servers
+5. Handle server click navigation to detail page
+6. Persist canvas positions on drag end
+7. Add texture backgrounds (pluggable, added later)
+8. Implement responsive layout for various screen sizes
+
+**Testing Considerations:**
+- Test with 1-50 servers to ensure performance
+- Test zoom/pan on different screen sizes
+- Test overlap prevention edge cases
+- Test connection line rendering with complex hierarchies
 
 ---
 

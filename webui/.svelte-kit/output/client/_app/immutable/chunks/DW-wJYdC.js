@@ -1,0 +1,1 @@
+import{w as o}from"./C73zUKoK.js";const t=o(typeof localStorage<"u"?localStorage.getItem("token"):null);t.subscribe(e=>{typeof localStorage<"u"&&(e?localStorage.setItem("token",e):localStorage.removeItem("token"))});export{t};

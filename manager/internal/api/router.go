@@ -3,14 +3,15 @@ package api
 import (
 	"database/sql"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/demimine/manager/internal/api/handlers"
-	"github.com/demimine/manager/internal/api/middleware"
-	"github.com/demimine/manager/internal/config"
-	"github.com/demimine/manager/internal/docker"
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
+  "github.com/demimine/manager/internal/api/middleware"
+  "github.com/demimine/manager/internal/config"
+  "github.com/demimine/manager/internal/docker"
+  "github.com/go-chi/chi/v5"
+  chimw "github.com/go-chi/chi/v5/middleware"
 )
 
 func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client) *chi.Mux {
@@ -84,6 +85,40 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	// Serve static frontend files
+	webuiPath := "/app/webui/build"
+	if _, err := os.Stat(webuiPath); err == nil {
+		fs := http.FileServer(http.Dir(webuiPath))
+		r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// If requesting API routes, don't serve static files
+			if len(r.URL.Path) >= 4 && r.URL.Path[:4] == "/api" {
+				http.NotFound(w, r)
+				return
+			}
+			// If requesting health endpoint, don't serve static files
+			if r.URL.Path == "/health" {
+				http.NotFound(w, r)
+				return
+			}
+			
+			// Try to serve the exact file first
+			path := r.URL.Path
+			if path == "/" {
+				path = "/index.html"
+			}
+			
+			filePath := webuiPath + path
+			if _, err := os.Stat(filePath); err == nil {
+				fs.ServeHTTP(w, r)
+				return
+			}
+			
+			// If file doesn't exist, serve index.html for SPA routing
+			r.URL.Path = "/"
+			fs.ServeHTTP(w, r)
+		}))
+	}
 
 	return r
 }
