@@ -33,14 +33,12 @@
 					username,
 					password
 				});
-				if (response.success) {
-					await login();
-				}
 			} else {
 				await login();
 			}
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Login failed';
+			console.error('Setup/Login failed:', err);
+			error = err instanceof Error ? err.message : 'An error occurred';
 		}
 	}
 
