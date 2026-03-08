@@ -19,29 +19,42 @@
 	});
 
 	function handleWheel(e: WheelEvent) {
+		console.log('handleWheel called', e.deltaY, 'current zoom:', zoom);
 		e.preventDefault();
 		const delta = e.deltaY > 0 ? -0.1 : 0.1;
 		zoom = Math.max(0.5, Math.min(2.0, zoom + delta));
+		console.log('new zoom:', zoom);
 	}
 
 	function handleMouseDown(e: MouseEvent) {
-		if ((e.target as HTMLElement).closest('.server-tile')) {
+		console.log('handleMouseDown called', e.target, 'isDragging:', isDragging);
+		const target = e.target as HTMLElement;
+		const isInsideTile = target.closest('.server-tile');
+		console.log('closest result:', isInsideTile);
+		
+		if (isInsideTile) {
 			return;
 		}
 		isDragging = true;
 		dragStart = { x: e.clientX - canvasOffset.x, y: e.clientY - canvasOffset.y };
-		(e.target as HTMLElement).style.cursor = 'grabbing';
+		target.style.cursor = 'grabbing';
+		console.log('started dragging canvas', dragStart);
 	}
 
 	function handleMouseMove(e: MouseEvent) {
-		if (!isDragging) return;
-		canvasOffset = {
-			x: e.clientX - dragStart.x,
-			y: e.clientY - dragStart.y
-		};
+		if (!isDragging) {
+			console.log('mousemove: not dragging, returning');
+			return;
+		}
+		const newX = e.clientX - dragStart.x;
+		const newY = e.clientY - dragStart.y;
+		console.log('mousemove: dragging', { oldX: canvasOffset.x, oldY: canvasOffset.y, newX, newY });
+		canvasOffset = { x: newX, y: newY };
+		console.log('new canvasOffset:', canvasOffset);
 	}
 
 	function handleMouseUp(e: MouseEvent) {
+		console.log('handleMouseUp called, was dragging:', isDragging);
 		isDragging = false;
 		(e.target as HTMLElement).style.cursor = 'grab';
 	}
