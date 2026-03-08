@@ -207,7 +207,7 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.db.Exec(`
 		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 0, 0)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000)
 	`, req.Name, req.Type, req.Version, req.ProxyID, req.HostPort, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop)
 
 	if err != nil {
@@ -245,6 +245,12 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := mc.WriteEntrypointScript(serverPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to write entrypoint script: %v", err)})
+		return
+	}
 	props := mc.DefaultServerProperties()
 	props.WriteToFile(filepath.Join(serverPath, "server.properties"))
 

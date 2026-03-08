@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -57,38 +56,13 @@ func DownloadPurpurJar(version, destPath string) error {
 	return downloadFile(downloadURL, destPath)
 }
 
-type FabricLoaderVersion struct {
-	URL     string `json:"url"`
-	Version string `json:"version"`
+func DownloadFabricInstaller(serverDir string) error {
+	installerURL := "https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.0.1/fabric-installer-1.0.1.jar"
+	installerPath := filepath.Join(serverDir, "fabric-installer.jar")
+	return downloadFile(installerURL, installerPath)
 }
 
-func DownloadFabricJar(version, destPath string) error {
-	loaderResp, err := httpClient.Get("https://meta.fabricmc.net/v2/versions/loader")
-	if err != nil {
-		return fmt.Errorf("failed to get fabric loader versions: %w", err)
-	}
-	defer loaderResp.Body.Close()
-
-	var loaders []FabricLoaderVersion
-	if err := json.NewDecoder(loaderResp.Body).Decode(&loaders); err != nil {
-		return fmt.Errorf("failed to decode loader response: %w", err)
-	}
-
-	if len(loaders) == 0 {
-		return fmt.Errorf("no fabric loader versions available")
-	}
-
-	loaderVersion := loaders[0].Version
-
-	installerURL := fmt.Sprintf(
-		"https://meta.fabricmc.net/v2/versions/loader/%s/%s/server/jar",
-		version, loaderVersion,
-	)
-
-	return downloadFile(installerURL, destPath)
-}
-
-func DownloadNeoForgeJar(version, serverDir string) error {
+func DownloadNeoForgeInstaller(version, serverDir string) error {
 	versionsResp, err := httpClient.Get("https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge")
 	if err != nil {
 		return fmt.Errorf("failed to get neoforge versions: %w", err)
@@ -119,24 +93,10 @@ func DownloadNeoForgeJar(version, serverDir string) error {
 	)
 
 	installerPath := filepath.Join(serverDir, "neoforge-installer.jar")
-	if err := downloadFile(downloadURL, installerPath); err != nil {
-		return err
-	}
-	defer os.Remove(installerPath)
-
-	cmd := exec.Command("java", "-jar", installerPath, "--installServer")
-	cmd.Dir = serverDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("neoforge installer failed: %w", err)
-	}
-
-	return nil
+	return downloadFile(downloadURL, installerPath)
 }
 
-func DownloadForgeJar(version, serverDir string) error {
+func DownloadForgeInstaller(version, serverDir string) error {
 	promosResp, err := httpClient.Get("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json")
 	if err != nil {
 		return fmt.Errorf("failed to get forge promotions: %w", err)
@@ -164,21 +124,7 @@ func DownloadForgeJar(version, serverDir string) error {
 	)
 
 	installerPath := filepath.Join(serverDir, "forge-installer.jar")
-	if err := downloadFile(downloadURL, installerPath); err != nil {
-		return err
-	}
-	defer os.Remove(installerPath)
-
-	cmd := exec.Command("java", "-jar", installerPath, "--installServer")
-	cmd.Dir = serverDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("forge installer failed: %w", err)
-	}
-
-	return nil
+	return downloadFile(downloadURL, installerPath)
 }
 
 func DownloadServerJar(serverType, version, destPath string) error {
@@ -193,11 +139,11 @@ func DownloadServerJar(serverType, version, destPath string) error {
 	case "purpur":
 		return DownloadPurpurJar(version, destPath)
 	case "fabric":
-		return DownloadFabricJar(version, destPath)
+		return DownloadFabricInstaller(serverDir)
 	case "neoforge":
-		return DownloadNeoForgeJar(version, serverDir)
+		return DownloadNeoForgeInstaller(version, serverDir)
 	case "forge":
-		return DownloadForgeJar(version, serverDir)
+		return DownloadForgeInstaller(version, serverDir)
 	default:
 		return fmt.Errorf("unsupported server type: %s", serverType)
 	}

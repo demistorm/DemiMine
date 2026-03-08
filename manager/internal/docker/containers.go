@@ -61,23 +61,12 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 
 	env := []string{
 		"TERM=xterm",
+		fmt.Sprintf("SERVER_TYPE=%s", cfg.ServerType),
+		fmt.Sprintf("MC_VERSION=%s", cfg.Version),
+		fmt.Sprintf("RAM_MB=%d", cfg.RAMMB),
 	}
 
-	var cmd []string
-	switch cfg.ServerType {
-	case "neoforge", "forge":
-		cmd = []string{"sh", "run.sh", "nogui"}
-	case "fabric":
-		cmd = []string{"java", fmt.Sprintf("-Xmx%dM", cfg.RAMMB), fmt.Sprintf("-Xms%dM", cfg.RAMMB/2), "-jar", "fabric-server-launch.jar", "nogui"}
-	default:
-		cmd = []string{
-			"java",
-			fmt.Sprintf("-Xmx%dM", cfg.RAMMB),
-			fmt.Sprintf("-Xms%dM", cfg.RAMMB/2),
-			"-jar", "server.jar",
-			"nogui",
-		}
-	}
+	cmd := []string{"sh", "/server/start.sh"}
 
 	config := &container.Config{
 		Image:        javaImage,
