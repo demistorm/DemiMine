@@ -13,8 +13,8 @@
 	let currentX = server.canvas_x ?? 0;
 	let currentY = server.canvas_y ?? 0;
 
-	$: if (server.canvas_x !== undefined) currentX = server.canvas_x;
-	$: if (server.canvas_y !== undefined) currentY = server.canvas_y;
+	$: if (!isDragging && server.canvas_x != null) currentX = server.canvas_x;
+	$: if (!isDragging && server.canvas_y != null) currentY = server.canvas_y;
 
 	function handleMouseDown(e: MouseEvent) {
         if (!e.shiftKey) {
@@ -25,13 +25,9 @@
         e.preventDefault();
         e.stopPropagation();
         isDragging = true;
-        
-        const screenX = currentX * zoom + canvasOffset.x;
-        const screenY = currentY * zoom + canvasOffset.y;
-        
         dragStart = {
-            x: e.clientX - screenX,
-            y: e.clientY - screenY
+            x: (e.clientX - canvasOffset.x) / zoom - currentX,
+            y: (e.clientY - canvasOffset.y) / zoom - currentY
         };
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
@@ -41,11 +37,8 @@
         if (!isDragging) return;
 
         e.preventDefault();
-        const screenX = e.clientX - dragStart.x;
-        const screenY = e.clientY - dragStart.y;
-
-        const newX = (screenX - canvasOffset.x) / zoom;
-        const newY = (screenY - canvasOffset.y) / zoom;
+        const newX = (e.clientX - canvasOffset.x) / zoom - dragStart.x;
+        const newY = (e.clientY - canvasOffset.y) / zoom - dragStart.y;
 
         currentX = Math.round(newX / 100) * 100;
         currentY = Math.round(newY / 100) * 100;
@@ -99,7 +92,7 @@
 <div
     class="server-tile"
     class:dragging={isDragging}
-    style="left: {currentX}px; top: {currentY}px;"
+    style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%);"
     on:mousedown={handleMouseDown}
     role="button"
     tabindex={0}
@@ -140,7 +133,7 @@
     }
 
     .server-tile:hover {
-        transform: translateY(-2px);
+        transform: translate(-50%, calc(-50% - 2px));
         box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
     }
 
@@ -148,6 +141,7 @@
         opacity: 0.7;
         cursor: move;
         z-index: 10;
+        transform: translate(-50%, -50%);
     }
 
     .server-icon {

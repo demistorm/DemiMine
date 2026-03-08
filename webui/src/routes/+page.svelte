@@ -16,21 +16,32 @@
 
 	onMount(() => {
 		loadServers();
+		const navbarHeight = 56;
+		canvasOffset = {
+			x: window.innerWidth / 2 - 4000,
+			y: (window.innerHeight - navbarHeight) / 2 - 4000
+		};
 	});
 
 	function handleWheel(e: WheelEvent) {
-		console.log('handleWheel called', e.deltaY, 'current zoom:', zoom);
 		e.preventDefault();
+		
+		const mouseX = (e.clientX - canvasOffset.x) / zoom;
+		const mouseY = (e.clientY - canvasOffset.y) / zoom;
+		
 		const delta = e.deltaY > 0 ? -0.1 : 0.1;
-		zoom = Math.max(0.5, Math.min(2.0, zoom + delta));
-		console.log('new zoom:', zoom);
+		const newZoom = Math.max(0.1, Math.min(4.0, zoom + delta));
+		
+		canvasOffset = {
+			x: e.clientX - mouseX * newZoom,
+			y: e.clientY - mouseY * newZoom
+		};
+		zoom = newZoom;
 	}
 
 	function handleMouseDown(e: MouseEvent) {
-		console.log('handleMouseDown called', e.target, 'isDragging:', isDragging);
 		const target = e.target as HTMLElement;
 		const isInsideTile = target.closest('.server-tile');
-		console.log('closest result:', isInsideTile);
 		
 		if (isInsideTile) {
 			return;
@@ -38,23 +49,16 @@
 		isDragging = true;
 		dragStart = { x: e.clientX - canvasOffset.x, y: e.clientY - canvasOffset.y };
 		target.style.cursor = 'grabbing';
-		console.log('started dragging canvas', dragStart);
 	}
 
 	function handleMouseMove(e: MouseEvent) {
 		if (!isDragging) {
-			console.log('mousemove: not dragging, returning');
 			return;
 		}
-		const newX = e.clientX - dragStart.x;
-		const newY = e.clientY - dragStart.y;
-		console.log('mousemove: dragging', { oldX: canvasOffset.x, oldY: canvasOffset.y, newX, newY });
-		canvasOffset = { x: newX, y: newY };
-		console.log('new canvasOffset:', canvasOffset);
+		canvasOffset = { x: e.clientX - dragStart.x, y: e.clientY - dragStart.y };
 	}
 
 	function handleMouseUp(e: MouseEvent) {
-		console.log('handleMouseUp called, was dragging:', isDragging);
 		isDragging = false;
 		(e.target as HTMLElement).style.cursor = 'grab';
 	}
@@ -83,7 +87,7 @@
 	on:mouseup={handleMouseUp}
 	on:mouseleave={handleMouseUp}
 >
-	<div class="canvas" style="transform: {getCanvasTransform()}">
+	<div class="canvas" style="transform: translate({canvasOffset.x}px, {canvasOffset.y}px) scale({zoom})">
 		<!-- Visual Grid for debugging -->
 		<div class="grid-background"></div>
 		
@@ -94,10 +98,10 @@
 					{@const proxy = serverList.find(p => p.id === server.proxy_id)}
 					{#if proxy}
 						<line 
-							x1={proxy.canvas_x + 60}
-							y1={proxy.canvas_y + 60}
-							x2={server.canvas_x + 60}
-							y2={server.canvas_y + 60}
+							x1={proxy.canvas_x + 50}
+							y1={proxy.canvas_y + 50}
+							x2={server.canvas_x + 50}
+							y2={server.canvas_y + 50}
 							stroke="#4a5568"
 							stroke-width="2"
 							stroke-dasharray="5,5"
@@ -111,8 +115,8 @@
 		{#each serverList as server}
 			<ServerTile 
 				{server}
-				canvasOffset={canvasOffset}
-				zoom={zoom}
+				{canvasOffset}
+				{zoom}
 				on:click={() => handleServerClick(server)}
 				on:move={(e) => handleServerMove(server, e.detail.x, e.detail.y)}
 			/>
@@ -141,20 +145,18 @@
 
 	.canvas {
 		position: absolute;
-		top: 0;
-		left: 0;
+		width: 8000px;
+		height: 8000px;
 		transform-origin: 0 0;
 		z-index: 1;
-		min-width: 100%;
-		min-height: 100%;
 	}
 
 	.grid-background {
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 4000px;
-		height: 4000px;
+		width: 8000px;
+		height: 8000px;
 		background-image: 
 			linear-gradient(rgba(74, 85, 104, 0.2) 1px, transparent 1px),
 			linear-gradient(90deg, rgba(74, 85, 104, 0.2) 1px, transparent 1px);
@@ -166,8 +168,8 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		width: 100%;
-		height: 100%;
+		width: 8000px;
+		height: 8000px;
 		pointer-events: none;
 		z-index: 2;
 	}
