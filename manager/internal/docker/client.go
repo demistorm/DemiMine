@@ -1,11 +1,16 @@
 package docker
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"strings"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 )
 
@@ -41,17 +46,72 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) SendCommand(ctx context.Context, containerName, command string) error {
-	execConfig := container.ExecOptions{
-		Cmd:          []string{"screen", "-S", "minecraft", "-X", "stuff", command + "\n"},
-		AttachStdout: false,
-		AttachStderr: false,
+func (c *Client) StreamLogs(ctx context.Context, containerName string, logChan chan<- string) error {
+	if !strings.HasPrefix(containerName, "demimine-") {
+		containerName = "demimine-" + sanitizeName(containerName)
 	}
 
-	execResp, err := c.cli.ContainerExecCreate(ctx, containerName, execConfig)
+	cfg := container.AttachOptions{
+		Stdin:  false,
+		Stdout: true,
+		Stderr: true,
+		Stream: true,
+	}
+
+	hijacked, err := c.cli.ContainerAttach(ctx, containerName, cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to attach to container: %w", err)
+	}
+	defer hijacked.Close()
+
+	go func() {
+		<-ctx.Done()
+		hijacked.Close()
+	}()
+
+	scanner := bufio.NewScanner(hijacked.Reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			select {
+			case logChan <- line:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
 	}
 
-	return c.cli.ContainerExecStart(ctx, execResp.ID, container.ExecStartOptions{})
+	return scanner.Err()
+}
+
+func (c *Client) ContainerEvents(ctx context.Context, eventChan chan<- events.Message) error {
+	filter := filters.NewArgs()
+	filter.Add("type", "container")
+
+	dockerEvents, errs := c.cli.Events(ctx, events.ListOptions{
+		Filters: filter,
+	})
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-errs:
+				if err != nil && err != io.EOF {
+					log.Printf("Container events error: %v", err)
+				}
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event := <-dockerEvents:
+			eventChan <- event
+		}
+	}
 }

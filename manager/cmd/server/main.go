@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/demimine/manager/internal/api"
+	"github.com/demimine/manager/internal/api/handlers"
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/db"
 	"github.com/demimine/manager/internal/docker"
@@ -61,12 +62,34 @@ func main() {
 	}
 	log.Println("Docker client initialized successfully")
 
-	router := api.NewRouter(database, cfg, dockerClient)
+	consoleManager := docker.NewConsoleManager(dockerClient, database)
+
+	wsHandler := handlers.NewWSHandler(database, dockerClient, consoleManager, cfg)
+	go wsHandler.Run()
+
+	logManager := docker.NewLogManager(dockerClient, database, wsHandler.GetHub())
+	eventManager := docker.NewEventManager(dockerClient, database, wsHandler.GetHub(), logManager, consoleManager)
+
+	if err := logManager.StartStreamingForRunningContainers(context.Background(), database); err != nil {
+		log.Printf("Failed to start log streaming for running containers: %v", err)
+	}
+
+	if err := consoleManager.StartConsolesForRunningContainers(context.Background()); err != nil {
+		log.Printf("Failed to start console streaming for running containers: %v", err)
+	}
+
+	go eventManager.Start(context.Background())
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/ws", wsHandler.Handle)
+
+	router := api.NewRouter(database, cfg, dockerClient, consoleManager)
+	mux.Handle("/", router)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      router,
+		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -21,21 +22,23 @@ import (
 )
 
 type ServerHandler struct {
-	db        *sql.DB
-	docker    *docker.Client
-	javaMgr   *java.Manager
-	cfg       *config.Config
+	db             *sql.DB
+	docker         *docker.Client
+	consoleManager *docker.ConsoleManager
+	javaMgr        *java.Manager
+	cfg            *config.Config
 }
 
-func NewServerHandler(db *sql.DB, dockerClient *docker.Client, cfg *config.Config) *ServerHandler {
+func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config) *ServerHandler {
 	if dockerClient == nil {
 		panic("dockerClient is nil in NewServerHandler")
 	}
 	return &ServerHandler{
-		db:      db,
-		docker:  dockerClient,
-		javaMgr: java.NewManager(db, cfg.JavaDir),
-		cfg:     cfg,
+		db:             db,
+		docker:         dockerClient,
+		consoleManager: consoleManager,
+		javaMgr:        java.NewManager(db, cfg.JavaDir),
+		cfg:            cfg,
 	}
 }
 
@@ -149,8 +152,8 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"error":    "port_in_use",
-				"port":     *req.HostPort,
+				"error":   "port_in_use",
+				"port":    *req.HostPort,
 				"used_by": existingName,
 			})
 			return
@@ -162,8 +165,8 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"error":    "port_in_use",
-				"port":     *req.HostPort,
+				"error":   "port_in_use",
+				"port":    *req.HostPort,
 				"used_by": proxyName,
 			})
 			return
@@ -389,6 +392,65 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
+type UpdateServerRequest struct {
+	Name                *string `json:"name"`
+	RAMMB               *int    `json:"ram_mb"`
+	AutoShutdownMinutes *int    `json:"auto_shutdown_minutes"`
+	BackupIntervalDays  *int    `json:"backup_interval_days"`
+	ScheduledStart      *string `json:"scheduled_start"`
+	ScheduledStop       *string `json:"scheduled_stop"`
+}
+
+func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var req UpdateServerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	var exists bool
+	err = h.db.QueryRow("SELECT 1 FROM servers WHERE id = ?", id).Scan(&exists)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	if req.Name != nil {
+		h.db.Exec("UPDATE servers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, id)
+	}
+	if req.RAMMB != nil {
+		h.db.Exec("UPDATE servers SET ram_mb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.RAMMB, id)
+	}
+	if req.AutoShutdownMinutes != nil {
+		h.db.Exec("UPDATE servers SET auto_shutdown_minutes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.AutoShutdownMinutes, id)
+	}
+	if req.BackupIntervalDays != nil {
+		h.db.Exec("UPDATE servers SET backup_interval_days = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.BackupIntervalDays, id)
+	}
+	if req.ScheduledStart != nil {
+		h.db.Exec("UPDATE servers SET scheduled_start = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStart, id)
+	}
+	if req.ScheduledStop != nil {
+		h.db.Exec("UPDATE servers SET scheduled_stop = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStop, id)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
 func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -574,8 +636,7 @@ func (h *ServerHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
-	if err := h.docker.SendCommand(ctx, name, req.Command); err != nil {
+	if err := h.consoleManager.SendCommand(id, req.Command); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to execute command"})
@@ -683,10 +744,10 @@ func (h *ServerHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		files = append(files, map[string]interface{}{
-			"name":      entry.Name(),
-			"is_dir":    entry.IsDir(),
-			"size":      info.Size(),
-			"modified":  info.ModTime().Format("2006-01-02T15:04:05Z"),
+			"name":     entry.Name(),
+			"is_dir":   entry.IsDir(),
+			"size":     info.Size(),
+			"modified": info.ModTime().Format("2006-01-02T15:04:05Z"),
 		})
 	}
 
@@ -735,12 +796,43 @@ func (h *ServerHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
-		return
+	var content []byte
+	isGzipped := strings.HasSuffix(fullPath, ".gz")
+
+	if isGzipped {
+		f, err := os.Open(fullPath)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+			return
+		}
+		defer f.Close()
+
+		gzReader, err := gzip.NewReader(f)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "corrupted gzip file"})
+			return
+		}
+		defer gzReader.Close()
+
+		content, err = io.ReadAll(gzReader)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to decompress file"})
+			return
+		}
+	} else {
+		content, err = os.ReadFile(fullPath)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+			return
+		}
 	}
 
 	if !isTextFile(content) {
@@ -751,7 +843,11 @@ func (h *ServerHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"content": string(content)})
+	response := map[string]string{"content": string(content)}
+	if isGzipped {
+		response["is_gzipped"] = "true"
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 type FileContentRequest struct {
@@ -917,7 +1013,7 @@ func (h *ServerHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 }
 
 type RenameRequest struct {
-	OldPath  string `json:"old_path"`
+	OldPath string `json:"old_path"`
 	NewName string `json:"new_name"`
 }
 
@@ -981,7 +1077,7 @@ func isTextFile(content []byte) bool {
 	if len(content) == 0 {
 		return true
 	}
-	
+
 	nullCount := 0
 	for i, b := range content {
 		if b == 0 {
@@ -991,6 +1087,6 @@ func isTextFile(content []byte) bool {
 			break
 		}
 	}
-	
+
 	return nullCount == 0
 }
