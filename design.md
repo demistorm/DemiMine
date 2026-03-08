@@ -1241,6 +1241,15 @@ The Web UI provides a visual, interactive interface for managing Minecraft serve
 - System prevents overlapping servers (minimum spacing enforced)
 - Grid spacing should feel natural and allow organized layouts
 
+**Background Rendering:**
+- Current implementation uses CSS `background-image` with `linear-gradient` for the grid pattern
+- Known issue: At extreme zoom levels (e.g., 0.1x), the CSS gradient-based grid exhibits rendering artifacts:
+  - Sub-pixel aliasing causes lines to appear broken or missing
+  - Grid squares may render as rectangles due to GPU compositing precision limits
+  - Portions of the grid may disappear entirely at certain zoom levels
+- Future enhancement: Replace grid with Minecraft-themed texture background (stone, dirt, etc.)
+- Texture background will not have the same rendering issues and will provide better visual aesthetics
+
 **Connection Lines:**
 - Automatically drawn from proxy to all assigned servers
 - Lines update in real-time when servers are moved
