@@ -25,9 +25,9 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 		limit:    limit,
 		window:   window,
 	}
-	
+
 	go rl.cleanup()
-	
+
 	return rl
 }
 
@@ -48,13 +48,13 @@ func (rl *RateLimiter) cleanup() {
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := getIP(r)
-		
+
 		rl.mu.Lock()
 		defer rl.mu.Unlock()
-		
+
 		attempt, exists := rl.attempts[ip]
 		now := time.Now()
-		
+
 		if !exists || now.Sub(attempt.FirstSeen) > rl.window {
 			rl.attempts[ip] = &Attempt{Count: 1, FirstSeen: now}
 		} else {
@@ -68,7 +68,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 				return
 			}
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }

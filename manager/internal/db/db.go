@@ -19,16 +19,16 @@ func Connect(databaseURL string) (*sql.DB, error) {
 		if databaseURL == "" {
 			databaseURL = "file:/data/demimine.db?cache=shared&_journal_mode=WAL&_busy_timeout=5000"
 		}
-		
+
 		db, err = sql.Open("sqlite", databaseURL)
 		if err != nil {
 			return
 		}
-		
+
 		db.SetMaxOpenConns(1)
 		db.SetMaxIdleConns(1)
 		db.SetConnMaxLifetime(0)
-		
+
 		if err = db.Ping(); err != nil {
 			return
 		}
@@ -60,7 +60,7 @@ func RunMigrations(db *sql.DB) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS servers (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
@@ -75,11 +75,13 @@ func RunMigrations(db *sql.DB) error {
 			scheduled_start TEXT,
 			scheduled_stop TEXT,
 			status TEXT DEFAULT 'stopped',
+			canvas_x INTEGER DEFAULT 0,
+			canvas_y INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (proxy_id) REFERENCES proxies(id) ON DELETE SET NULL
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS players (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
@@ -88,7 +90,7 @@ func RunMigrations(db *sql.DB) error {
 			joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS api_keys (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			key_hash TEXT NOT NULL UNIQUE,
@@ -96,18 +98,18 @@ func RunMigrations(db *sql.DB) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			last_used_at DATETIME
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS java_versions (
 			version TEXT PRIMARY KEY,
 			path TEXT NOT NULL,
 			downloaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS backups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			server_id INTEGER NOT NULL,
@@ -116,7 +118,7 @@ func RunMigrations(db *sql.DB) error {
 			size_bytes INTEGER NOT NULL,
 			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS crash_logs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			server_id INTEGER NOT NULL,
@@ -125,7 +127,7 @@ func RunMigrations(db *sql.DB) error {
 			acknowledged INTEGER DEFAULT 0,
 			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS command_history (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			server_id INTEGER NOT NULL,
@@ -133,7 +135,7 @@ func RunMigrations(db *sql.DB) error {
 			executed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
 		)`,
-		
+
 		`CREATE TABLE IF NOT EXISTS admin_auth (
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			username TEXT NOT NULL,
@@ -141,13 +143,13 @@ func RunMigrations(db *sql.DB) error {
 			setup_complete INTEGER DEFAULT 0
 		)`,
 	}
-	
+
 	for _, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {
 			return fmt.Errorf("migration failed: %w", err)
 		}
 	}
-	
+
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status)`,
@@ -158,12 +160,12 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_crash_logs_server ON crash_logs(server_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_command_history_server ON command_history(server_id)`,
 	}
-	
+
 	for _, index := range indexes {
 		if _, err := db.Exec(index); err != nil {
 			return fmt.Errorf("index creation failed: %w", err)
 		}
 	}
-	
+
 	return nil
 }

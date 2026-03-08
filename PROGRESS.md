@@ -27,7 +27,7 @@
 ## Remaining: Fabric/Forge/NeoForge Notes
 The Forge/NeoForge installers are executed during server creation, which can take 1-2 minutes on first run. The installer downloads Minecraft server files and required libraries, then creates a `run.sh` script for launching the server.
 
-## Phase 3: Web UI (IN PROGRESS - IN TESTING ✅)
+## Phase 3: Web UI ✅ COMPLETE
 - ✅ SvelteKit project setup with TypeScript and Tailwind CSS
 - ✅ Basic component structure (API client, stores, Console, ServerTile, Login page)
 - ✅ Main canvas page with pan/zoom infrastructure
@@ -36,10 +36,13 @@ The Forge/NeoForge installers are executed during server creation, which can tak
 - ✅ Backend router configured to serve static files from /app/webui/build
 - ✅ API endpoints aligned (fixed /api/auth/* endpoints)
 - ✅ Docker container builds and runs successfully
-- ⏳ Server detail pages with tabs (console, files, settings, backups)
-- ⏳ WebSocket integration for real-time updates
-- ⏳ File browser component
-- ⏳ Settings page with icon upload
+- ✅ Server detail pages with tabs (console, files, settings, backups)
+- ✅ File browser component with full API integration (list, read, write, delete, download, rename, drag-drop upload)
+- ✅ Settings page with RAM allocation, auto-shutdown, backup interval
+- ✅ Create Server modal with version dropdown (fetches versions from API)
+- ✅ Backend PATCH endpoint for server updates
+- ⏳ WebSocket integration for real-time updates (deferred)
+- ⏳ Icon upload (deferred)
 
 ## Phase 4: Proxy System (PLANNED)
 - Velocity proxy container management

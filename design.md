@@ -1491,6 +1491,27 @@ The Web UI provides a visual, interactive interface for managing Minecraft serve
 - This keeps the UI simple and avoids duplicating Minecraft's built-in permission systems
 - The main page (`/`) IS the visual servers canvas, not a traditional dashboard
 
+### Create Server Modal
+
+When clicking the "Create+" button on the main canvas, a two-step modal appears:
+
+**Step 1: Basic Info**
+- Server name (text input)
+- Server type (dropdown: Paper, Purpur, Fabric, NeoForge, Forge)
+- Minecraft version (dropdown populated from `/api/versions/{type}`)
+
+**Step 2: Configuration**
+- RAM allocation (slider, 512MB - 16GB)
+- Network configuration:
+  - **Standalone** (default): Server accessible directly on a host port (defaults to 25565)
+  - **Behind Proxy**: Server is internal-only, accessible only through a Velocity proxy
+
+**Proxy Selection (Phase 4):**
+When "Behind Proxy" is selected, a dropdown should appear showing available proxies fetched from `/api/proxies`. User must select which proxy to connect to. This is deferred to Phase 4 when proxy management is implemented.
+
+**Default Behavior (Phase 3):**
+Currently defaults to "Standalone" with port 25565. "Behind Proxy" option is shown but proxy selection is not yet implemented.
+
 ### Server Detail Page
 
 When clicking a server tile from the main canvas, users are taken to the server detail page with tabbed navigation:

@@ -53,7 +53,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
-		       s.host_port, s.status, s.created_at,
+		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.created_at,
 		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
@@ -80,7 +80,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(
 			&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
-			&hostPort, &s.Status, &s.CreatedAt, &s.PlayerCount,
+			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.CreatedAt, &s.PlayerCount,
 		)
 		if err != nil {
 			continue
@@ -206,8 +206,8 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.db.Exec(`
-		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped')
+		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 0, 0)
 	`, req.Name, req.Type, req.Version, req.ProxyID, req.HostPort, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop)
 
 	if err != nil {
@@ -303,7 +303,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	err = h.db.QueryRow(`
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
-		       s.host_port, s.status, s.created_at,
+		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.created_at,
 		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
@@ -311,7 +311,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	`, id).Scan(
 		&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
-		&hostPort, &s.Status, &s.CreatedAt, &s.PlayerCount,
+		&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.CreatedAt, &s.PlayerCount,
 	)
 
 	if err == sql.ErrNoRows {
@@ -399,6 +399,8 @@ type UpdateServerRequest struct {
 	BackupIntervalDays  *int    `json:"backup_interval_days"`
 	ScheduledStart      *string `json:"scheduled_start"`
 	ScheduledStop       *string `json:"scheduled_stop"`
+	CanvasX             *int    `json:"canvas_x"`
+	CanvasY             *int    `json:"canvas_y"`
 }
 
 func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -445,6 +447,12 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledStop != nil {
 		h.db.Exec("UPDATE servers SET scheduled_stop = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStop, id)
+	}
+	if req.CanvasX != nil {
+		h.db.Exec("UPDATE servers SET canvas_x = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasX, id)
+	}
+	if req.CanvasY != nil {
+		h.db.Exec("UPDATE servers SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

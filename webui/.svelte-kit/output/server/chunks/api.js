@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8080/api";
+const API_BASE = "";
 class ApiClient {
   baseUrl;
   token = null;
@@ -58,6 +58,12 @@ class ApiClient {
       body: JSON.stringify(data)
     });
   }
+  async put(endpoint, data) {
+    return this.request(endpoint, {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+  }
   async delete(endpoint) {
     return this.request(endpoint, {
       method: "DELETE"
@@ -82,4 +88,7 @@ class ApiClient {
     return response.json();
   }
 }
-new ApiClient(API_BASE);
+const api = new ApiClient(API_BASE);
+export {
+  api as a
+};

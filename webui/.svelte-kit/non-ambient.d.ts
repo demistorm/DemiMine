@@ -27,18 +27,19 @@ export {};
 
 declare module "$app/types" {
 	export interface AppTypes {
-		RouteId(): "/" | "/admin" | "/login" | "/proxies" | "/servers";
+		RouteId(): "/" | "/admin" | "/login" | "/proxies" | "/servers" | "/servers/[id]";
 		RouteParams(): {
-			
+			"/servers/[id]": { id: string }
 		};
 		LayoutParams(): {
-			"/": Record<string, never>;
+			"/": { id?: string };
 			"/admin": Record<string, never>;
 			"/login": Record<string, never>;
 			"/proxies": Record<string, never>;
-			"/servers": Record<string, never>
+			"/servers": { id?: string };
+			"/servers/[id]": { id: string }
 		};
-		Pathname(): "/" | "/login";
+		Pathname(): "/" | "/login" | `/servers/${string}` & {};
 		ResolvedPathname(): `${"" | `/${string}`}${ReturnType<AppTypes['Pathname']>}`;
 		Asset(): string & {};
 	}

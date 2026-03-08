@@ -140,17 +140,23 @@ function add_attribute(name, value, boolean) {
   const assignment = `="${escape(value, true)}"`;
   return ` ${name}${assignment}`;
 }
+function onMount() {
+}
+function afterUpdate() {
+}
 export {
-  subscribe as a,
-  createEventDispatcher as b,
+  afterUpdate as a,
+  subscribe as b,
   create_ssr_component as c,
-  add_attribute as d,
+  createEventDispatcher as d,
   escape as e,
-  each as f,
-  getContext as g,
-  safe_not_equal as h,
+  add_attribute as f,
+  each as g,
+  getContext as h,
+  safe_not_equal as i,
   missing_component as m,
   noop as n,
+  onMount as o,
   setContext as s,
   validate_component as v
 };

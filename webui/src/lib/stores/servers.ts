@@ -26,12 +26,17 @@ export async function loadProxies() {
 	}
 }
 
-export function updateServerPosition(serverId: number, x: number, y: number) {
-	servers.update(serversList => 
-		serversList.map(s => 
-			s.id === serverId ? { ...s, canvas_x: x, canvas_y: y } : s
-		)
-	);
+export async function updateServerPosition(serverId: number, x: number, y: number) {
+	try {
+		await api.patch(`/api/servers/${serverId}`, { canvas_x: x, canvas_y: y });
+		servers.update(serversList =>
+			serversList.map(s =>
+				s.id === serverId ? { ...s, canvas_x: x, canvas_y: y } : s
+			)
+		);
+	} catch (error) {
+		console.error('Failed to update server position:', error);
+	}
 }
 
 export function updateServerStatus(serverId: number, status: string, playerCount?: number) {

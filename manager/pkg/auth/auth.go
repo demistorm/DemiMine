@@ -33,7 +33,7 @@ func CheckPassword(password, hash string) bool {
 
 func GenerateToken(userID int, jwtSecret string) (string, time.Time, error) {
 	expiresAt := time.Now().Add(24 * time.Hour)
-	
+
 	claims := Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -42,13 +42,13 @@ func GenerateToken(userID int, jwtSecret string) (string, time.Time, error) {
 			Issuer:    "demimine",
 		},
 	}
-	
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString([]byte(jwtSecret))
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	
+
 	return tokenString, expiresAt, nil
 }
 
@@ -59,18 +59,18 @@ func ValidateToken(tokenString, jwtSecret string) (*Claims, error) {
 		}
 		return []byte(jwtSecret), nil
 	})
-	
+
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrExpiredToken
 		}
 		return nil, ErrInvalidToken
 	}
-	
+
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
 		return claims, nil
 	}
-	
+
 	return nil, ErrInvalidToken
 }
 

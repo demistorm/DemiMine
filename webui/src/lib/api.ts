@@ -66,6 +66,13 @@ class ApiClient {
 		return this.request<T>(endpoint);
 	}
 
+	async put<T>(endpoint: string, data: unknown): Promise<T> {
+		return this.request<T>(endpoint, {
+			method: 'PUT',
+			body: JSON.stringify(data),
+		});
+	}
+
 	async post<T>(endpoint: string, data?: unknown): Promise<T> {
 		return this.request<T>(endpoint, {
 			method: 'POST',
@@ -109,6 +116,13 @@ class ApiClient {
 
 		return response.json();
 	}
+}
+
+export function getToken(): string | null {
+	if (typeof window !== 'undefined') {
+		return localStorage.getItem('token');
+	}
+	return null;
 }
 
 export const api = new ApiClient(API_BASE);

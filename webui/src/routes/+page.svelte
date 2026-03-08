@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { servers, loadServers, updateServerPosition } from '$lib/stores/servers';
 	import { api, type Server } from '$lib/api';
 	import ServerTile from '$lib/components/ServerTile.svelte';
+	import CreateServer from '$lib/components/CreateServer.svelte';
 
 	let canvasOffset = { x: 0, y: 0 };
 	let zoom = 1;
 	let isDragging = false;
 	let dragStart = { x: 0, y: 0 };
-	let selectedServer: Server | null = null;
 	let showCreateModal = false;
 
 	$: serverList = $servers || [];
@@ -24,7 +25,7 @@
 	}
 
 	function handleMouseDown(e: MouseEvent) {
-		if ((e.target as HTMLElement).classList.contains('server-tile')) {
+		if ((e.target as HTMLElement).closest('.server-tile')) {
 			return;
 		}
 		isDragging = true;
@@ -46,19 +47,11 @@
 	}
 
 	function handleServerClick(server: Server) {
-		window.location.href = `/servers/${server.id}`;
+		goto(`/servers/${server.id}`);
 	}
 
 	async function handleServerMove(server: Server, newX: number, newY: number) {
 		await updateServerPosition(server.id, newX, newY);
-	}
-
-	function openCreateModal() {
-		showCreateModal = true;
-	}
-
-	function closeCreateModal() {
-		showCreateModal = false;
 	}
 
 	function getCanvasTransform() {
@@ -108,21 +101,13 @@
 		{/each}
 	</div>
 
-	<!-- Create Button -->
-	<button class="create-btn" on:click={openCreateModal}>
+<!-- Create Button -->
+	<button class="create-btn" on:click={() => showCreateModal = true}>
 		Create+
 	</button>
 </main>
 
-{#if showCreateModal}
-	<div class="modal-overlay" on:click={closeCreateModal}>
-		<div class="modal" on:click|stopPropagation>
-			<h2>Create Server or Proxy</h2>
-			<p>Modal content coming soon...</p>
-			<button on:click={closeCreateModal}>Close</button>
-		</div>
-	</div>
-{/if}
+<CreateServer bind:show={showCreateModal} />
 
 <style>
 	.canvas-container {

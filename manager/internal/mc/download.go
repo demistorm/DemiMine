@@ -58,7 +58,7 @@ func DownloadPurpurJar(version, destPath string) error {
 }
 
 type FabricLoaderVersion struct {
-	URL    string `json:"url"`
+	URL     string `json:"url"`
 	Version string `json:"version"`
 }
 

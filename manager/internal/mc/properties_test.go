@@ -139,13 +139,13 @@ motd=Test Server
 func TestMergeServerProperties(t *testing.T) {
 	base := ServerProperties{
 		"server-port": "25565",
-		"motd":          "Base Server",
-		"online-mode":  "true",
+		"motd":        "Base Server",
+		"online-mode": "true",
 	}
 
 	override := ServerProperties{
 		"server-port": "25566",
-		"motd":          "Override Server",
+		"motd":        "Override Server",
 	}
 
 	merged := MergeServerProperties(base, override)

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Server } from '$lib/api';
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, onDestroy } from 'svelte';
 
 	export let server: Server;
 
@@ -8,36 +8,36 @@
 
 	let isDragging = false;
 	let dragStart = { x: 0, y: 0 };
-	let currentX = server.canvas_x;
-	let currentY = server.canvas_y;
+	let currentX = server.canvas_x ?? 0;
+	let currentY = server.canvas_y ?? 0;
 
-	$: {
-	 currentX = server.canvas_x;
-        currentY = server.canvas_y;
-    }
+	$: if (server.canvas_x !== undefined) currentX = server.canvas_x;
+	$: if (server.canvas_y !== undefined) currentY = server.canvas_y;
 
 	function handleMouseDown(e: MouseEvent) {
         if (!e.shiftKey) {
             dispatch('click');
             return;
         }
-        
+
         e.preventDefault();
         e.stopPropagation();
         isDragging = true;
-        dragStart = { 
-            x: e.clientX - currentX, 
-            y: e.clientY - currentY 
+        dragStart = {
+            x: e.clientX - currentX,
+            y: e.clientY - currentY
         };
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
     }
 
 	function handleMouseMove(e: MouseEvent) {
         if (!isDragging) return;
-        
+
         e.preventDefault();
         const newX = e.clientX - dragStart.x;
         const newY = e.clientY - dragStart.y;
-        
+
         currentX = Math.round(newX / 100) * 100;
         currentY = Math.round(newY / 100) * 100;
     }
@@ -47,7 +47,14 @@
             dispatch('move', { x: currentX, y: currentY });
         }
         isDragging = false;
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
     }
+
+	onDestroy(() => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+    });
 
 	function getStatusColor(status: string) {
         switch (status) {
@@ -80,13 +87,11 @@
     <title>{server.name} - DemiMine</title>
 </svelte:head>
 
-<div 
+<div
     class="server-tile"
     class:dragging={isDragging}
     style="left: {currentX}px; top: {currentY}px;"
     on:mousedown={handleMouseDown}
-    on:mousemove={handleMouseMove}
-    on:mouseup={handleMouseUp}
     role="button"
     tabindex={0}
 >

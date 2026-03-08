@@ -67,6 +67,21 @@ docker compose up -d
 # Create a proxy, then create servers assigned to it
 ```
 
+## Development Workflow
+
+**IMPORTANT:** After any code changes (fixes, additions, or modifications), you MUST rebuild the Docker images without cache and restart the containers:
+
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+
+This is critical because:
+- The Go backend is compiled into the Docker image during build
+- The Svelte frontend is bundled during build
+- Container restarts alone will NOT pick up code changes
+- Using `--no-cache` ensures all changes are included, not just the modified layer
+
 ## Project Status
 
 **Planning complete.** Implementation not yet started.

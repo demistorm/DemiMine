@@ -25,7 +25,7 @@ type SetupRequest struct {
 func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	var setupComplete bool
 	err := h.db.QueryRow("SELECT setup_complete FROM admin_auth WHERE id = 1").Scan(&setupComplete)
-	
+
 	if err == nil && setupComplete {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -34,7 +34,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	var req SetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -44,7 +44,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	if req.Username == "" || req.Password == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -53,7 +53,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -63,13 +63,13 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	_, err = h.db.Exec(
 		`INSERT INTO admin_auth (id, username, password_hash, setup_complete) 
 		 VALUES (1, ?, ?, 1)`,
 		req.Username, passwordHash,
 	)
-	
+
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -78,7 +78,7 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{
 		"success": true,
@@ -100,16 +100,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	var id int
 	var username string
 	var passwordHash string
 	var setupComplete bool
-	
+
 	err := h.db.QueryRow(
 		"SELECT id, username, password_hash, setup_complete FROM admin_auth WHERE id = 1",
 	).Scan(&id, &username, &passwordHash, &setupComplete)
-	
+
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -118,7 +118,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -127,7 +127,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	if !setupComplete {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -136,7 +136,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	if !auth.CheckPassword(req.Password, passwordHash) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -145,7 +145,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	token, expiresAt, err := auth.GenerateToken(id, h.jwtSecret)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -155,7 +155,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    token,
@@ -165,7 +165,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Expires:  expiresAt,
 	})
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"token":      token,
@@ -181,7 +181,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		MaxAge:   -1,
 	})
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{
 		"success": true,
@@ -191,11 +191,11 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 	var setupComplete bool
 	var username string
-	
+
 	_ = h.db.QueryRow(
 		"SELECT username, setup_complete FROM admin_auth WHERE id = 1",
 	).Scan(&username, &setupComplete)
-	
+
 	loggedIn := false
 	if cookie, err := r.Cookie("session"); err == nil {
 		claims, err := auth.ValidateToken(cookie.Value, h.jwtSecret)
@@ -203,7 +203,7 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 			loggedIn = claims.UserID > 0
 		}
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"setup_complete": setupComplete,

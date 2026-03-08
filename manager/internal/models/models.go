@@ -12,29 +12,31 @@ type Proxy struct {
 }
 
 type Server struct {
-	ID                  int64      `json:"id"`
-	Name                string     `json:"name" binding:"required"`
-	Type                string     `json:"type" binding:"required"`
-	Version             string     `json:"version" binding:"required"`
-	ProxyID             *int64     `json:"proxy_id"`
-	HostPort            *int       `json:"host_port"`
-	RAMMB               int        `json:"ram_mb" binding:"required"`
-	Domain              *string    `json:"domain"`
-	BackupIntervalDays  int        `json:"backup_interval_days"`
-	AutoShutdownMinutes int        `json:"auto_shutdown_minutes"`
-	ScheduledStart      *string    `json:"scheduled_start"`
-	ScheduledStop       *string    `json:"scheduled_stop"`
-	Status              string     `json:"status"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	ID                  int64     `json:"id"`
+	Name                string    `json:"name" binding:"required"`
+	Type                string    `json:"type" binding:"required"`
+	Version             string    `json:"version" binding:"required"`
+	ProxyID             *int64    `json:"proxy_id"`
+	HostPort            *int      `json:"host_port"`
+	RAMMB               int       `json:"ram_mb" binding:"required"`
+	Domain              *string   `json:"domain"`
+	BackupIntervalDays  int       `json:"backup_interval_days"`
+	AutoShutdownMinutes int       `json:"auto_shutdown_minutes"`
+	ScheduledStart      *string   `json:"scheduled_start"`
+	ScheduledStop       *string   `json:"scheduled_stop"`
+	Status              string    `json:"status"`
+	CanvasX             int       `json:"canvas_x"`
+	CanvasY             int       `json:"canvas_y"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type Player struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	UUID      string    `json:"uuid"`
-	ServerID  int64     `json:"server_id"`
-	JoinedAt  time.Time `json:"joined_at"`
+	ID       int64     `json:"id"`
+	Name     string    `json:"name"`
+	UUID     string    `json:"uuid"`
+	ServerID int64     `json:"server_id"`
+	JoinedAt time.Time `json:"joined_at"`
 }
 
 type APIKey struct {
@@ -57,11 +59,11 @@ type JavaVersion struct {
 }
 
 type Backup struct {
-	ID         int64     `json:"id"`
-	ServerID   int64     `json:"server_id"`
-	Path       string    `json:"path"`
-	CreatedAt  time.Time `json:"created_at"`
-	SizeBytes  int64     `json:"size_bytes"`
+	ID        int64     `json:"id"`
+	ServerID  int64     `json:"server_id"`
+	Path      string    `json:"path"`
+	CreatedAt time.Time `json:"created_at"`
+	SizeBytes int64     `json:"size_bytes"`
 }
 
 type CrashLog struct {
@@ -102,6 +104,8 @@ type ServerResponse struct {
 	HostPort            *int    `json:"host_port"`
 	Status              string  `json:"status"`
 	PlayerCount         int     `json:"player_count"`
+	CanvasX             int     `json:"canvas_x"`
+	CanvasY             int     `json:"canvas_y"`
 	CreatedAt           string  `json:"created_at"`
 }
 

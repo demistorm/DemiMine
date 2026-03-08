@@ -18,10 +18,10 @@ type VersionInfo struct {
 }
 
 type PaperVersionResponse struct {
-	ProjectID   string   `json:"project_id"`
-	ProjectName string   `json:"project_name"`
+	ProjectID     string   `json:"project_id"`
+	ProjectName   string   `json:"project_name"`
 	VersionGroups []string `json:"version_groups"`
-	Versions    []string `json:"versions"`
+	Versions      []string `json:"versions"`
 }
 
 type PaperBuildResponse struct {
@@ -64,7 +64,7 @@ func GetPaperVersions() ([]VersionInfo, error) {
 		if err != nil {
 			continue
 		}
-		
+
 		var buildData PaperBuildResponse
 		if err := json.NewDecoder(buildResp.Body).Decode(&buildData); err != nil {
 			buildResp.Body.Close()
@@ -247,7 +247,7 @@ func extractMCVersionFromNeoForge(neoforgeVersion string) string {
 	if len(parts) < 2 {
 		return ""
 	}
-	
+
 	if strings.HasPrefix(neoforgeVersion, "1.") {
 		if len(parts) >= 2 {
 			return "1." + parts[1]
