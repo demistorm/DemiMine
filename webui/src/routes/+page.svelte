@@ -84,6 +84,9 @@
 	on:mouseleave={handleMouseUp}
 >
 	<div class="canvas" style="transform: {getCanvasTransform()}">
+		<!-- Visual Grid for debugging -->
+		<div class="grid-background"></div>
+		
 		<!-- Connection Lines -->
 		<svg class="connection-lines">
 			{#each serverList as server}
@@ -108,6 +111,8 @@
 		{#each serverList as server}
 			<ServerTile 
 				{server}
+				canvasOffset={canvasOffset}
+				zoom={zoom}
 				on:click={() => handleServerClick(server)}
 				on:move={(e) => handleServerMove(server, e.detail.x, e.detail.y)}
 			/>
@@ -136,9 +141,25 @@
 
 	.canvas {
 		position: absolute;
-		width: 100%;
-		height: 100%;
+		top: 0;
+		left: 0;
 		transform-origin: 0 0;
+		z-index: 1;
+		min-width: 100%;
+		min-height: 100%;
+	}
+
+	.grid-background {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 4000px;
+		height: 4000px;
+		background-image: 
+			linear-gradient(rgba(74, 85, 104, 0.2) 1px, transparent 1px),
+			linear-gradient(90deg, rgba(74, 85, 104, 0.2) 1px, transparent 1px);
+		background-size: 100px 100px;
+		pointer-events: none;
 	}
 
 	.connection-lines {
@@ -148,6 +169,7 @@
 		width: 100%;
 		height: 100%;
 		pointer-events: none;
+		z-index: 2;
 	}
 
 	.create-btn {

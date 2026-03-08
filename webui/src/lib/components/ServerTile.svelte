@@ -3,6 +3,8 @@
 	import { createEventDispatcher, onDestroy } from 'svelte';
 
 	export let server: Server;
+	export let canvasOffset = { x: 0, y: 0 };
+	export let zoom = 1;
 
 	const dispatch = createEventDispatcher();
 
@@ -23,9 +25,13 @@
         e.preventDefault();
         e.stopPropagation();
         isDragging = true;
+        
+        const screenX = currentX * zoom + canvasOffset.x;
+        const screenY = currentY * zoom + canvasOffset.y;
+        
         dragStart = {
-            x: e.clientX - currentX,
-            y: e.clientY - currentY
+            x: e.clientX - screenX,
+            y: e.clientY - screenY
         };
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
@@ -35,8 +41,11 @@
         if (!isDragging) return;
 
         e.preventDefault();
-        const newX = e.clientX - dragStart.x;
-        const newY = e.clientY - dragStart.y;
+        const screenX = e.clientX - dragStart.x;
+        const screenY = e.clientY - dragStart.y;
+
+        const newX = (screenX - canvasOffset.x) / zoom;
+        const newY = (screenY - canvasOffset.y) / zoom;
 
         currentX = Math.round(newX / 100) * 100;
         currentY = Math.round(newY / 100) * 100;

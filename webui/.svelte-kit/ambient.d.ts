@@ -82,6 +82,7 @@ declare module '$env/static/private' {
 	export const SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS: string;
 	export const XKB_DEFAULT_MODEL: string;
 	export const GTK2_RC_FILES: string;
+	export const OPENCODE_PID: string;
 	export const HOME: string;
 	export const OPENCODE: string;
 	export const SSH_ASKPASS: string;
@@ -278,6 +279,7 @@ declare module '$env/dynamic/private' {
 		SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS: string;
 		XKB_DEFAULT_MODEL: string;
 		GTK2_RC_FILES: string;
+		OPENCODE_PID: string;
 		HOME: string;
 		OPENCODE: string;
 		SSH_ASKPASS: string;
