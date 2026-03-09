@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -243,16 +244,35 @@ func GetVersions(serverType string) ([]VersionInfo, error) {
 }
 
 func extractMCVersionFromNeoForge(neoforgeVersion string) string {
-	parts := strings.Split(neoforgeVersion, ".")
+	baseVersion := strings.Split(neoforgeVersion, "-")[0]
+	parts := strings.Split(baseVersion, ".")
+
 	if len(parts) < 2 {
 		return ""
 	}
 
-	if strings.HasPrefix(neoforgeVersion, "1.") {
-		if len(parts) >= 2 {
-			return "1." + parts[1]
+	if strings.Contains(neoforgeVersion, "w") || strings.Contains(neoforgeVersion, "craftmine") {
+		if len(parts) >= 1 {
+			if major, err := strconv.Atoi(parts[0]); err == nil && major >= 25 {
+				return fmt.Sprintf("%d.1", major)
+			}
 		}
+		return "25.1"
 	}
+
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return ""
+	}
+
+	if major >= 14 && major <= 30 {
+		return fmt.Sprintf("1.%s.%s", parts[0], parts[1])
+	}
+
+	if major >= 26 {
+		return fmt.Sprintf("%s.%s", parts[0], parts[1])
+	}
+
 	return ""
 }
 

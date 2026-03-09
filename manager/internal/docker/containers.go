@@ -13,8 +13,11 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
+
+	"github.com/demimine/manager/internal/java"
 )
 
 type ServerContainerConfig struct {
@@ -52,11 +55,25 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 		})
 	}
 
+	javaVersion := java.GetRequiredJavaVersion(cfg.Version)
 	javaImage := "eclipse-temurin:21-jre-alpine"
-	if strings.Contains(strings.ToLower(cfg.Version), "1.16") || strings.Contains(strings.ToLower(cfg.Version), "1.15") || strings.Contains(strings.ToLower(cfg.Version), "1.14") {
+	switch javaVersion {
+	case "8":
 		javaImage = "eclipse-temurin:8-jre-alpine"
-	} else if strings.HasPrefix(cfg.Version, "1.17") || strings.HasPrefix(cfg.Version, "1.18") || strings.HasPrefix(cfg.Version, "1.19") || strings.HasPrefix(cfg.Version, "1.20") {
+	case "17":
 		javaImage = "eclipse-temurin:17-jre-alpine"
+	case "25":
+		javaImage = "eclipse-temurin:25-jre-ubi10-minimal"
+	}
+
+	_, _, err = c.cli.ImageInspectWithRaw(ctx, javaImage)
+	if err != nil {
+		reader, err := c.cli.ImagePull(ctx, javaImage, image.PullOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to pull image %s: %w", javaImage, err)
+		}
+		io.Copy(io.Discard, reader)
+		reader.Close()
 	}
 
 	env := []string{
