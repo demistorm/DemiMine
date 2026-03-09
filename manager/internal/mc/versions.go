@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,38 @@ type VersionInfo struct {
 	Stable  bool   `json:"stable"`
 	Builds  int    `json:"builds"`
 }
+
+type cachedVersions struct {
+	versions  []VersionInfo
+	fetchedAt time.Time
+	mu        sync.RWMutex
+}
+
+const cacheTTL = 10 * time.Minute
+
+func (c *cachedVersions) get() ([]VersionInfo, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if time.Since(c.fetchedAt) < cacheTTL && c.versions != nil {
+		return c.versions, true
+	}
+	return nil, false
+}
+
+func (c *cachedVersions) set(versions []VersionInfo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.versions = versions
+	c.fetchedAt = time.Now()
+}
+
+var (
+	paperCache    = &cachedVersions{}
+	purpurCache   = &cachedVersions{}
+	fabricCache   = &cachedVersions{}
+	neoforgeCache = &cachedVersions{}
+	forgeCache    = &cachedVersions{}
+)
 
 type PaperVersionResponse struct {
 	ProjectID     string   `json:"project_id"`
@@ -48,6 +81,10 @@ type NeoForgeVersionResponse struct {
 }
 
 func GetPaperVersions() ([]VersionInfo, error) {
+	if versions, ok := paperCache.get(); ok {
+		return versions, nil
+	}
+
 	resp, err := httpClient.Get("https://api.papermc.io/v2/projects/paper")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch paper versions: %w", err)
@@ -59,35 +96,50 @@ func GetPaperVersions() ([]VersionInfo, error) {
 		return nil, fmt.Errorf("failed to decode paper response: %w", err)
 	}
 
-	var versions []VersionInfo
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	versions := make([]VersionInfo, 0, len(data.Versions))
+
 	for _, v := range data.Versions {
-		buildResp, err := httpClient.Get(fmt.Sprintf("https://api.papermc.io/v2/projects/paper/versions/%s", v))
-		if err != nil {
-			continue
-		}
+		wg.Add(1)
+		go func(version string) {
+			defer wg.Done()
 
-		var buildData PaperBuildResponse
-		if err := json.NewDecoder(buildResp.Body).Decode(&buildData); err != nil {
-			buildResp.Body.Close()
-			continue
-		}
-		buildResp.Body.Close()
+			buildResp, err := httpClient.Get(fmt.Sprintf("https://api.papermc.io/v2/projects/paper/versions/%s", version))
+			if err != nil {
+				return
+			}
+			defer buildResp.Body.Close()
 
-		versions = append(versions, VersionInfo{
-			Version: v,
-			Stable:  true,
-			Builds:  len(buildData.Builds),
-		})
+			var buildData PaperBuildResponse
+			if err := json.NewDecoder(buildResp.Body).Decode(&buildData); err != nil {
+				return
+			}
+
+			mu.Lock()
+			versions = append(versions, VersionInfo{
+				Version: version,
+				Stable:  true,
+				Builds:  len(buildData.Builds),
+			})
+			mu.Unlock()
+		}(v)
 	}
+	wg.Wait()
 
 	sort.Slice(versions, func(i, j int) bool {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
+	paperCache.set(versions)
 	return versions, nil
 }
 
 func GetPurpurVersions() ([]VersionInfo, error) {
+	if versions, ok := purpurCache.get(); ok {
+		return versions, nil
+	}
+
 	resp, err := httpClient.Get("https://api.purpurmc.org/v2/purpur")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch purpur versions: %w", err)
@@ -112,10 +164,15 @@ func GetPurpurVersions() ([]VersionInfo, error) {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
+	purpurCache.set(versions)
 	return versions, nil
 }
 
 func GetFabricVersions() ([]VersionInfo, error) {
+	if versions, ok := fabricCache.get(); ok {
+		return versions, nil
+	}
+
 	resp, err := httpClient.Get("https://meta.fabricmc.net/v2/versions/game")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch fabric versions: %w", err)
@@ -143,10 +200,15 @@ func GetFabricVersions() ([]VersionInfo, error) {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
+	fabricCache.set(versions)
 	return versions, nil
 }
 
 func GetNeoForgeVersions() ([]VersionInfo, error) {
+	if versions, ok := neoforgeCache.get(); ok {
+		return versions, nil
+	}
+
 	resp, err := httpClient.Get("https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch neoforge versions: %w", err)
@@ -185,10 +247,15 @@ func GetNeoForgeVersions() ([]VersionInfo, error) {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
+	neoforgeCache.set(versions)
 	return versions, nil
 }
 
 func GetForgeVersions() ([]VersionInfo, error) {
+	if versions, ok := forgeCache.get(); ok {
+		return versions, nil
+	}
+
 	resp, err := httpClient.Get("https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch forge versions: %w", err)
@@ -223,6 +290,7 @@ func GetForgeVersions() ([]VersionInfo, error) {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
+	forgeCache.set(versions)
 	return versions, nil
 }
 

@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 
 	"github.com/demimine/manager/internal/java"
@@ -207,23 +209,16 @@ func (c *Client) GetContainerLogs(ctx context.Context, containerName string, tai
 	}
 	defer reader.Close()
 
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, reader); err != nil {
+		return nil, fmt.Errorf("failed to demux logs: %w", err)
+	}
+
+	combined := stdout.String() + stderr.String()
 	var lines []string
-	buf := make([]byte, 8192)
-	for {
-		n, err := reader.Read(buf)
-		if n > 0 {
-			data := buf[:n]
-			if len(data) > 8 {
-				data = data[8:]
-			}
-			for _, line := range strings.Split(string(data), "\n") {
-				if line != "" {
-					lines = append(lines, strings.TrimSuffix(line, "\r"))
-				}
-			}
-		}
-		if err != nil {
-			break
+	for _, line := range strings.Split(combined, "\n") {
+		if line != "" {
+			lines = append(lines, strings.TrimSuffix(line, "\r"))
 		}
 	}
 

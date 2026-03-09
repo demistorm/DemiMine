@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
@@ -54,9 +56,10 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.created_at,
-		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count
+		       COALESCE(pc.cnt, 0) as player_count
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
+		LEFT JOIN (SELECT server_id, COUNT(*) as cnt FROM players GROUP BY server_id) pc ON pc.server_id = s.id
 		ORDER BY s.created_at DESC
 	`)
 	if err != nil {
@@ -790,19 +793,38 @@ func (h *ServerHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var files []map[string]interface{}
-	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		files = append(files, map[string]interface{}{
-			"name":     entry.Name(),
-			"is_dir":   entry.IsDir(),
-			"size":     info.Size(),
-			"modified": info.ModTime().Format("2006-01-02T15:04:05Z"),
-		})
+	files := make([]map[string]interface{}, len(entries))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for i, entry := range entries {
+		wg.Add(1)
+		go func(idx int, e fs.DirEntry) {
+			defer wg.Done()
+
+			name := e.Name()
+			isDir := e.IsDir()
+			var size int64
+			var modified string
+
+			if !isDir {
+				if info, err := e.Info(); err == nil {
+					size = info.Size()
+					modified = info.ModTime().Format("2006-01-02T15:04:05Z")
+				}
+			}
+
+			mu.Lock()
+			files[idx] = map[string]interface{}{
+				"name":     name,
+				"is_dir":   isDir,
+				"size":     size,
+				"modified": modified,
+			}
+			mu.Unlock()
+		}(i, entry)
 	}
+	wg.Wait()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
