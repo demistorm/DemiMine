@@ -15,23 +15,22 @@
 	let connected = false;
 	let error: string | null = null;
 	let ansiUp: AnsiUp;
+	const MAX_LOG_LINES = 1000;
 
-	onMount(() => {
-		ansiUp = new AnsiUp();
-		ansiUp.use_classes = true;
-	});
-
-	$: renderedLogs = logs.map(log => {
-		if (!ansiUp) return log;
+	function renderLog(line: string): string {
+		if (!ansiUp) return line;
 		try {
-			return ansiUp.ansi_to_html(log);
+			return ansiUp.ansi_to_html(line);
 		} catch (e) {
 			console.error('Failed to convert ANSI to HTML:', e);
-			return log;
+			return line;
 		}
-	});
+	}
 
 	onMount(async () => {
+		ansiUp = new AnsiUp();
+		ansiUp.use_classes = true;
+
 		await loadLogs();
 		await loadCommandHistory();
 		scrollToBottom();
@@ -54,9 +53,10 @@
 		switch (message.type) {
 			case 'log':
 				if (message.log_line) {
-					logs = [...logs, message.log_line];
-					if (logs.length > 1000) {
-						logs = logs.slice(-1000);
+					const rendered = renderLog(message.log_line);
+					logs = [...logs, rendered];
+					if (logs.length > MAX_LOG_LINES) {
+						logs = logs.slice(-MAX_LOG_LINES);
 					}
 					scrollToBottom();
 				}
@@ -74,7 +74,8 @@
 	async function loadLogs() {
 		try {
 			const response = await api.get<{ logs: string[] }>(`/api/servers/${serverId}/logs?lines=400`);
-			logs = response.logs || [];
+			const rawLogs = response.logs || [];
+			logs = rawLogs.map(renderLog);
 		} catch (error) {
 			console.error('Failed to load logs:', error);
 		}
@@ -166,9 +167,9 @@
 		{#if logs.length === 0}
 			<div class="empty-state">No logs available. Start the server to see console output.</div>
 		{:else}
-			{#each renderedLogs as log, index}
-				<div class="log-line" class:last={index === renderedLogs.length - 1}>
-					<span class="log-text" class:last={index === renderedLogs.length - 1}>{@html log}</span>
+			{#each logs as log, index}
+				<div class="log-line" class:last={index === logs.length - 1}>
+					<span class="log-text" class:last={index === logs.length - 1}>{@html log}</span>
 				</div>
 			{/each}
 		{/if}

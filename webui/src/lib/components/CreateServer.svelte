@@ -12,6 +12,7 @@
 	let error = '';
 	let versions: string[] = [];
 	let versionsLoading = false;
+	let versionDropdownOpen = false;
 
 	let name = '';
 	let type = 'paper';
@@ -154,19 +155,38 @@
 					<div class="field">
 						<label for="version">Minecraft Version</label>
 						{#if versionsLoading}
-							<select disabled>
-								<option>Loading versions...</option>
-							</select>
+							<div class="version-select disabled">
+								<span>Loading versions...</span>
+							</div>
 						{:else if versions.length === 0}
-							<select id="version" bind:value={version} disabled>
-								<option value="">No versions available</option>
-							</select>
+							<div class="version-select disabled">
+								<span>No versions available</span>
+							</div>
 						{:else}
-							<select id="version" bind:value={version}>
-								{#each versions as v}
-									<option value={v}>{v}</option>
-								{/each}
-							</select>
+							<div 
+								class="version-select"
+								class:open={versionDropdownOpen}
+								on:click={() => versionDropdownOpen = !versionDropdownOpen}
+							>
+								<span class="selected-version">{version || 'Select version'}</span>
+								<span class="chevron">▼</span>
+								{#if versionDropdownOpen}
+									<ul class="version-dropdown">
+										{#each versions as v}
+											<li 
+												class="version-option"
+												class:selected={v === version}
+												on:click|stopPropagation={() => {
+													version = v;
+													versionDropdownOpen = false;
+												}}
+											>
+												{v}
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
 						{/if}
 					</div>
 
@@ -401,6 +421,78 @@
 		font-size: 0.75rem;
 		margin-top: 0.375rem;
 		opacity: 0.7;
+	}
+
+	.version-select {
+		position: relative;
+		width: 100%;
+		padding: 0.625rem 0.875rem;
+		background-color: var(--bg-primary);
+		border: 1px solid var(--border);
+		border-radius: 0.375rem;
+		color: var(--text-primary);
+		font-size: 0.9375rem;
+		cursor: pointer;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		transition: border-color 0.2s;
+	}
+
+	.version-select:hover {
+		border-color: var(--accent);
+	}
+
+	.version-select.disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.version-select.open {
+		border-color: var(--accent);
+	}
+
+	.version-select .chevron {
+		font-size: 0.625rem;
+		color: var(--text-secondary);
+		transition: transform 0.2s;
+	}
+
+	.version-select.open .chevron {
+		transform: rotate(180deg);
+	}
+
+	.version-dropdown {
+		position: absolute;
+		bottom: calc(100% + 4px);
+		left: 0;
+		right: 0;
+		max-height: 400px;
+		overflow-y: auto;
+		background-color: var(--bg-primary);
+		border: 1px solid var(--border);
+		border-radius: 0.375rem;
+		list-style: none;
+		margin: 0;
+		padding: 0.25rem 0;
+		z-index: 100;
+		box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+	}
+
+	.version-option {
+		padding: 0.5rem 0.875rem;
+		cursor: pointer;
+		transition: background-color 0.15s;
+		color: var(--text-primary);
+	}
+
+	.version-option:hover {
+		background-color: var(--bg-secondary);
+	}
+
+	.version-option.selected {
+		background-color: var(--accent);
+		color: white;
 	}
 
 	.radio-group {
