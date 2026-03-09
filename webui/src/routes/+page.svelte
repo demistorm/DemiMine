@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { servers, loadServers, updateServerPosition } from '$lib/stores/servers';
+	import { servers, loadServers, updateServerPosition, updateServerStatus, deleteServerFromStore } from '$lib/stores/servers';
 	import { api, type Server } from '$lib/api';
 	import ServerTile from '$lib/components/ServerTile.svelte';
 	import CreateServer from '$lib/components/CreateServer.svelte';
@@ -11,6 +11,10 @@
 	let isDragging = false;
 	let dragStart = { x: 0, y: 0 };
 	let showCreateModal = false;
+	let contextMenuServer: Server | null = null;
+	let contextMenuPos = { x: 0, y: 0 };
+	let pendingDelete = false;
+	let ignoreNextClick = false;
 
 	$: serverList = $servers || [];
 
@@ -71,10 +75,78 @@
 		await updateServerPosition(server.id, newX, newY);
 	}
 
+	async function handleServerStart(server: Server) {
+		try {
+			await api.post(`/api/servers/${server.id}/start`);
+			updateServerStatus(server.id, 'running');
+		} catch (err) {
+			console.error('Failed to start server:', err);
+		}
+	}
+
+	async function handleServerStop(server: Server) {
+		try {
+			await api.post(`/api/servers/${server.id}/stop`);
+			updateServerStatus(server.id, 'stopped');
+		} catch (err) {
+			console.error('Failed to stop server:', err);
+		}
+	}
+
+	async function handleServerDelete(server: Server) {
+		try {
+			await api.delete(`/api/servers/${server.id}`);
+			deleteServerFromStore(server.id);
+		} catch (err) {
+			console.error('Failed to delete server:', err);
+		}
+	}
+
+	function handleContextMenu(server: Server, x: number, y: number) {
+		contextMenuServer = server;
+		contextMenuPos = { x, y };
+		pendingDelete = false;
+		ignoreNextClick = true;
+	}
+
+	function closeContextMenu() {
+		contextMenuServer = null;
+		pendingDelete = false;
+	}
+
+	function handleContextMenuAction(action: 'start' | 'stop' | 'delete') {
+		if (action === 'delete' && !pendingDelete) {
+			pendingDelete = true;
+			return;
+		}
+		if (contextMenuServer) {
+			if (action === 'start') handleServerStart(contextMenuServer);
+			if (action === 'stop') handleServerStop(contextMenuServer);
+			if (action === 'delete') handleServerDelete(contextMenuServer);
+		}
+		closeContextMenu();
+	}
+
+	function handleGlobalClick(e: MouseEvent) {
+		if (ignoreNextClick) {
+			ignoreNextClick = false;
+			return;
+		}
+		if (contextMenuServer && !(e.target as HTMLElement).closest('.context-menu')) {
+			closeContextMenu();
+		}
+	}
+
+	function handleGlobalKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') closeContextMenu();
+	}
+
 	function getCanvasTransform() {
 		return `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${zoom})`;
 	}
 </script>
+
+<svelte:window on:click={handleGlobalClick} on:keydown={handleGlobalKeydown} />
 
 <svelte:head>
 	<title>Servers - DemiMine</title>
@@ -119,6 +191,7 @@
 				{zoom}
 				on:click={() => handleServerClick(server)}
 				on:move={(e) => handleServerMove(server, e.detail.x, e.detail.y)}
+				on:contextmenu={(e) => handleContextMenu(server, e.detail.x, e.detail.y)}
 			/>
 		{/each}
 	</div>
@@ -130,6 +203,30 @@
 </main>
 
 <CreateServer bind:show={showCreateModal} />
+
+{#if contextMenuServer}
+	<div 
+		class="context-menu" 
+		style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;"
+	>
+		{#if contextMenuServer.status === 'running'}
+			<button class="menu-item" on:click={() => handleContextMenuAction('stop')}>
+				Stop
+			</button>
+		{:else}
+			<button class="menu-item" on:click={() => handleContextMenuAction('start')}>
+				Start
+			</button>
+		{/if}
+		<button 
+			class="menu-item danger" 
+			class:confirm={pendingDelete}
+			on:click={() => handleContextMenuAction('delete')}
+		>
+			{pendingDelete ? 'Click again to confirm' : 'Delete'}
+		</button>
+	</div>
+{/if}
 
 <style>
 	.canvas-container {
@@ -186,29 +283,44 @@
 		z-index: 10;
 	}
 
-	.modal-overlay {
+	.context-menu {
 		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: rgba(0, 0, 0, 0.7);
-		display: flex;
-		align-items: center;
-		justify-content: center;
+		background-color: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: 0.375rem;
+		padding: 0.25rem;
 		z-index: 1000;
+		min-width: 140px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 	}
 
-	.modal {
-		@apply bg-bg-secondary border border-border;
-		padding: 2rem;
-		border-radius: 0.5rem;
-		max-width: 500px;
-		width: 90%;
+	.menu-item {
+		display: block;
+		width: 100%;
+		padding: 0.5rem 0.75rem;
+		background: transparent;
+		border: none;
+		color: var(--text-primary);
+		text-align: left;
+		cursor: pointer;
+		border-radius: 0.25rem;
+		font-size: 0.875rem;
+		transition: background-color 0.15s;
 	}
 
-	.modal h2 {
-		margin-top: 0;
-		@apply text-text-primary;
+	.menu-item:hover {
+		background-color: var(--bg-tertiary);
+	}
+
+	.menu-item.danger {
+		color: var(--error);
+	}
+
+	.menu-item.danger:hover {
+		background-color: rgba(239, 68, 68, 0.1);
+	}
+
+	.menu-item.confirm {
+		font-weight: 500;
 	}
 </style>

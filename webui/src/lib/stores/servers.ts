@@ -50,3 +50,7 @@ export function updateServerStatus(serverId: number, status: string, playerCount
 		)
 	);
 }
+
+export function deleteServerFromStore(serverId: number) {
+	servers.update(serversList => serversList.filter(s => s.id !== serverId));
+}

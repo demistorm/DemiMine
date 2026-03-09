@@ -17,6 +17,14 @@
 	$: if (!isDragging && server.canvas_y != null) currentY = server.canvas_y;
 
 	function handleMouseDown(e: MouseEvent) {
+		if (e.ctrlKey && e.button === 0) {
+			e.preventDefault();
+			e.stopPropagation();
+			dispatch('contextmenu', { x: e.clientX, y: e.clientY });
+			return;
+		}
+		
+		if (e.button !== 0) return;
         if (!e.shiftKey) {
             dispatch('click');
             return;
@@ -171,7 +179,9 @@
     }
 
     .server-info {
-        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
         margin-top: 0.5rem;
     }
 
@@ -179,6 +189,7 @@
         font-weight: 600;
         color: var(--text-primary);
         margin-bottom: 0.25rem;
+        white-space: nowrap;
     }
 
     .server-status {
