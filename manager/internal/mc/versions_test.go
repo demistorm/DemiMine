@@ -19,6 +19,14 @@ func TestCompareVersions(t *testing.T) {
 		{"1.16.5", "1.17.0", -1},
 		{"1.8.9", "1.12.2", -1},
 		{"1.21.3", "1.21", 1},
+		// Snapshot comparisons
+		{"26.1-snapshot-10", "26.1-snapshot-2", 1},
+		{"26.1-snapshot-1", "26.1-snapshot-10", -1},
+		{"26.1-snapshot-5", "26.1-snapshot-5", 0},
+		{"26.1", "26.1-snapshot-10", 1},
+		{"26.1-snapshot-10", "26.1", -1},
+		{"26.2", "26.1-snapshot-10", 1},
+		{"26.1-snapshot-10", "26.2", -1},
 	}
 
 	for _, tt := range tests {
@@ -34,13 +42,28 @@ func TestExtractMCVersionFromNeoForge(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"1.21.3", "1.21"},
-		{"1.20.4", "1.20"},
-		{"1.19.2", "1.19"},
-		{"1.18.2", "1.18"},
-		{"1.17.1", "1.17"},
-		{"1.16.5", "1.16"},
-		{"21.0.0", ""},
+		// Standard NeoForge format (MC 1.14-1.21.x)
+		{"21.0.0-beta", "1.21"},
+		{"21.0.167-beta", "1.21"},
+		{"21.1.1", "1.21.1"},
+		{"21.9.15-beta", "1.21.9"},
+		{"21.10.63", "1.21.10"},
+		{"21.11.38-beta", "1.21.11"},
+		{"20.4.234", "1.20.4"},
+		{"20.3.8-beta", "1.20.3"},
+		{"19.2.0", "1.19.2"},
+		{"18.2.0", "1.18.2"},
+		{"17.1.0", "1.17.1"},
+		{"16.5.0", "1.16.5"},
+		{"14.0.0", "1.14"},
+		// New MC versioning (26.x+) with snapshots
+		{"26.1.0.0-alpha.1+snapshot-1", "26.1-snapshot-1"},
+		{"26.1.0.0-alpha.10+snapshot-6", "26.1-snapshot-6"},
+		{"26.1.0.0-alpha.13+snapshot-10", "26.1-snapshot-10"},
+		// Craftmine
+		{"0.25w14craftmine.3-beta", "25w14craftmine"},
+		{"0.25w14craftmine.5-beta", "25w14craftmine"},
+		// Edge cases
 		{"invalid", ""},
 		{"", ""},
 	}
@@ -48,7 +71,7 @@ func TestExtractMCVersionFromNeoForge(t *testing.T) {
 	for _, tt := range tests {
 		result := extractMCVersionFromNeoForge(tt.input)
 		if result != tt.expected {
-			t.Errorf("extractMCVersionFromNeoForge(%q) = %q, expected %q", tt.input, tt.expected, result)
+			t.Errorf("extractMCVersionFromNeoForge(%q) = %q, expected %q", tt.input, result, tt.expected)
 		}
 	}
 }

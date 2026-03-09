@@ -312,6 +312,33 @@ func GetVersions(serverType string) ([]VersionInfo, error) {
 }
 
 func extractMCVersionFromNeoForge(neoforgeVersion string) string {
+	// Handle craftmine: "0.25w14craftmine.3-beta" -> "25w14craftmine"
+	if strings.Contains(neoforgeVersion, "craftmine") {
+		// Find the craftmine version pattern like "25w14craftmine"
+		if idx := strings.Index(neoforgeVersion, "craftmine"); idx > 0 {
+			start := idx
+			for start > 0 && (neoforgeVersion[start-1] >= '0' && neoforgeVersion[start-1] <= '9' || neoforgeVersion[start-1] == 'w') {
+				start--
+			}
+			return neoforgeVersion[start : idx+9] // "craftmine" is 9 chars
+		}
+		return ""
+	}
+
+	// Handle weekly snapshots: "0.25w14a.1-beta" -> "25w14a"
+	if strings.Contains(neoforgeVersion, "w") && strings.Contains(neoforgeVersion, "-") {
+		// Pattern: 0.XXwYYa.Z-beta
+		parts := strings.Split(neoforgeVersion, ".")
+		if len(parts) >= 2 && strings.Contains(parts[1], "w") {
+			// Extract just the snapshot part like "25w14a"
+			snapshotPart := parts[1]
+			if idx := strings.Index(snapshotPart, "-"); idx > 0 {
+				return snapshotPart[:idx]
+			}
+			return snapshotPart
+		}
+	}
+
 	baseVersion := strings.Split(neoforgeVersion, "-")[0]
 	parts := strings.Split(baseVersion, ".")
 
@@ -319,34 +346,41 @@ func extractMCVersionFromNeoForge(neoforgeVersion string) string {
 		return ""
 	}
 
-	if strings.Contains(neoforgeVersion, "w") || strings.Contains(neoforgeVersion, "craftmine") {
-		if len(parts) >= 1 {
-			if major, err := strconv.Atoi(parts[0]); err == nil && major >= 25 {
-				return fmt.Sprintf("%d.1", major)
-			}
-		}
-		return "25.1"
-	}
-
 	major, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return ""
 	}
 
-	if major >= 14 && major <= 30 {
-		return fmt.Sprintf("1.%s.%s", parts[0], parts[1])
+	// New MC versioning (26.x+): "26.1.0.0-alpha.1+snapshot-1" -> "26.1-snapshot-1" or "26.1"
+	if major >= 26 {
+		mcVer := fmt.Sprintf("%s.%s", parts[0], parts[1])
+		// Check for snapshot suffix in the original version string
+		if idx := strings.Index(neoforgeVersion, "+snapshot-"); idx != -1 {
+			snapshotPart := neoforgeVersion[idx+10:]
+			return mcVer + "-snapshot-" + snapshotPart
+		}
+		return mcVer
 	}
 
-	if major >= 26 {
-		return fmt.Sprintf("%s.%s", parts[0], parts[1])
+	// Standard NeoForge format: "21.9.15" -> "1.21.9", "21.0.10" -> "1.21"
+	if major >= 14 && major <= 25 {
+		if parts[1] == "0" {
+			return fmt.Sprintf("1.%s", parts[0])
+		}
+		return fmt.Sprintf("1.%s.%s", parts[0], parts[1])
 	}
 
 	return ""
 }
 
 func compareVersions(a, b string) int {
-	aParts := strings.Split(strings.TrimPrefix(a, "1."), ".")
-	bParts := strings.Split(strings.TrimPrefix(b, "1."), ".")
+	aSnapshot := extractSnapshotNum(a)
+	bSnapshot := extractSnapshotNum(b)
+	aBase := strings.Split(a, "-snapshot-")[0]
+	bBase := strings.Split(b, "-snapshot-")[0]
+
+	aParts := strings.Split(strings.TrimPrefix(aBase, "1."), ".")
+	bParts := strings.Split(strings.TrimPrefix(bBase, "1."), ".")
 
 	maxLen := len(aParts)
 	if len(bParts) > maxLen {
@@ -369,5 +403,27 @@ func compareVersions(a, b string) int {
 		}
 	}
 
+	// Same base version, compare snapshot numbers (non-snapshot > snapshot)
+	if aSnapshot == 0 && bSnapshot > 0 {
+		return 1
+	}
+	if aSnapshot > 0 && bSnapshot == 0 {
+		return -1
+	}
+	if aSnapshot > bSnapshot {
+		return 1
+	} else if aSnapshot < bSnapshot {
+		return -1
+	}
+
+	return 0
+}
+
+func extractSnapshotNum(version string) int {
+	if idx := strings.Index(version, "-snapshot-"); idx != -1 {
+		var num int
+		fmt.Sscanf(version[idx+10:], "%d", &num)
+		return num
+	}
 	return 0
 }
