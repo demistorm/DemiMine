@@ -64,7 +64,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 	case "17":
 		javaImage = "eclipse-temurin:17-jre-alpine"
 	case "25":
-		javaImage = "eclipse-temurin:25-jre-ubi10-minimal"
+		javaImage = "eclipse-temurin:25.0.2_10-jre-alpine"
 	}
 
 	_, _, err = c.cli.ImageInspectWithRaw(ctx, javaImage)
