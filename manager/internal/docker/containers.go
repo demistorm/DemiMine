@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"log"
@@ -106,7 +107,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 		Resources: container.Resources{
 			Memory: int64(cfg.RAMMB) * 1024 * 1024,
 		},
-		AutoRemove: false,
+		AutoRemove: true,
 		RestartPolicy: container.RestartPolicy{
 			Name: "no",
 		},
@@ -134,8 +135,24 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 	return created.ID, nil
 }
 
-func (c *Client) StartContainer(ctx context.Context, name string) error {
+func (c *Client) StartContainer(ctx context.Context, name string, cfg *ServerContainerConfig) error {
 	containerName := "demimine-" + sanitizeName(name)
+
+	exists, err := c.ContainerExists(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to check if container exists: %w", err)
+	}
+
+	if !exists {
+		if cfg == nil {
+			return fmt.Errorf("container %s does not exist and no config provided", containerName)
+		}
+		_, err = c.CreateServerContainer(ctx, *cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create container: %w", err)
+		}
+	}
+
 	return c.cli.ContainerStart(ctx, containerName, container.StartOptions{})
 }
 
@@ -279,4 +296,32 @@ func (c *Client) WaitForContainer(ctx context.Context, containerID string, timeo
 		return ctx.Err()
 	}
 	return nil
+}
+
+func (c *Client) SyncServerStatus(ctx context.Context, db *sql.DB) {
+	rows, err := db.Query("SELECT id, name FROM servers WHERE status = 'running'")
+	if err != nil {
+		log.Printf("Failed to query running servers for status sync: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			log.Printf("Failed to scan server row: %v", err)
+			continue
+		}
+
+		exists, _ := c.ContainerExists(ctx, name)
+		if !exists {
+			_, err := db.Exec("UPDATE servers SET status = 'stopped' WHERE id = ?", id)
+			if err != nil {
+				log.Printf("Failed to update server %d status: %v", id, err)
+			} else {
+				log.Printf("Synced server %d (%s): running -> stopped (container gone)", id, name)
+			}
+		}
+	}
 }

@@ -220,7 +220,6 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	id, _ := result.LastInsertId()
 
 	serverPath := filepath.Join(h.cfg.ServersDir, req.Name)
-	hostServerPath := filepath.Join(h.cfg.HostServersDir, req.Name)
 	if err := os.MkdirAll(serverPath, 0755); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -229,8 +228,7 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	javaVersion := java.GetRequiredJavaVersion(req.Version)
-	javaPath, err := h.javaMgr.EnsureJavaVersion(javaVersion)
-	if err != nil {
+	if _, err := h.javaMgr.EnsureJavaVersion(javaVersion); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to download java %s: %v", javaVersion, err)})
@@ -258,28 +256,6 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create eula.txt"})
-		return
-	}
-
-	hostPort := 0
-	if req.HostPort != nil {
-		hostPort = *req.HostPort
-	}
-
-	_, err = h.docker.CreateServerContainer(context.Background(), docker.ServerContainerConfig{
-		Name:        req.Name,
-		ServerType:  req.Type,
-		Version:     req.Version,
-		RAMMB:       req.RAMMB,
-		JavaPath:    javaPath,
-		ServerPath:  hostServerPath,
-		NetworkName: h.cfg.NetworkName,
-		HostPort:    hostPort,
-	})
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to create container: %v", err)})
 		return
 	}
 
@@ -362,7 +338,8 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var status string
+	err = h.db.QueryRow("SELECT name, status FROM servers WHERE id = ?", id).Scan(&name, &status)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -371,6 +348,11 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
+	if status == "running" {
+		timeout := 10
+		_ = h.docker.StopContainer(ctx, name, &timeout)
+	}
+
 	if exists, _ := h.docker.ContainerExists(ctx, name); exists {
 		_ = h.docker.RemoveContainer(ctx, name)
 	}
@@ -475,9 +457,12 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	var status string
-	err = h.db.QueryRow("SELECT name, status FROM servers WHERE id = ?", id).Scan(&name, &status)
+	var name, serverType, version string
+	var ramMB int
+	var hostPort sql.NullInt64
+	err = h.db.QueryRow(`
+		SELECT name, type, version, ram_mb, host_port FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -485,8 +470,33 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	javaVersion := java.GetRequiredJavaVersion(version)
+	javaPath, err := h.javaMgr.EnsureJavaVersion(javaVersion)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to ensure java: %v", err)})
+		return
+	}
+
+	port := 0
+	if hostPort.Valid {
+		port = int(hostPort.Int64)
+	}
+
+	cfg := &docker.ServerContainerConfig{
+		Name:        name,
+		ServerType:  serverType,
+		Version:     version,
+		RAMMB:       ramMB,
+		JavaPath:    javaPath,
+		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName: h.cfg.NetworkName,
+		HostPort:    port,
+	}
+
 	ctx := context.Background()
-	if err := h.docker.StartContainer(ctx, name); err != nil {
+	if err := h.docker.StartContainer(ctx, name, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to start server: %v", err)})
@@ -546,8 +556,12 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, serverType, version string
+	var ramMB int
+	var hostPort sql.NullInt64
+	err = h.db.QueryRow(`
+		SELECT name, type, version, ram_mb, host_port FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -560,7 +574,32 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
 	}
 
-	if err := h.docker.StartContainer(ctx, name); err != nil {
+	javaVersion := java.GetRequiredJavaVersion(version)
+	javaPath, err := h.javaMgr.EnsureJavaVersion(javaVersion)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to ensure java: %v", err)})
+		return
+	}
+
+	port := 0
+	if hostPort.Valid {
+		port = int(hostPort.Int64)
+	}
+
+	cfg := &docker.ServerContainerConfig{
+		Name:        name,
+		ServerType:  serverType,
+		Version:     version,
+		RAMMB:       ramMB,
+		JavaPath:    javaPath,
+		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName: h.cfg.NetworkName,
+		HostPort:    port,
+	}
+
+	if err := h.docker.StartContainer(ctx, name, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to restart server: %v", err)})

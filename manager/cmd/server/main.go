@@ -62,6 +62,8 @@ func main() {
 	}
 	log.Println("Docker client initialized successfully")
 
+	dockerClient.SyncServerStatus(context.Background(), database)
+
 	consoleManager := docker.NewConsoleManager(dockerClient, database)
 
 	wsHandler := handlers.NewWSHandler(database, dockerClient, consoleManager, cfg)
