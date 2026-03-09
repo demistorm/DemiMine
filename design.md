@@ -1116,7 +1116,7 @@ func EnsureJavaVersion(version string) (string, error) {
 3. Create directory: /servers/{name}
 4. Download server jar (run installer for mod loaders)
 5. Generate server.properties:
-   - server-port=25565 (standard, internal network)
+   - server-port={host_port} (the assigned port for this server)
    - online-mode=false (proxy handles auth)
    - enable-rcon=false
    - etc.
@@ -1125,6 +1125,8 @@ func EnsureJavaVersion(version string) (string, error) {
 8. Save to database
 9. Create Docker container (name: demimine-{server_name})
 10. Register with proxy (if assigned) via velocity.toml update
+
+**Note**: Docker container names (e.g., `demimine-survival`) are used in Velocity config for internal DNS resolution. Velocity can resolve these hostnames on the Docker network.
 ```
 
 ### EULA Acceptance
@@ -1134,7 +1136,7 @@ The Minecraft EULA is automatically accepted on server creation. `eula.txt` is c
 ### server.properties Template
 
 ```properties
-server-port=25565
+server-port={host_port}  # Set to the server's assigned port
 online-mode=false
 enable-rcon=false
 enable-query=false
@@ -1724,7 +1726,7 @@ The manager automatically updates the proxy's `velocity.toml` whenever servers a
 **On server assigned to proxy:**
 ```toml
 [servers]
-{server_name} = "{container_name}:25565"
+{server_name} = "{container_name}:{host_port}"
 
 [forced-hosts]
 "{domain}" = [           # Only if domain is configured

@@ -253,6 +253,9 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	props := mc.DefaultServerProperties()
+	if req.HostPort != nil {
+		props.Set("server-port", strconv.Itoa(*req.HostPort))
+	}
 	props.WriteToFile(filepath.Join(serverPath, "server.properties"))
 
 	if err := os.WriteFile(filepath.Join(serverPath, "eula.txt"), []byte("eula=true\n"), 0644); err != nil {

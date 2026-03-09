@@ -114,8 +114,9 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 	}
 
 	if cfg.HostPort > 0 {
+		containerPort := nat.Port(fmt.Sprintf("%d/tcp", cfg.HostPort))
 		hostConfig.PortBindings = nat.PortMap{
-			"25565/tcp": []nat.PortBinding{
+			containerPort: []nat.PortBinding{
 				{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.HostPort)},
 			},
 		}

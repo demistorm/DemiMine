@@ -14,10 +14,9 @@ type ServerProperties map[string]string
 func DefaultServerProperties() ServerProperties {
 	return ServerProperties{
 		"server-port":         "25565",
-		"online-mode":         "false",
+		"online-mode":         "true",
 		"enable-rcon":         "false",
 		"enable-query":        "false",
-		"snooper-enabled":     "false",
 		"hardcore":            "false",
 		"allow-flight":        "true",
 		"spawn-protection":    "0",
@@ -28,8 +27,8 @@ func DefaultServerProperties() ServerProperties {
 		"gamemode":            "survival",
 		"pvp":                 "true",
 		"level-name":          "world",
-		"view-distance":       "10",
-		"simulation-distance": "10",
+		"view-distance":       "12",
+		"simulation-distance": "7",
 	}
 }
 
