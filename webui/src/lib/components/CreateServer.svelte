@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { api } from '$lib/api';
-	import { servers, loadServers } from '$lib/stores/servers';
+	import { servers, proxies, loadServers, loadProxies } from '$lib/stores/servers';
 
 	export let show = false;
 
@@ -32,6 +32,12 @@
 	$: {
 		if (type && step === 1) {
 			loadVersions();
+		}
+	}
+
+	$: {
+		if (show && $proxies.length === 0) {
+			loadProxies();
 		}
 	}
 
@@ -230,15 +236,30 @@
 									type="radio" 
 									name="network" 
 									value="proxy"
-									checked={proxyId === null && hostPort === null}
-									on:change={() => { proxyId = null; hostPort = null; }}
+									checked={proxyId !== null}
+									on:change={() => { 
+										proxyId = $proxies.length > 0 ? $proxies[0].id : null; 
+										hostPort = null; 
+									}}
 								/>
-								<span>Behind Proxy (no direct access)</span>
+								<span>Behind Proxy</span>
 							</label>
 						</div>
 					</div>
 
-					{#if hostPort !== null && proxyId === null}
+					{#if proxyId !== null}
+						<div class="field">
+							<label for="proxy">Assign to Proxy</label>
+							<select id="proxy" bind:value={proxyId}>
+								{#each $proxies as proxy}
+									<option value={proxy.id}>{proxy.name}</option>
+								{/each}
+							</select>
+							{#if $proxies.length === 0}
+								<span class="hint warning">No proxies available. Create a proxy first.</span>
+							{/if}
+						</div>
+					{:else if hostPort !== null}
 						<div class="field">
 							<label for="port">Host Port</label>
 							<input 
@@ -421,6 +442,11 @@
 		font-size: 0.75rem;
 		margin-top: 0.375rem;
 		opacity: 0.7;
+	}
+
+	.hint.warning {
+		color: var(--warning, #f59e0b);
+		opacity: 1;
 	}
 
 	.version-select {

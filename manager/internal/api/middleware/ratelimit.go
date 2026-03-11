@@ -50,8 +50,6 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		ip := getIP(r)
 
 		rl.mu.Lock()
-		defer rl.mu.Unlock()
-
 		attempt, exists := rl.attempts[ip]
 		now := time.Now()
 
@@ -60,6 +58,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		} else {
 			attempt.Count++
 			if attempt.Count > rl.limit {
+				rl.mu.Unlock()
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
 				json.NewEncoder(w).Encode(map[string]string{
@@ -68,6 +67,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 				return
 			}
 		}
+		rl.mu.Unlock()
 
 		next.ServeHTTP(w, r)
 	})

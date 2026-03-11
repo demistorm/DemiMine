@@ -56,7 +56,10 @@ func RunMigrations(db *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
 			host_port INTEGER NOT NULL UNIQUE,
+			forwarding_secret TEXT NOT NULL,
 			status TEXT DEFAULT 'stopped',
+			canvas_x INTEGER DEFAULT 0,
+			canvas_y INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -142,6 +145,16 @@ func RunMigrations(db *sql.DB) error {
 		if _, err := db.Exec(migration); err != nil {
 			return fmt.Errorf("migration failed: %w", err)
 		}
+	}
+
+	alterMigrations := []string{
+		`ALTER TABLE proxies ADD COLUMN forwarding_secret TEXT`,
+		`ALTER TABLE proxies ADD COLUMN canvas_x INTEGER DEFAULT 0`,
+		`ALTER TABLE proxies ADD COLUMN canvas_y INTEGER DEFAULT 0`,
+	}
+
+	for _, alter := range alterMigrations {
+		db.Exec(alter)
 	}
 
 	indexes := []string{

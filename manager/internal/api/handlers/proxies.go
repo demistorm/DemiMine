@@ -1,0 +1,537 @@
+package handlers
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/demimine/manager/internal/config"
+	"github.com/demimine/manager/internal/docker"
+	"github.com/demimine/manager/internal/mc"
+	"github.com/demimine/manager/internal/models"
+	"github.com/go-chi/chi/v5"
+)
+
+type ProxyHandler struct {
+	db             *sql.DB
+	docker         *docker.Client
+	consoleManager *docker.ConsoleManager
+	cfg            *config.Config
+}
+
+func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config) *ProxyHandler {
+	return &ProxyHandler{
+		db:             db,
+		docker:         dockerClient,
+		consoleManager: consoleManager,
+		cfg:            cfg,
+	}
+}
+
+func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(`
+		SELECT p.id, p.name, p.host_port, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.created_at,
+		       COALESCE(s.name, '') as server_name
+		FROM proxies p
+		LEFT JOIN servers s ON s.proxy_id = p.id
+		ORDER BY p.created_at DESC, s.name
+	`)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to list proxies"})
+		return
+	}
+	defer rows.Close()
+
+	proxyMap := make(map[int64]*models.ProxyResponse)
+	var proxyOrder []int64
+
+	for rows.Next() {
+		var proxyID int64
+		var name, status string
+		var hostPort int
+		var forwardingSecret sql.NullString
+		var canvasX, canvasY int
+		var createdAt string
+		var serverName sql.NullString
+
+		err := rows.Scan(
+			&proxyID, &name, &hostPort, &forwardingSecret, &status, &canvasX, &canvasY, &createdAt, &serverName,
+		)
+		if err != nil {
+			continue
+		}
+
+		proxy, exists := proxyMap[proxyID]
+		if !exists {
+			proxy = &models.ProxyResponse{
+				ID:               proxyID,
+				Name:             name,
+				HostPort:         hostPort,
+				Status:           status,
+				CanvasX:          canvasX,
+				CanvasY:          canvasY,
+				CreatedAt:        createdAt,
+				ConnectedServers: []string{},
+			}
+			if forwardingSecret.Valid {
+				proxy.ForwardingSecret = forwardingSecret.String
+			}
+			proxyMap[proxyID] = proxy
+			proxyOrder = append(proxyOrder, proxyID)
+		}
+
+		if serverName.Valid && serverName.String != "" {
+			proxy.ConnectedServers = append(proxy.ConnectedServers, serverName.String)
+		}
+	}
+
+	proxies := make([]models.ProxyResponse, 0, len(proxyOrder))
+	for _, id := range proxyOrder {
+		proxies = append(proxies, *proxyMap[id])
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(proxies)
+}
+
+type CreateProxyRequest struct {
+	Name     string `json:"name"`
+	HostPort int    `json:"host_port"`
+	RAMMB    int    `json:"ram_mb"`
+}
+
+func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var req CreateProxyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.Name == "" || req.HostPort == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "name and host_port are required"})
+		return
+	}
+
+	force := r.URL.Query().Get("force") == "true"
+
+	if !force {
+		var existingName string
+		err := h.db.QueryRow("SELECT name FROM proxies WHERE host_port = ?", req.HostPort).Scan(&existingName)
+		if err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "port_in_use",
+				"port":    req.HostPort,
+				"used_by": existingName,
+			})
+			return
+		}
+
+		err = h.db.QueryRow("SELECT name FROM servers WHERE host_port = ?", req.HostPort).Scan(&existingName)
+		if err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":   "port_in_use",
+				"port":    req.HostPort,
+				"used_by": existingName,
+			})
+			return
+		}
+	}
+
+	var existingID int
+	err := h.db.QueryRow("SELECT id FROM proxies WHERE name = ?", req.Name).Scan(&existingID)
+	if err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy name already exists"})
+		return
+	}
+
+	forwardingSecret, err := mc.GenerateForwardingSecret()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to generate forwarding secret"})
+		return
+	}
+
+	result, err := h.db.Exec(`
+		INSERT INTO proxies (name, host_port, forwarding_secret, status, canvas_x, canvas_y)
+		VALUES (?, ?, ?, 'stopped', 4000, 4000)
+	`, req.Name, req.HostPort, forwardingSecret)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create proxy"})
+		return
+	}
+
+	id, _ := result.LastInsertId()
+
+	proxyPath := filepath.Join(h.cfg.ServersDir, req.Name)
+	if err := os.MkdirAll(proxyPath, 0755); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create proxy directory"})
+		return
+	}
+
+	jarPath := filepath.Join(proxyPath, "velocity.jar")
+	if err := mc.DownloadVelocityJar(jarPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to download velocity jar: %v", err)})
+		return
+	}
+
+	if err := mc.WriteForwardingSecret(proxyPath, forwardingSecret); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to write forwarding secret"})
+		return
+	}
+
+	velocityConfig := mc.DefaultVelocityConfig(req.HostPort, forwardingSecret)
+	if err := velocityConfig.WriteToFile(filepath.Join(proxyPath, "velocity.toml")); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to write velocity.toml"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]int64{"id": id})
+}
+
+func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var p models.ProxyResponse
+	var forwardingSecret sql.NullString
+
+	err = h.db.QueryRow(`
+		SELECT id, name, host_port, forwarding_secret, status, canvas_x, canvas_y, created_at
+		FROM proxies WHERE id = ?
+	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &p.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to get proxy"})
+		return
+	}
+
+	if forwardingSecret.Valid {
+		p.ForwardingSecret = forwardingSecret.String
+	}
+
+	serverRows, err := h.db.Query("SELECT name FROM servers WHERE proxy_id = ?", p.ID)
+	if err == nil {
+		for serverRows.Next() {
+			var serverName string
+			if err := serverRows.Scan(&serverName); err == nil {
+				p.ConnectedServers = append(p.ConnectedServers, serverName)
+			}
+		}
+		serverRows.Close()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(p)
+}
+
+func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	var status string
+	err = h.db.QueryRow("SELECT name, status FROM proxies WHERE id = ?", id).Scan(&name, &status)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	ctx := context.Background()
+	if status == "running" {
+		timeout := 10
+		_ = h.docker.StopProxyContainer(ctx, name, &timeout)
+	}
+
+	containerName := "demimine-proxy-" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+	if exists, _ := h.docker.ContainerExists(ctx, "proxy-"+name); exists {
+		_ = h.docker.RemoveContainer(ctx, containerName)
+	}
+
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	_ = os.RemoveAll(proxyPath)
+
+	h.db.Exec("UPDATE servers SET proxy_id = NULL WHERE proxy_id = ?", id)
+
+	result, err := h.db.Exec("DELETE FROM proxies WHERE id = ?", id)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete proxy"})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+type UpdateProxyRequest struct {
+	Name    *string `json:"name"`
+	CanvasX *int    `json:"canvas_x"`
+	CanvasY *int    `json:"canvas_y"`
+}
+
+func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var req UpdateProxyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	var exists bool
+	err = h.db.QueryRow("SELECT 1 FROM proxies WHERE id = ?", id).Scan(&exists)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	if req.Name != nil {
+		h.db.Exec("UPDATE proxies SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, id)
+	}
+	if req.CanvasX != nil {
+		h.db.Exec("UPDATE proxies SET canvas_x = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasX, id)
+	}
+	if req.CanvasY != nil {
+		h.db.Exec("UPDATE proxies SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	var hostPort int
+	err = h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", id).Scan(&name, &hostPort)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	cfg := &docker.ProxyContainerConfig{
+		Name:        name,
+		HostPort:    hostPort,
+		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName: h.cfg.NetworkName,
+		RAMMB:       512,
+	}
+
+	ctx := context.Background()
+	if err := h.docker.StartProxyContainer(ctx, name, cfg); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to start proxy: %v", err)})
+		return
+	}
+
+	h.db.Exec("UPDATE proxies SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Proxy %s started", name),
+	})
+}
+
+func (h *ProxyHandler) Stop(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	ctx := context.Background()
+	timeout := 30
+	if err := h.docker.StopProxyContainer(ctx, name, &timeout); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to stop proxy: %v", err)})
+		return
+	}
+
+	h.db.Exec("UPDATE proxies SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	var hostPort int
+	err = h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", id).Scan(&name, &hostPort)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	ctx := context.Background()
+	timeout := 30
+	_ = h.docker.StopProxyContainer(ctx, name, &timeout)
+
+	cfg := &docker.ProxyContainerConfig{
+		Name:        name,
+		HostPort:    hostPort,
+		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName: h.cfg.NetworkName,
+		RAMMB:       512,
+	}
+
+	if err := h.docker.StartProxyContainer(ctx, name, cfg); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to restart proxy: %v", err)})
+		return
+	}
+
+	h.db.Exec("UPDATE proxies SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ProxyHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	lines := 100
+	if l := r.URL.Query().Get("lines"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			lines = parsed
+		}
+	}
+
+	ctx := context.Background()
+	logs, err := h.docker.GetProxyContainerLogs(ctx, name, lines)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to get logs"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string][]string{"logs": logs})
+}

@@ -3,12 +3,15 @@ package models
 import "time"
 
 type Proxy struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name" binding:"required"`
-	HostPort  int       `json:"host_port" binding:"required"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID               int64     `json:"id"`
+	Name             string    `json:"name" binding:"required"`
+	HostPort         int       `json:"host_port" binding:"required"`
+	ForwardingSecret string    `json:"forwarding_secret"`
+	Status           string    `json:"status"`
+	CanvasX          int       `json:"canvas_x"`
+	CanvasY          int       `json:"canvas_y"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type Server struct {
@@ -113,8 +116,11 @@ type ProxyResponse struct {
 	ID               int64    `json:"id"`
 	Name             string   `json:"name"`
 	HostPort         int      `json:"host_port"`
+	ForwardingSecret string   `json:"forwarding_secret"`
 	Status           string   `json:"status"`
 	PlayerCount      int      `json:"player_count"`
 	ConnectedServers []string `json:"connected_servers"`
+	CanvasX          int      `json:"canvas_x"`
+	CanvasY          int      `json:"canvas_y"`
 	CreatedAt        string   `json:"created_at"`
 }

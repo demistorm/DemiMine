@@ -54,3 +54,32 @@ export function updateServerStatus(serverId: number, status: string, playerCount
 export function deleteServerFromStore(serverId: number) {
 	servers.update(serversList => serversList.filter(s => s.id !== serverId));
 }
+
+export async function updateProxyPosition(proxyId: number, x: number, y: number) {
+	try {
+		await api.patch(`/api/proxies/${proxyId}`, { canvas_x: x, canvas_y: y });
+		proxies.update(proxiesList =>
+			proxiesList.map(p =>
+				p.id === proxyId ? { ...p, canvas_x: x, canvas_y: y } : p
+			)
+		);
+	} catch (error) {
+		console.error('Failed to update proxy position:', error);
+	}
+}
+
+export function updateProxyStatus(proxyId: number, status: string, playerCount?: number) {
+	proxies.update(proxiesList =>
+		proxiesList.map(p => 
+			p.id === proxyId ? { 
+				...p, 
+				status,
+				player_count: playerCount !== undefined ? playerCount : p.player_count
+			} : p
+		)
+	);
+}
+
+export function deleteProxyFromStore(proxyId: number) {
+	proxies.update(proxiesList => proxiesList.filter(p => p.id !== proxyId));
+}

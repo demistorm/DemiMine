@@ -153,9 +153,12 @@ export interface Proxy {
 	id: number;
 	name: string;
 	host_port: number;
+	forwarding_secret: string;
 	status: string;
 	player_count: number;
 	connected_servers: string[];
+	canvas_x: number;
+	canvas_y: number;
 	created_at: string;
 }
 

@@ -28,6 +28,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 
 	authHandler := handlers.NewAuthHandler(database, cfg.JWTSecret)
 	serverHandler := handlers.NewServerHandler(database, dockerClient, consoleManager, cfg)
+	proxyHandler := handlers.NewProxyHandler(database, dockerClient, consoleManager, cfg)
 	versionsHandler := handlers.NewVersionsHandler()
 	javaHandler := handlers.NewJavaHandler()
 	fileUploadHandler := handlers.NewFileUploadHandler(database, cfg)
@@ -77,6 +78,21 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 						r.Post("/rename", serverHandler.RenameFile)
 						r.Post("/upload", fileUploadHandler.Upload)
 					})
+				})
+			})
+
+			r.Route("/proxies", func(r chi.Router) {
+				r.Get("/", proxyHandler.List)
+				r.Post("/", proxyHandler.Create)
+
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", proxyHandler.Get)
+					r.Patch("/", proxyHandler.Update)
+					r.Delete("/", proxyHandler.Delete)
+					r.Post("/start", proxyHandler.Start)
+					r.Post("/stop", proxyHandler.Stop)
+					r.Post("/restart", proxyHandler.Restart)
+					r.Get("/logs", proxyHandler.GetLogs)
 				})
 			})
 		})

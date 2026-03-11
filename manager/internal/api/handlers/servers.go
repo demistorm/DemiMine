@@ -205,10 +205,23 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var hostPortValue *int
+	if req.ProxyID != nil {
+		var serverCount int
+		err = h.db.QueryRow("SELECT COUNT(*) FROM servers WHERE proxy_id = ?", *req.ProxyID).Scan(&serverCount)
+		if err != nil {
+			serverCount = 0
+		}
+		autoPort := 30000 + int(*req.ProxyID*100) + serverCount + 1
+		hostPortValue = &autoPort
+	} else if req.HostPort != nil {
+		hostPortValue = req.HostPort
+	}
+
 	result, err := h.db.Exec(`
 		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000)
-	`, req.Name, req.Type, req.Version, req.ProxyID, req.HostPort, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop)
+	`, req.Name, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop)
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -242,8 +255,11 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	props := mc.DefaultServerProperties()
-	if req.HostPort != nil {
-		props.Set("server-port", strconv.Itoa(*req.HostPort))
+	if hostPortValue != nil {
+		props.Set("server-port", strconv.Itoa(*hostPortValue))
+	}
+	if req.ProxyID != nil {
+		props.Set("online-mode", "false")
 	}
 	props.WriteToFile(filepath.Join(serverPath, "server.properties"))
 
@@ -252,6 +268,11 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create eula.txt"})
 		return
+	}
+
+	if req.ProxyID != nil {
+		if err := SyncProxyConfig(h.db, *req.ProxyID, h.cfg.ServersDir); err != nil {
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -334,7 +355,8 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	var name string
 	var status string
-	err = h.db.QueryRow("SELECT name, status FROM servers WHERE id = ?", id).Scan(&name, &status)
+	var proxyID sql.NullInt64
+	err = h.db.QueryRow("SELECT name, status, proxy_id FROM servers WHERE id = ?", id).Scan(&name, &status, &proxyID)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -371,6 +393,10 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if proxyID.Valid {
+		_ = SyncProxyConfig(h.db, proxyID.Int64, h.cfg.ServersDir)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
@@ -384,6 +410,8 @@ type UpdateServerRequest struct {
 	ScheduledStop       *string `json:"scheduled_stop"`
 	CanvasX             *int    `json:"canvas_x"`
 	CanvasY             *int    `json:"canvas_y"`
+	ProxyID             *int64  `json:"proxy_id"`
+	Domain              *string `json:"domain"`
 }
 
 func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -436,6 +464,21 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CanvasY != nil {
 		h.db.Exec("UPDATE servers SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
+	}
+	if req.ProxyID != nil {
+		if *req.ProxyID == 0 {
+			_ = RemoveServerFromProxy(h.db, id, h.cfg.ServersDir)
+		} else {
+			_, _ = AssignServerToProxy(h.db, id, *req.ProxyID, h.cfg.ServersDir)
+		}
+	}
+	if req.Domain != nil {
+		h.db.Exec("UPDATE servers SET domain = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Domain, id)
+		var proxyID sql.NullInt64
+		h.db.QueryRow("SELECT proxy_id FROM servers WHERE id = ?", id).Scan(&proxyID)
+		if proxyID.Valid {
+			_ = SyncProxyConfig(h.db, proxyID.Int64, h.cfg.ServersDir)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
