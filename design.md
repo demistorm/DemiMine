@@ -2152,3 +2152,38 @@ docker ps --filter label=demimine.managed=true
 | Auth Plugin Example | `/home/strasburg/Documents/clones/loginPassword` | Reference for Velocity auth plugin |
 | Dynamic Server Plugin | `/home/strasburg/Documents/IntelliJ Projects/PufferPanel AutoStartStop` | Reference for auto-start/stop logic |
 | PufferPanel | `/home/strasburg/Documents/clones/pufferpanel` | Reference only - Docker integration ideas. Do not copy code. Consult only when prompted or for second opinions. |
+
+---
+
+## Future Enhancements
+
+### Player Tracking API
+
+Track currently online players across all servers with real-time updates.
+
+**Data Model:**
+```go
+type OnlinePlayer struct {
+    Name      string    `json:"name"`
+    UUID      string    `json:"uuid"`
+    ServerID  int64     `json:"server_id"`
+    ServerName string   `json:"server_name"`
+    JoinedAt  time.Time `json:"joined_at"`
+    SkinURL   string    `json:"skin_url"` // Crafatar or similar
+}
+```
+
+**API Endpoints:**
+- `GET /api/players/online` - List all online players across all servers
+- `GET /api/servers/:id/players` - List online players for specific server
+- WebSocket event: `player_join`, `player_leave`, `player_switch`
+
+**Use Cases:**
+- Server tile player count display
+- Player list UI in server detail pages
+- Activity logging for audit trails
+
+**Implementation Notes:**
+- Requires Velocity plugin to track player connections
+- Backend servers report player joins/leaves via RCON or plugin messaging
+- Skin URLs from Crafatar API: `https://crafatar.com/avatars/{uuid}`

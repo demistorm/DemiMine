@@ -41,14 +41,9 @@ func NewJavaHandler() *JavaHandler {
 }
 
 func (h *JavaHandler) List(w http.ResponseWriter, r *http.Request) {
-	available, err := java.GetAvailableJavaVersions()
-	if err != nil {
-		available = []string{"8", "11", "17", "21"}
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"available": available,
+		"available": []string{"8", "17", "21", "25"},
 	})
 }
 

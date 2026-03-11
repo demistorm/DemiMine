@@ -104,12 +104,6 @@ func RunMigrations(db *sql.DB) error {
 			value TEXT NOT NULL
 		)`,
 
-		`CREATE TABLE IF NOT EXISTS java_versions (
-			version TEXT PRIMARY KEY,
-			path TEXT NOT NULL,
-			downloaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
-
 		`CREATE TABLE IF NOT EXISTS backups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			server_id INTEGER NOT NULL,

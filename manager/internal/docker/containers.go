@@ -26,7 +26,6 @@ type ServerContainerConfig struct {
 	ServerType  string
 	Version     string
 	RAMMB       int
-	JavaPath    string
 	ServerPath  string
 	NetworkName string
 	HostPort    int

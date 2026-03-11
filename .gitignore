@@ -2,7 +2,7 @@ data/
 servers/
 proxies/
 backups/
-java/
+/java/
 *.db
 *.log
 manager/demimine

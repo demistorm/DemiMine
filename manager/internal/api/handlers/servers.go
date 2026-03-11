@@ -17,7 +17,6 @@ import (
 
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
-	"github.com/demimine/manager/internal/java"
 	"github.com/demimine/manager/internal/mc"
 	"github.com/demimine/manager/internal/models"
 	"github.com/go-chi/chi/v5"
@@ -27,7 +26,6 @@ type ServerHandler struct {
 	db             *sql.DB
 	docker         *docker.Client
 	consoleManager *docker.ConsoleManager
-	javaMgr        *java.Manager
 	cfg            *config.Config
 }
 
@@ -39,7 +37,6 @@ func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *d
 		db:             db,
 		docker:         dockerClient,
 		consoleManager: consoleManager,
-		javaMgr:        java.NewManager(db, cfg.JavaDir),
 		cfg:            cfg,
 	}
 }
@@ -227,14 +224,6 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create server directory"})
-		return
-	}
-
-	javaVersion := java.GetRequiredJavaVersion(req.Version)
-	if _, err := h.javaMgr.EnsureJavaVersion(javaVersion); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to download java %s: %v", javaVersion, err)})
 		return
 	}
 
@@ -476,15 +465,6 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	javaVersion := java.GetRequiredJavaVersion(version)
-	javaPath, err := h.javaMgr.EnsureJavaVersion(javaVersion)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to ensure java: %v", err)})
-		return
-	}
-
 	port := 0
 	if hostPort.Valid {
 		port = int(hostPort.Int64)
@@ -495,7 +475,6 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		ServerType:  serverType,
 		Version:     version,
 		RAMMB:       ramMB,
-		JavaPath:    javaPath,
 		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
 		HostPort:    port,
@@ -580,15 +559,6 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
 	}
 
-	javaVersion := java.GetRequiredJavaVersion(version)
-	javaPath, err := h.javaMgr.EnsureJavaVersion(javaVersion)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to ensure java: %v", err)})
-		return
-	}
-
 	port := 0
 	if hostPort.Valid {
 		port = int(hostPort.Int64)
@@ -599,7 +569,6 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		ServerType:  serverType,
 		Version:     version,
 		RAMMB:       ramMB,
-		JavaPath:    javaPath,
 		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
 		HostPort:    port,
