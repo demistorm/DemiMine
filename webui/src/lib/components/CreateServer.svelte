@@ -20,6 +20,7 @@
 	let ram = 2048;
 	let hostPort: number | null = 25565;
 	let proxyId: number | null = null;
+	let domain = '';
 
 	const serverTypes = [
 		{ value: 'paper', label: 'Paper' },
@@ -84,6 +85,9 @@
 
 			if (proxyId !== null) {
 				body.proxy_id = proxyId;
+				if (domain) {
+					body.domain = domain;
+				}
 			} else if (hostPort !== null) {
 				body.host_port = hostPort;
 			}
@@ -109,6 +113,7 @@
 		ram = 2048;
 		hostPort = 25565;
 		proxyId = null;
+		domain = '';
 		error = '';
 	}
 </script>
@@ -258,6 +263,16 @@
 							{#if $proxies.length === 0}
 								<span class="hint warning">No proxies available. Create a proxy first.</span>
 							{/if}
+						</div>
+						<div class="field">
+							<label for="domain">Custom Domain (Optional)</label>
+							<input
+								type="text"
+								id="domain"
+								bind:value={domain}
+								placeholder="play.example.com"
+							/>
+							<span class="hint">Players connecting with this domain will be routed to this server</span>
 						</div>
 					{:else if hostPort !== null}
 						<div class="field">

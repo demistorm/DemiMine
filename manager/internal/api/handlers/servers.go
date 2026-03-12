@@ -271,6 +271,20 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.ProxyID != nil {
+		var forwardingSecret string
+		err := h.db.QueryRow("SELECT forwarding_secret FROM proxies WHERE id = ?", *req.ProxyID).Scan(&forwardingSecret)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to get forwarding secret"})
+			return
+		}
+		if err := ConfigureServerProxy(serverPath, req.Type, req.Version, forwardingSecret); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to configure proxy: %v", err)})
+			return
+		}
 		if err := SyncProxyConfig(h.db, *req.ProxyID, h.cfg.ServersDir); err != nil {
 		}
 	}

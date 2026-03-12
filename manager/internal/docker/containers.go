@@ -292,13 +292,18 @@ func (c *Client) WaitForContainer(ctx context.Context, containerID string, timeo
 	return nil
 }
 
-func (c *Client) SyncServerStatus(ctx context.Context, db *sql.DB) {
-	rows, err := db.Query("SELECT id, name FROM servers WHERE status = 'running'")
+func (c *Client) SyncServerStatus(ctx context.Context, database *sql.DB) {
+	rows, err := database.Query("SELECT id, name FROM servers WHERE status = 'running'")
 	if err != nil {
 		log.Printf("Failed to query running servers for status sync: %v", err)
 		return
 	}
-	defer rows.Close()
+
+	type serverInfo struct {
+		id   int64
+		name string
+	}
+	var servers []serverInfo
 
 	for rows.Next() {
 		var id int64
@@ -307,14 +312,18 @@ func (c *Client) SyncServerStatus(ctx context.Context, db *sql.DB) {
 			log.Printf("Failed to scan server row: %v", err)
 			continue
 		}
+		servers = append(servers, serverInfo{id: id, name: name})
+	}
+	rows.Close()
 
-		exists, _ := c.ContainerExists(ctx, name)
+	for _, s := range servers {
+		exists, _ := c.ContainerExists(ctx, s.name)
 		if !exists {
-			_, err := db.Exec("UPDATE servers SET status = 'stopped' WHERE id = ?", id)
+			_, err := database.Exec("UPDATE servers SET status = 'stopped' WHERE id = ?", s.id)
 			if err != nil {
-				log.Printf("Failed to update server %d status: %v", id, err)
+				log.Printf("Failed to update server %d status: %v", s.id, err)
 			} else {
-				log.Printf("Synced server %d (%s): running -> stopped (container gone)", id, name)
+				log.Printf("Synced server %d (%s): running -> stopped (container gone)", s.id, s.name)
 			}
 		}
 	}

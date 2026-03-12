@@ -3,15 +3,14 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/demimine/manager/internal/mc"
 )
 
 func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir string) (int, error) {
-	var serverName string
-	err := db.QueryRow("SELECT name FROM servers WHERE id = ?", serverID).Scan(&serverName)
+	var serverName, serverType, mcVersion string
+	err := db.QueryRow("SELECT name, type, version FROM servers WHERE id = ?", serverID).Scan(&serverName, &serverType, &mcVersion)
 	if err != nil {
 		return 0, fmt.Errorf("server not found: %w", err)
 	}
@@ -52,6 +51,10 @@ func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir s
 		return port, fmt.Errorf("failed to update server.properties: %w", err)
 	}
 
+	if err := ConfigureServerProxy(serverPath, serverType, mcVersion, forwardingSecret); err != nil {
+		return port, fmt.Errorf("failed to configure server proxy settings: %w", err)
+	}
+
 	if err := SyncProxyConfig(db, proxyID, serversDir); err != nil {
 		return port, fmt.Errorf("failed to sync proxy config: %w", err)
 	}
@@ -60,9 +63,9 @@ func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir s
 }
 
 func RemoveServerFromProxy(db *sql.DB, serverID int64, serversDir string) error {
-	var serverName string
+	var serverName, serverType, mcVersion string
 	var proxyID sql.NullInt64
-	err := db.QueryRow("SELECT name, proxy_id FROM servers WHERE id = ?", serverID).Scan(&serverName, &proxyID)
+	err := db.QueryRow("SELECT name, type, version, proxy_id FROM servers WHERE id = ?", serverID).Scan(&serverName, &serverType, &mcVersion, &proxyID)
 	if err != nil {
 		return fmt.Errorf("server not found: %w", err)
 	}
@@ -89,6 +92,10 @@ func RemoveServerFromProxy(db *sql.DB, serverID int64, serversDir string) error 
 
 	props.Set("online-mode", "true")
 	props.WriteToFile(filepath.Join(serverPath, "server.properties"))
+
+	if err := RevertServerProxyConfig(serverPath, serverType, mcVersion); err != nil {
+		fmt.Printf("Warning: failed to revert server proxy config: %v\n", err)
+	}
 
 	if err := SyncProxyConfig(db, oldProxyID, serversDir); err != nil {
 		return fmt.Errorf("failed to sync proxy config: %w", err)
@@ -162,7 +169,46 @@ func sanitizeNameForProxy(name string) string {
 	return string(result)
 }
 
-func WriteForwardingSecretToServer(serverPath, secret string) error {
-	secretPath := filepath.Join(serverPath, "forwarding.secret")
-	return os.WriteFile(secretPath, []byte(secret+"\n"), 0600)
+func ConfigureServerProxy(serverPath, serverType, mcVersion, forwardingSecret string) error {
+	switch serverType {
+	case "paper", "purpur":
+		if err := mc.ConfigurePaperProxy(serverPath, forwardingSecret); err != nil {
+			return fmt.Errorf("failed to configure paper proxy: %w", err)
+		}
+	case "fabric":
+		if err := mc.ConfigureFabricProxy(serverPath, mcVersion, forwardingSecret); err != nil {
+			return fmt.Errorf("failed to configure fabric proxy: %w", err)
+		}
+	case "neoforge":
+		if err := mc.ConfigureForgeProxy(serverPath, mcVersion, "neoforge", forwardingSecret); err != nil {
+			return fmt.Errorf("failed to configure neoforge proxy: %w", err)
+		}
+	case "forge":
+		if err := mc.ConfigureForgeProxy(serverPath, mcVersion, "forge", forwardingSecret); err != nil {
+			return fmt.Errorf("failed to configure forge proxy: %w", err)
+		}
+	}
+	return nil
+}
+
+func RevertServerProxyConfig(serverPath, serverType, mcVersion string) error {
+	switch serverType {
+	case "paper", "purpur":
+		if err := mc.RevertPaperProxyConfig(serverPath); err != nil {
+			return fmt.Errorf("failed to revert paper proxy config: %w", err)
+		}
+	case "fabric":
+		if err := mc.RevertFabricProxyConfig(serverPath); err != nil {
+			return fmt.Errorf("failed to revert fabric proxy config: %w", err)
+		}
+	case "neoforge":
+		if err := mc.RevertForgeProxyConfig(serverPath, mcVersion, "neoforge"); err != nil {
+			return fmt.Errorf("failed to revert neoforge proxy config: %w", err)
+		}
+	case "forge":
+		if err := mc.RevertForgeProxyConfig(serverPath, mcVersion, "forge"); err != nil {
+			return fmt.Errorf("failed to revert forge proxy config: %w", err)
+		}
+	}
+	return nil
 }
