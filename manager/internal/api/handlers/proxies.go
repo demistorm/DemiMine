@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,7 +37,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.created_at,
+		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.created_at,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -56,14 +57,14 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var proxyID int64
 		var name, status string
-		var hostPort int
+		var hostPort, ramMB int
 		var forwardingSecret sql.NullString
 		var canvasX, canvasY int
 		var createdAt string
 		var serverName sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &forwardingSecret, &status, &canvasX, &canvasY, &createdAt, &serverName,
+			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &createdAt, &serverName,
 		)
 		if err != nil {
 			continue
@@ -75,6 +76,7 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 				ID:               proxyID,
 				Name:             name,
 				HostPort:         hostPort,
+				RAMMB:            ramMB,
 				Status:           status,
 				CanvasX:          canvasX,
 				CanvasY:          canvasY,
@@ -170,10 +172,15 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ramMB := req.RAMMB
+	if ramMB == 0 {
+		ramMB = 512
+	}
+
 	result, err := h.db.Exec(`
-		INSERT INTO proxies (name, host_port, forwarding_secret, status, canvas_x, canvas_y)
-		VALUES (?, ?, ?, 'stopped', 4000, 4000)
-	`, req.Name, req.HostPort, forwardingSecret)
+		INSERT INTO proxies (name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y)
+		VALUES (?, ?, ?, ?, 'stopped', 4000, 4000)
+	`, req.Name, req.HostPort, ramMB, forwardingSecret)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -233,9 +240,9 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var forwardingSecret sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT id, name, host_port, forwarding_secret, status, canvas_x, canvas_y, created_at
+		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, created_at
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &p.CreatedAt)
+	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &p.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -328,6 +335,7 @@ func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 type UpdateProxyRequest struct {
 	Name    *string `json:"name"`
+	RAMMB   *int    `json:"ram_mb"`
 	CanvasX *int    `json:"canvas_x"`
 	CanvasY *int    `json:"canvas_y"`
 }
@@ -362,6 +370,9 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Name != nil {
 		h.db.Exec("UPDATE proxies SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, id)
 	}
+	if req.RAMMB != nil {
+		h.db.Exec("UPDATE proxies SET ram_mb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.RAMMB, id)
+	}
 	if req.CanvasX != nil {
 		h.db.Exec("UPDATE proxies SET canvas_x = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasX, id)
 	}
@@ -384,8 +395,8 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
-	var hostPort int
-	err = h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", id).Scan(&name, &hostPort)
+	var hostPort, ramMB int
+	err = h.db.QueryRow("SELECT name, host_port, COALESCE(ram_mb, 512) FROM proxies WHERE id = ?", id).Scan(&name, &hostPort, &ramMB)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -398,7 +409,7 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 		HostPort:    hostPort,
 		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
-		RAMMB:       512,
+		RAMMB:       ramMB,
 	}
 
 	ctx := context.Background()
@@ -463,8 +474,8 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
-	var hostPort int
-	err = h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", id).Scan(&name, &hostPort)
+	var hostPort, ramMB int
+	err = h.db.QueryRow("SELECT name, host_port, COALESCE(ram_mb, 512) FROM proxies WHERE id = ?", id).Scan(&name, &hostPort, &ramMB)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -481,7 +492,7 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		HostPort:    hostPort,
 		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
-		RAMMB:       512,
+		RAMMB:       ramMB,
 	}
 
 	if err := h.docker.StartProxyContainer(ctx, name, cfg); err != nil {
@@ -534,4 +545,403 @@ func (h *ProxyHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string][]string{"logs": logs})
+}
+
+func (h *ProxyHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		relativePath = "/"
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(proxyPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, proxyPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	entries, err := os.ReadDir(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "directory not found"})
+		return
+	}
+
+	files := make([]map[string]interface{}, len(entries))
+	for i, entry := range entries {
+		name := entry.Name()
+		isDir := entry.IsDir()
+		var size int64
+		var modified string
+
+		if !isDir {
+			if info, err := entry.Info(); err == nil {
+				size = info.Size()
+				modified = info.ModTime().Format("2006-01-02T15:04:05Z")
+			}
+		}
+
+		files[i] = map[string]interface{}{
+			"name":     name,
+			"is_dir":   isDir,
+			"size":     size,
+			"modified": modified,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"path":    relativePath,
+		"entries": files,
+	})
+}
+
+func (h *ProxyHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+		return
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(proxyPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, proxyPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"content": string(content)})
+}
+
+func (h *ProxyHandler) WriteFileContent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+		return
+	}
+
+	var req FileContentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(proxyPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, proxyPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	if err := os.WriteFile(fullPath, []byte(req.Content), 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to write file"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ProxyHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+		return
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(proxyPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, proxyPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	if err := os.RemoveAll(fullPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ProxyHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path required"})
+		return
+	}
+
+	relativePath = filepath.Clean("/" + relativePath)
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	fullPath := filepath.Join(proxyPath, relativePath)
+
+	if !strings.HasPrefix(fullPath, proxyPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	file, err := os.Open(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+	defer file.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(fullPath)))
+	io.Copy(w, file)
+}
+
+func (h *ProxyHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	var req RenameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.OldPath == "" || req.NewName == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "old_path and new_name required"})
+		return
+	}
+
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	oldPath := filepath.Join(proxyPath, filepath.Clean("/"+req.OldPath))
+	newPath := filepath.Join(filepath.Dir(oldPath), req.NewName)
+
+	if !strings.HasPrefix(oldPath, proxyPath) || !strings.HasPrefix(newPath, proxyPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to rename"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+type ProxyCommandRequest struct {
+	Command string `json:"command"`
+}
+
+func (h *ProxyHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var req ProxyCommandRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.Command == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "command is required"})
+		return
+	}
+
+	var name string
+	var status string
+	err = h.db.QueryRow("SELECT name, status FROM proxies WHERE id = ?", id).Scan(&name, &status)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to get proxy"})
+		return
+	}
+
+	if status != "running" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy is not running"})
+		return
+	}
+
+	if err := h.consoleManager.SendProxyCommand(id, req.Command); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to send command: %v", err)})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }

@@ -96,8 +96,8 @@ func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	log.Printf("WebSocket client registered, total clients: %d", h.hub.ClientCount())
 
 	client.SetMessageHandler(func(msg websocket.Message) {
-		log.Printf("Received WebSocket message: type=%s, server_id=%v, channel=%v, command=%v",
-			msg.Type, msg.ServerID, msg.Channel, msg.Command)
+		log.Printf("Received WebSocket message: type=%s, server_id=%v, proxy_id=%v, channel=%v, command=%v",
+			msg.Type, msg.ServerID, msg.ProxyID, msg.Channel, msg.Command)
 
 		switch msg.Type {
 		case websocket.MessageTypeSubscribe:
@@ -114,6 +114,11 @@ func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			if msg.ServerID != nil && msg.Command != nil {
 				log.Printf("Queueing command for server %d: %s", *msg.ServerID, *msg.Command)
 				go h.handleCommand(ctx, client, *msg.ServerID, *msg.Command)
+			}
+		case websocket.MessageTypeProxyCommand:
+			if msg.ProxyID != nil && msg.Command != nil {
+				log.Printf("Queueing command for proxy %d: %s", *msg.ProxyID, *msg.Command)
+				go h.handleProxyCommand(ctx, client, *msg.ProxyID, *msg.Command)
 			}
 		}
 	})
@@ -157,4 +162,31 @@ func (h *WSHandler) handleCommand(ctx context.Context, client *websocket.Client,
 		rowsAffected, _ := result.RowsAffected()
 		log.Printf("handleCommand: Command history inserted, rows affected: %d", rowsAffected)
 	}
+}
+
+func (h *WSHandler) handleProxyCommand(ctx context.Context, client *websocket.Client, proxyID int64, command string) {
+	log.Printf("handleProxyCommand: Processing command for proxy ID %d: %s", proxyID, command)
+
+	var name string
+	err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", proxyID).Scan(&name)
+	if err == sql.ErrNoRows {
+		log.Printf("handleProxyCommand: Proxy with ID %d not found in database", proxyID)
+		client.SendError("proxy not found")
+		return
+	}
+	if err != nil {
+		log.Printf("handleProxyCommand: Database error looking up proxy %d: %v", proxyID, err)
+		client.SendError("database error")
+		return
+	}
+
+	log.Printf("handleProxyCommand: Proxy found - ID: %d, Name: %s, Command: %s", proxyID, name, command)
+
+	if err := h.consoleManager.SendProxyCommand(proxyID, command); err != nil {
+		log.Printf("handleProxyCommand: Failed to send command to proxy %s: %v", name, err)
+		client.SendError("failed to send command")
+		return
+	}
+
+	log.Printf("handleProxyCommand: Command successfully sent to proxy %s", name)
 }

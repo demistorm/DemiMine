@@ -151,6 +151,7 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE proxies ADD COLUMN forwarding_secret TEXT`,
 		`ALTER TABLE proxies ADD COLUMN canvas_x INTEGER DEFAULT 0`,
 		`ALTER TABLE proxies ADD COLUMN canvas_y INTEGER DEFAULT 0`,
+		`ALTER TABLE proxies ADD COLUMN ram_mb INTEGER DEFAULT 512`,
 	}
 
 	for _, alter := range alterMigrations {

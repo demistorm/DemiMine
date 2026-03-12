@@ -4,7 +4,13 @@
 	import { ws } from '$lib/websocket';
 	import { AnsiUp } from 'ansi_up';
 
-	export let serverId: number;
+	export let id: number;
+	export let type: 'server' | 'proxy' = 'server';
+
+	$: apiPrefix = type === 'server' ? '/api/servers' : '/api/proxies';
+	$: wsChannel = type === 'server' ? `server:${id}` : `proxy:${id}`;
+	$: idField = type === 'server' ? 'server_id' : 'proxy_id';
+	$: entityName = type === 'server' ? 'server' : 'proxy';
 
 	let logs: string[] = [];
 	let command = '';
@@ -32,11 +38,13 @@
 		ansiUp.use_classes = true;
 
 		await loadLogs();
-		await loadCommandHistory();
+		if (type === 'server') {
+			await loadCommandHistory();
+		}
 		scrollToBottom();
 
 		await ws.connect();
-		ws.subscribe(`server:${serverId}`);
+		ws.subscribe(wsChannel);
 		connected = ws.isConnected();
 
 		ws.on('log', handleMessage);
@@ -44,11 +52,11 @@
 
 	onDestroy(() => {
 		ws.off('log', handleMessage);
-		ws.unsubscribe(`server:${serverId}`);
+		ws.unsubscribe(wsChannel);
 	});
 
 	function handleMessage(message: any) {
-		if (message.server_id !== serverId) return;
+		if (message[idField] !== id) return;
 
 		switch (message.type) {
 			case 'log':
@@ -64,7 +72,7 @@
 			case 'error':
 				if (message.error) {
 					error = message.error;
-					console.error('Server error:', message.error);
+					console.error(`${entityName} error:`, message.error);
 					setTimeout(() => error = null, 5000);
 				}
 				break;
@@ -73,7 +81,7 @@
 
 	async function loadLogs() {
 		try {
-			const response = await api.get<{ logs: string[] }>(`/api/servers/${serverId}/logs?lines=400`);
+			const response = await api.get<{ logs: string[] }>(`${apiPrefix}/${id}/logs?lines=400`);
 			const rawLogs = response.logs || [];
 			logs = rawLogs.map(renderLog);
 		} catch (error) {
@@ -83,7 +91,7 @@
 
 	async function loadCommandHistory() {
 		try {
-			const response = await api.get<{ commands: { command: string; executed_at: string }[] }>(`/api/servers/${serverId}/history?limit=50`);
+			const response = await api.get<{ commands: { command: string; executed_at: string }[] }>(`${apiPrefix}/${id}/history?limit=50`);
 			commandHistory = (response.commands || []).map(c => c.command);
 		} catch (error) {
 			console.error('Failed to load command history:', error);
@@ -96,22 +104,26 @@
 		const commandToSend = command;
 
 		if (ws.isConnected()) {
-			console.log('Sending command via WebSocket:', commandToSend);
+			console.log(`Sending ${type} command via WebSocket:`, commandToSend);
 			try {
-				ws.sendCommand(serverId, commandToSend);
+				if (type === 'server') {
+					ws.sendCommand(id, commandToSend);
+				} else {
+					ws.sendProxyCommand(id, commandToSend);
+				}
 				commandHistory = [commandToSend, ...commandHistory];
 				command = '';
 				historyIndex = -1;
 				error = null;
 			} catch (err) {
-				console.error('Failed to send command via WebSocket:', err);
+				console.error(`Failed to send ${type} command via WebSocket:`, err);
 				error = 'Failed to send command';
 				setTimeout(() => error = null, 5000);
 			}
 		} else {
-			console.log('Sending command via HTTP API:', commandToSend);
+			console.log(`Sending ${type} command via HTTP API:`, commandToSend);
 			try {
-				await api.post(`/api/servers/${serverId}/command`, { command: commandToSend });
+				await api.post(`${apiPrefix}/${id}/command`, { command: commandToSend });
 				commandHistory = [commandToSend, ...commandHistory];
 				command = '';
 				historyIndex = -1;
@@ -119,7 +131,7 @@
 				await loadLogs();
 				scrollToBottom();
 			} catch (err: any) {
-				console.error('Failed to send command via HTTP:', err);
+				console.error(`Failed to send ${type} command via HTTP:`, err);
 				error = err?.error || 'Failed to send command';
 				setTimeout(() => error = null, 5000);
 			}
@@ -165,7 +177,7 @@
 <div class="console-container">
 	<div class="log-output" bind:this={logContainer} on:scroll={handleScroll}>
 		{#if logs.length === 0}
-			<div class="empty-state">No logs available. Start the server to see console output.</div>
+			<div class="empty-state">No logs available. Start the {entityName} to see console output.</div>
 		{:else}
 			{#each logs as log, index}
 				<div class="log-line" class:last={index === logs.length - 1}>

@@ -93,6 +93,17 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 					r.Post("/stop", proxyHandler.Stop)
 					r.Post("/restart", proxyHandler.Restart)
 					r.Get("/logs", proxyHandler.GetLogs)
+					r.Post("/command", proxyHandler.ExecuteCommand)
+
+					r.Route("/files", func(r chi.Router) {
+						r.Get("/", proxyHandler.ListFiles)
+						r.Get("/content", proxyHandler.GetFileContent)
+						r.Put("/content", proxyHandler.WriteFileContent)
+						r.Delete("/", proxyHandler.DeleteFile)
+						r.Get("/download", proxyHandler.DownloadFile)
+						r.Post("/rename", proxyHandler.RenameFile)
+						r.Post("/upload", fileUploadHandler.UploadProxy)
+					})
 				})
 			})
 		})

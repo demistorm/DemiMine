@@ -47,6 +47,14 @@ class ApiClient {
 			headers,
 		});
 
+		if (response.status === 401) {
+			this.setToken(null);
+			if (typeof window !== 'undefined') {
+				window.location.replace('/login');
+			}
+			return new Promise(() => {});
+		}
+
 		if (!response.ok) {
 			const error: ApiError = await response.json().catch(() => ({ 
 				error: 'unknown_error',
@@ -110,6 +118,14 @@ class ApiClient {
 			body: formData,
 		});
 
+		if (response.status === 401) {
+			this.setToken(null);
+			if (typeof window !== 'undefined') {
+				window.location.replace('/login');
+			}
+			return new Promise(() => {});
+		}
+
 		if (!response.ok) {
 			throw new Error('Upload failed');
 		}
@@ -153,6 +169,7 @@ export interface Proxy {
 	id: number;
 	name: string;
 	host_port: number;
+	ram_mb: number;
 	forwarding_secret: string;
 	status: string;
 	player_count: number;

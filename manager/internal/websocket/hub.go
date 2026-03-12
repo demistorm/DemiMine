@@ -15,6 +15,7 @@ const (
 	MessageTypeSubscribe    MessageType = "subscribe"
 	MessageTypeUnsubscribe  MessageType = "unsubscribe"
 	MessageTypeCommand      MessageType = "command"
+	MessageTypeProxyCommand MessageType = "proxy_command"
 	MessageTypeServerStatus MessageType = "server_status"
 	MessageTypePlayerJoin   MessageType = "player_join"
 	MessageTypePlayerLeave  MessageType = "player_leave"
@@ -27,6 +28,7 @@ type Message struct {
 	Type       MessageType `json:"type"`
 	Channel    *string     `json:"channel,omitempty"`
 	ServerID   *int64      `json:"server_id,omitempty"`
+	ProxyID    *int64      `json:"proxy_id,omitempty"`
 	Command    *string     `json:"command,omitempty"`
 	Status     *string     `json:"status,omitempty"`
 	PlayerName *string     `json:"player_name,omitempty"`

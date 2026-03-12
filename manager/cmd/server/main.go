@@ -76,6 +76,10 @@ func main() {
 		log.Printf("Failed to start log streaming for running containers: %v", err)
 	}
 
+	if err := logManager.StartStreamingForRunningProxies(context.Background()); err != nil {
+		log.Printf("Failed to start log streaming for running proxies: %v", err)
+	}
+
 	if err := consoleManager.StartConsolesForRunningContainers(context.Background()); err != nil {
 		log.Printf("Failed to start console streaming for running containers: %v", err)
 	}

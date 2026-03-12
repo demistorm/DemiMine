@@ -2,7 +2,10 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 
-	export let serverId: number;
+	export let id: number;
+	export let type: 'server' | 'proxy' = 'server';
+
+	$: apiPrefix = type === 'server' ? '/api/servers' : '/api/proxies';
 
 	interface FileEntry {
 		name: string;
@@ -39,7 +42,7 @@
 		error = '';
 		try {
 			const response = await api.get<{ path: string; entries: FileEntry[] }>(
-				`/api/servers/${serverId}/files?path=${encodeURIComponent(path)}`
+				`${apiPrefix}/${id}/files?path=${encodeURIComponent(path)}`
 			);
 			currentPath = response.path;
 			files = response.entries || [];
@@ -85,7 +88,7 @@
 		searchTerm = '';
 		try {
 			const response = await api.get<{ content: string; is_gzipped?: string }>(
-				`/api/servers/${serverId}/files/content?path=${encodeURIComponent(currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`)}`
+				`${apiPrefix}/${id}/files/content?path=${encodeURIComponent(currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`)}`
 			);
 			selectedFile = file;
 			fileContent = response.content;
@@ -111,7 +114,7 @@
 		
 		loading = true;
 		try {
-			await api.put(`/api/servers/${serverId}/files/content?path=${encodeURIComponent(filePath)}`, { content: fileContent });
+			await api.put(`${apiPrefix}/${id}/files/content?path=${encodeURIComponent(filePath)}`, { content: fileContent });
 			editingFile = false;
 			selectedFile = null;
 		} catch (err) {
@@ -136,7 +139,7 @@
 		const filePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
 		
 		try {
-			await api.delete(`/api/servers/${serverId}/files?path=${encodeURIComponent(filePath)}`);
+			await api.delete(`${apiPrefix}/${id}/files?path=${encodeURIComponent(filePath)}`);
 			loadFiles();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to delete';
@@ -146,7 +149,7 @@
 
 	function downloadFile(file: FileEntry) {
 		const filePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-		window.open(`/api/servers/${serverId}/files/download?path=${encodeURIComponent(filePath)}`, '_blank');
+		window.open(`${apiPrefix}/${id}/files/download?path=${encodeURIComponent(filePath)}`, '_blank');
 	}
 
 	function openRenameModal(file: FileEntry) {
@@ -159,7 +162,7 @@
 		if (!renameNewName.trim()) return;
 
 		try {
-			await api.post(`/api/servers/${serverId}/files/rename`, {
+			await api.post(`${apiPrefix}/${id}/files/rename`, {
 				old_path: renameOldPath,
 				new_name: renameNewName
 			});
@@ -201,7 +204,7 @@
 				formData.append('file', file);
 				
 				const token = localStorage.getItem('token');
-				const response = await fetch(`/api/servers/${serverId}/files/upload?path=${encodeURIComponent(currentPath)}`, {
+				const response = await fetch(`${apiPrefix}/${id}/files/upload?path=${encodeURIComponent(currentPath)}`, {
 					method: 'POST',
 					headers: token ? { 'Authorization': `Bearer ${token}` } : {},
 					body: formData

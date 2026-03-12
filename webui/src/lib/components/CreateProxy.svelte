@@ -12,6 +12,7 @@
 
 	let name = '';
 	let hostPort = 25565;
+	let ramMB = 512;
 
 	async function createProxy() {
 		if (!name) return;
@@ -22,7 +23,8 @@
 		try {
 			await api.post('/api/proxies', {
 				name,
-				host_port: hostPort
+				host_port: hostPort,
+				ram_mb: ramMB
 			});
 			
 			await loadProxies();
@@ -40,6 +42,7 @@
 		show = false;
 		name = '';
 		hostPort = 25565;
+		ramMB = 512;
 		error = '';
 	}
 </script>
@@ -77,6 +80,18 @@
 						max={65535}
 					/>
 					<span class="hint">The port players will connect to (default: 25565)</span>
+				</div>
+
+				<div class="field">
+					<label for="ram">Memory (MB)</label>
+					<input 
+						type="number" 
+						id="ram" 
+						bind:value={ramMB}
+						min={256}
+						step={256}
+					/>
+					<span class="hint">Java heap size (default: 512)</span>
 				</div>
 
 				<div class="info-box">

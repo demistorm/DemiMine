@@ -176,3 +176,72 @@ func extractZip(zipPath, destDir string) []string {
 
 	return extracted
 }
+
+func (h *FileUploadHandler) UploadProxy(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var proxyName string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&proxyName)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "database error"})
+		return
+	}
+
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to parse multipart form"})
+		return
+	}
+
+	relativePath := r.URL.Query().Get("path")
+	if relativePath == "" {
+		relativePath = "/"
+	}
+
+	proxyPath := filepath.Join(h.cfg.ServersDir, proxyName)
+	targetDir := filepath.Join(proxyPath, filepath.Clean("/"+relativePath))
+
+	if !strings.HasPrefix(targetDir, proxyPath) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
+		return
+	}
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create target directory"})
+		return
+	}
+
+	var uploaded []string
+
+	for _, files := range r.MultipartForm.File {
+		for _, fileHeader := range files {
+			uploaded = append(uploaded, h.processUploadedFile(fileHeader, targetDir)...)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"uploaded": uploaded,
+	})
+}

@@ -6,6 +6,7 @@ type Proxy struct {
 	ID               int64     `json:"id"`
 	Name             string    `json:"name" binding:"required"`
 	HostPort         int       `json:"host_port" binding:"required"`
+	RAMMB            int       `json:"ram_mb"`
 	ForwardingSecret string    `json:"forwarding_secret"`
 	Status           string    `json:"status"`
 	CanvasX          int       `json:"canvas_x"`
@@ -116,6 +117,7 @@ type ProxyResponse struct {
 	ID               int64    `json:"id"`
 	Name             string   `json:"name"`
 	HostPort         int      `json:"host_port"`
+	RAMMB            int      `json:"ram_mb"`
 	ForwardingSecret string   `json:"forwarding_secret"`
 	Status           string   `json:"status"`
 	PlayerCount      int      `json:"player_count"`

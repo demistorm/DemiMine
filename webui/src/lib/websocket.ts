@@ -1,11 +1,12 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-type MessageType = 'subscribe' | 'unsubscribe' | 'command' | 'server_status' | 'player_join' | 'player_leave' | 'log' | 'resources' | 'crash';
+type MessageType = 'subscribe' | 'unsubscribe' | 'command' | 'proxy_command' | 'server_status' | 'player_join' | 'player_leave' | 'log' | 'resources' | 'crash';
 
 interface Message {
 	type: MessageType;
 	channel?: string;
 	server_id?: number;
+	proxy_id?: number;
 	command?: string;
 	status?: string;
 	player_name?: string;
@@ -139,6 +140,15 @@ class WebSocketClient {
 		this.send({
 			type: 'command',
 			server_id: serverId,
+			command
+		});
+	}
+
+	sendProxyCommand(proxyId: number, command: string) {
+		console.log(`[WebSocket] Preparing to send proxy command: proxyId=${proxyId}, command="${command}"`);
+		this.send({
+			type: 'proxy_command',
+			proxy_id: proxyId,
 			command
 		});
 	}
