@@ -37,6 +37,16 @@
 		loadFiles();
 	});
 
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			if (editingFile) {
+				closeEditor();
+			} else if (currentPath !== '/') {
+				navigateUp();
+			}
+		}
+	}
+
 	async function loadFiles(path = currentPath) {
 		loading = true;
 		error = '';
@@ -250,6 +260,8 @@
 
 	$: pathSegments = currentPath.split('/').filter(Boolean);
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 {#if editingFile}
 	<div class="editor-container">

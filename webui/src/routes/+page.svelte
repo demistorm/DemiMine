@@ -17,7 +17,7 @@
 	let contextMenuServer: Server | null = null;
 	let contextMenuProxy: Proxy | null = null;
 	let contextMenuPos = { x: 0, y: 0 };
-	let pendingDelete = false;
+	let deleteStep = 0;
 	let ignoreNextClick = false;
 
 	$: serverList = $servers || [];
@@ -145,7 +145,7 @@
         contextMenuServer = server;
         contextMenuProxy = null;
         contextMenuPos = { x, y };
-        pendingDelete = false;
+        deleteStep = 0;
         ignoreNextClick = true;
     }
 
@@ -153,20 +153,25 @@
         contextMenuProxy = proxy;
         contextMenuServer = null;
         contextMenuPos = { x, y };
-        pendingDelete = false;
+        deleteStep = 0;
         ignoreNextClick = true;
     }
 
     function closeContextMenu() {
         contextMenuServer = null;
         contextMenuProxy = null;
-        pendingDelete = false;
+        deleteStep = 0;
     }
 
     function handleServerContextMenuAction(action: 'start' | 'stop' | 'delete') {
-        if (action === 'delete' && !pendingDelete) {
-            pendingDelete = true;
-            return;
+        if (action === 'delete') {
+            if (deleteStep === 0) {
+                deleteStep = 1;
+                return;
+            } else if (deleteStep === 1) {
+                deleteStep = 2;
+                return;
+            }
         }
         if (contextMenuServer) {
             if (action === 'start') handleServerStart(contextMenuServer);
@@ -177,9 +182,14 @@
     }
 
     function handleProxyContextMenuAction(action: 'start' | 'stop' | 'delete') {
-        if (action === 'delete' && !pendingDelete) {
-            pendingDelete = true;
-            return;
+        if (action === 'delete') {
+            if (deleteStep === 0) {
+                deleteStep = 1;
+                return;
+            } else if (deleteStep === 1) {
+                deleteStep = 2;
+                return;
+            }
         }
         if (contextMenuProxy) {
             if (action === 'start') handleProxyStart(contextMenuProxy);
@@ -293,10 +303,17 @@
         {/if}
         <button 
             class="menu-item danger" 
-            class:confirm={pendingDelete}
+            class:confirm={deleteStep > 0}
+            class:final-warning={deleteStep === 2}
             on:click={() => handleServerContextMenuAction('delete')}
         >
-            {pendingDelete ? 'Click again to confirm' : 'Delete'}
+            {#if deleteStep === 0}
+                Delete
+            {:else if deleteStep === 1}
+                Are you sure?
+            {:else}
+                FINAL WARNING
+            {/if}
         </button>
     </div>
 {/if}
@@ -317,10 +334,17 @@
         {/if}
         <button 
             class="menu-item danger" 
-            class:confirm={pendingDelete}
+            class:confirm={deleteStep > 0}
+            class:final-warning={deleteStep === 2}
             on:click={() => handleProxyContextMenuAction('delete')}
         >
-            {pendingDelete ? 'Click again to confirm' : 'Delete'}
+            {#if deleteStep === 0}
+                Delete
+            {:else if deleteStep === 1}
+                Are you sure?
+            {:else}
+                FINAL WARNING
+            {/if}
         </button>
     </div>
 {/if}
@@ -434,5 +458,9 @@
 
     .menu-item.confirm {
         font-weight: 500;
+    }
+
+    .menu-item.final-warning {
+        font-weight: 600;
     }
 </style>

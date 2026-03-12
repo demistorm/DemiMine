@@ -12,7 +12,7 @@
 	let saving = false;
 	let error = '';
 	let success = '';
-	let showDeleteConfirm = false;
+	let deleteStep = 0;
 
 	const dispatch = createEventDispatcher();
 
@@ -49,8 +49,12 @@
 	}
 
 	async function deleteServer() {
-		if (!showDeleteConfirm) {
-			showDeleteConfirm = true;
+		if (deleteStep === 0) {
+			deleteStep = 1;
+			return;
+		}
+		if (deleteStep === 1) {
+			deleteStep = 2;
 			return;
 		}
 
@@ -60,14 +64,14 @@
 			dispatch('deleted');
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to delete server';
-			showDeleteConfirm = false;
+			deleteStep = 0;
 		} finally {
 			saving = false;
 		}
 	}
 
 	function cancelDelete() {
-		showDeleteConfirm = false;
+		deleteStep = 0;
 	}
 
 	function formatBytes(mb: number): string {
@@ -172,12 +176,24 @@
 		<h2>Danger Zone</h2>
 		
 		<div class="danger-actions">
-			{#if showDeleteConfirm}
+			{#if deleteStep === 2}
+				<div class="confirm-delete">
+					<p class="final-warning">FINAL WARNING: All server files and backups will be permanently deleted!</p>
+					<div class="confirm-buttons">
+						<button class="btn danger" on:click={deleteServer} disabled={saving}>
+							Delete Permanently
+						</button>
+						<button class="btn" on:click={cancelDelete}>
+							Cancel
+						</button>
+					</div>
+				</div>
+			{:else if deleteStep === 1}
 				<div class="confirm-delete">
 					<p>Are you sure? This will delete all server files and cannot be undone.</p>
 					<div class="confirm-buttons">
-						<button class="btn danger" on:click={deleteServer} disabled={saving}>
-							Yes, Delete Server
+						<button class="btn danger" on:click={deleteServer}>
+							Yes, Continue
 						</button>
 						<button class="btn" on:click={cancelDelete}>
 							Cancel
@@ -339,6 +355,11 @@
 	.confirm-delete p {
 		color: var(--text-secondary);
 		margin: 0 0 1rem;
+	}
+
+	.confirm-delete p.final-warning {
+		color: #f87171;
+		font-weight: 600;
 	}
 
 	.confirm-buttons {
