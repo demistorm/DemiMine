@@ -114,7 +114,7 @@ func SyncProxyConfig(db *sql.DB, proxyID int64, serversDir string) error {
 	}
 
 	rows, err := db.Query(`
-		SELECT name, domain FROM servers WHERE proxy_id = ? ORDER BY id
+		SELECT name, domain, host_port FROM servers WHERE proxy_id = ? ORDER BY id
 	`, proxyID)
 	if err != nil {
 		return fmt.Errorf("failed to query servers: %w", err)
@@ -128,12 +128,13 @@ func SyncProxyConfig(db *sql.DB, proxyID int64, serversDir string) error {
 	for rows.Next() {
 		var name string
 		var domain sql.NullString
-		if err := rows.Scan(&name, &domain); err != nil {
+		var hostPort int
+		if err := rows.Scan(&name, &domain, &hostPort); err != nil {
 			continue
 		}
 
 		containerName := "demimine-" + sanitizeNameForProxy(name)
-		servers[name] = containerName + ":25565"
+		servers[name] = fmt.Sprintf("%s:%d", containerName, hostPort)
 
 		if domain.Valid && domain.String != "" {
 			forcedHosts[domain.String] = []string{name}
