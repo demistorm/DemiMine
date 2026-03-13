@@ -188,3 +188,148 @@ export interface LoginResponse {
 	token: string;
 	expires_at: string;
 }
+
+export interface ModrinthSearchResult {
+	hits: ModrinthProjectHit[];
+	offset: number;
+	limit: number;
+	total_hits: number;
+}
+
+export interface ModrinthProjectHit {
+	project_id: string;
+	slug: string;
+	title: string;
+	description: string;
+	categories: string[];
+	project_type: string;
+	downloads: number;
+	follows: number;
+	icon_url: string;
+	date_created: string;
+	date_modified: string;
+	latest_version: string;
+	license: string;
+	loaders: string[];
+	game_versions: string[];
+}
+
+export interface ModrinthProject {
+	id: string;
+	slug: string;
+	title: string;
+	description: string;
+	categories: string[];
+	body: string;
+	project_type: string;
+	downloads: number;
+	followers: number;
+	icon_url: string;
+	date_created: string;
+	date_modified: string;
+	license: { id: string; name: string; url: string };
+	gallery: { url: string; featured: boolean; title: string }[];
+}
+
+export interface ModrinthVersion {
+	id: string;
+	project_id: string;
+	name: string;
+	version_number: string;
+	changelog: string;
+	game_versions: string[];
+	loaders: string[];
+	dependencies: ModrinthDependency[];
+	files: ModrinthVersionFile[];
+	date_created: string;
+	featured: boolean;
+	version_type: string;
+}
+
+export interface ModrinthDependency {
+	version_id: string;
+	project_id: string;
+	dependency_type: string;
+}
+
+export interface ModrinthVersionFile {
+	hashes: { sha1: string; sha512: string };
+	url: string;
+	filename: string;
+	primary: boolean;
+	size: number;
+}
+
+export interface InstalledPlugin {
+	id: number;
+	target_type: string;
+	target_id: number;
+	project_id: string;
+	project_slug: string;
+	project_name: string;
+	version_id: string;
+	version_number: string;
+	filename: string;
+	file_hash: string;
+	installed_at: string;
+	dependencies?: InstalledPlugin[];
+}
+
+export interface PluginUpdateResult {
+	plugin: InstalledPlugin;
+	latest_version: string;
+	current_version: string;
+	has_update: boolean;
+}
+
+export interface InstallPluginRequest {
+	project_id: string;
+	version_id?: string;
+	game_version?: string;
+}
+
+export const modrinthApi = {
+	search: (params: {
+		query?: string;
+		limit?: number;
+		offset?: number;
+		loaders?: string[];
+		game_version?: string;
+	}) => {
+		const searchParams = new URLSearchParams();
+		if (params.query) searchParams.set('query', params.query);
+		if (params.limit) searchParams.set('limit', params.limit.toString());
+		if (params.offset) searchParams.set('offset', params.offset.toString());
+		if (params.loaders?.length) searchParams.set('loaders', params.loaders.join(','));
+		if (params.game_version) searchParams.set('game_version', params.game_version);
+		return api.get<ModrinthSearchResult>(`/api/modrinth/search?${searchParams}`);
+	},
+
+	getProject: (slug: string) => 
+		api.get<ModrinthProject>(`/api/modrinth/project/${slug}`),
+
+	getVersions: (slug: string, gameVersions?: string[], loaders?: string[]) => {
+		const params = new URLSearchParams();
+		if (gameVersions?.length) params.set('game_versions', JSON.stringify(gameVersions));
+		if (loaders?.length) params.set('loaders', JSON.stringify(loaders));
+		const query = params.toString();
+		return api.get<ModrinthVersion[]>(`/api/modrinth/project/${slug}/versions${query ? '?' + query : ''}`);
+	},
+};
+
+export const pluginApi = {
+	getInstalled: (type: 'server' | 'proxy', id: number) =>
+		api.get<InstalledPlugin[]>(`/api/plugins/${type}/${id}`),
+
+	install: (type: 'server' | 'proxy', id: number, data: InstallPluginRequest) =>
+		api.post<InstalledPlugin>(`/api/plugins/${type}/${id}/install`, data),
+
+	uninstall: (type: 'server' | 'proxy', id: number, projectId: string) =>
+		api.delete<{ success: boolean }>(`/api/plugins/${type}/${id}/${projectId}`),
+
+	checkUpdates: (type: 'server' | 'proxy', id: number) =>
+		api.get<PluginUpdateResult[]>(`/api/plugins/${type}/${id}/updates`),
+
+	update: (type: 'server' | 'proxy', id: number, projectId: string, gameVersion?: string) =>
+		api.post<InstalledPlugin>(`/api/plugins/${type}/${id}/${projectId}/update`, { game_version: gameVersion }),
+};
