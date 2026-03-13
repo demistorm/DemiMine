@@ -32,6 +32,8 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	versionsHandler := handlers.NewVersionsHandler()
 	javaHandler := handlers.NewJavaHandler()
 	fileUploadHandler := handlers.NewFileUploadHandler(database, cfg)
+	modrinthHandler := handlers.NewModrinthHandler()
+	pluginHandler := handlers.NewPluginHandler(database, cfg.ServersDir)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -48,6 +50,22 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 		r.Route("/java", func(r chi.Router) {
 			r.Get("/", javaHandler.List)
 			r.Get("/required", javaHandler.GetRequired)
+		})
+
+		r.Route("/modrinth", func(r chi.Router) {
+			r.Use(middleware.Auth(database, cfg.JWTSecret))
+			r.Get("/search", modrinthHandler.Search)
+			r.Get("/project/{slug}", modrinthHandler.GetProject)
+			r.Get("/project/{slug}/versions", modrinthHandler.GetVersions)
+		})
+
+		r.Route("/plugins", func(r chi.Router) {
+			r.Use(middleware.Auth(database, cfg.JWTSecret))
+			r.Get("/{type}/{id}", pluginHandler.GetInstalled)
+			r.Post("/{type}/{id}/install", pluginHandler.Install)
+			r.Delete("/{type}/{id}/{project_id}", pluginHandler.Uninstall)
+			r.Get("/{type}/{id}/updates", pluginHandler.CheckUpdates)
+			r.Post("/{type}/{id}/{project_id}/update", pluginHandler.Update)
 		})
 
 		r.Group(func(r chi.Router) {

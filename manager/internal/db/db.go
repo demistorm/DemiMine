@@ -139,6 +139,21 @@ func RunMigrations(db *sql.DB) error {
 			password_hash TEXT NOT NULL,
 			setup_complete INTEGER DEFAULT 0
 		)`,
+
+		`CREATE TABLE IF NOT EXISTS installed_plugins (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			target_type TEXT NOT NULL,
+			target_id INTEGER NOT NULL,
+			project_id TEXT NOT NULL,
+			project_slug TEXT NOT NULL,
+			project_name TEXT NOT NULL,
+			version_id TEXT NOT NULL,
+			version_number TEXT NOT NULL,
+			filename TEXT NOT NULL,
+			file_hash TEXT NOT NULL,
+			installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (target_id) REFERENCES servers(id) ON DELETE CASCADE
+		)`,
 	}
 
 	for _, migration := range migrations {
@@ -167,6 +182,8 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_backups_server ON backups(server_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_crash_logs_server ON crash_logs(server_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_command_history_server ON command_history(server_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_installed_plugins_target ON installed_plugins(target_type, target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_installed_plugins_project ON installed_plugins(project_id)`,
 	}
 
 	for _, index := range indexes {
