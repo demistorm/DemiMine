@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
+	import { getAceMode } from '$lib/utils/ace-utils';
+	import AceEditor from '$lib/components/AceEditor.svelte';
 
 	export let id: number;
 	export let type: 'server' | 'proxy' = 'server';
@@ -27,11 +29,6 @@
 	let uploadLoading = false;
 	let error = '';
 	let isGzipped = false;
-	let searchTerm = '';
-
-	$: filteredContent = searchTerm 
-		? fileContent.split('\n').filter(line => line.toLowerCase().includes(searchTerm.toLowerCase())).join('\n')
-		: fileContent;
 
 	onMount(() => {
 		loadFiles();
@@ -95,7 +92,6 @@
 
 		loading = true;
 		isGzipped = file.name.endsWith('.gz');
-		searchTerm = '';
 		try {
 			const response = await api.get<{ content: string; is_gzipped?: string }>(
 				`${apiPrefix}/${id}/files/content?path=${encodeURIComponent(currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`)}`
@@ -140,7 +136,6 @@
 		selectedFile = null;
 		fileContent = '';
 		isGzipped = false;
-		searchTerm = '';
 	}
 
 	async function deleteFile(file: FileEntry) {
@@ -277,20 +272,15 @@
 				<button class="btn secondary" on:click={closeEditor}>Cancel</button>
 			</div>
 		</div>
-		<div class="editor-toolbar">
-			<input 
-				type="text" 
-				bind:value={searchTerm} 
-				placeholder="Search in file... (Ctrl+F)" 
-				class="search-input"
+		{#if isGzipped}
+			<textarea bind:value={fileContent} class="editor" disabled={loading || isGzipped} readonly></textarea>
+		{:else}
+			<AceEditor 
+				bind:value={fileContent} 
+				language={getAceMode(selectedFile?.name || '')} 
+				readonly={false}
 			/>
-			{#if searchTerm && filteredContent !== fileContent}
-				<span class="filter-info">
-					Showing {filteredContent.split('\n').length} of {fileContent.split('\n').length} lines
-				</span>
-			{/if}
-		</div>
-		<textarea bind:value={filteredContent} class="editor" disabled={loading || isGzipped}></textarea>
+		{/if}
 	</div>
 {:else}
 	<div 
@@ -628,36 +618,6 @@
 	.editor-actions {
 		display: flex;
 		gap: 0.5rem;
-	}
-
-	.editor-toolbar {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		padding: 0.75rem 1.5rem;
-		background: var(--bg-tertiary);
-		border-bottom: 1px solid var(--border);
-	}
-
-	.search-input {
-		flex: 1;
-		padding: 0.5rem 0.75rem;
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
-		background-color: var(--bg-primary);
-		color: var(--text-primary);
-		font-size: 0.875rem;
-	}
-
-	.search-input:focus {
-		outline: none;
-		border-color: var(--accent);
-	}
-
-	.filter-info {
-		font-size: 0.75rem;
-		color: var(--text-secondary);
-		white-space: nowrap;
 	}
 
 	.editor {

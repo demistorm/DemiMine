@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -657,16 +658,58 @@ func (h *ProxyHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
+	var content []byte
+	isGzipped := strings.HasSuffix(fullPath, ".gz")
+
+	if isGzipped {
+		f, err := os.Open(fullPath)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+			return
+		}
+		defer f.Close()
+
+		gzReader, err := gzip.NewReader(f)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "corrupted gzip file"})
+			return
+		}
+		defer gzReader.Close()
+
+		content, err = io.ReadAll(gzReader)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to decompress file"})
+			return
+		}
+	} else {
+		content, err = os.ReadFile(fullPath)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+			return
+		}
+	}
+
+	if !isTextFile(content) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "binary file"})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"content": string(content)})
+	response := map[string]string{"content": string(content)}
+	if isGzipped {
+		response["is_gzipped"] = "true"
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *ProxyHandler) WriteFileContent(w http.ResponseWriter, r *http.Request) {
