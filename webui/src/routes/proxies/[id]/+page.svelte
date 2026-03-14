@@ -155,7 +155,7 @@
 					<PluginBrowser
 						targetType="proxy"
 						targetId={proxyId}
-						gameVersion="1.21.11"
+						gameVersion={proxy.plugin_mc_version || '1.21.11'}
 						loaders={['velocity']}
 					/>
 				</div>

@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -38,7 +40,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.created_at,
+		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, COALESCE(p.plugin_mc_version, '1.21.11'), p.status, p.canvas_x, p.canvas_y, p.created_at,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -59,13 +61,13 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var proxyID int64
 		var name, status string
 		var hostPort, ramMB int
-		var forwardingSecret sql.NullString
+		var forwardingSecret, pluginMCVersion sql.NullString
 		var canvasX, canvasY int
 		var createdAt string
 		var serverName sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &createdAt, &serverName,
+			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &pluginMCVersion, &status, &canvasX, &canvasY, &createdAt, &serverName,
 		)
 		if err != nil {
 			continue
@@ -83,9 +85,15 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 				CanvasY:          canvasY,
 				CreatedAt:        createdAt,
 				ConnectedServers: []string{},
+				IconPath:         h.getIconPath(proxyID, name),
 			}
 			if forwardingSecret.Valid {
 				proxy.ForwardingSecret = forwardingSecret.String
+			}
+			if pluginMCVersion.Valid {
+				proxy.PluginMCVersion = pluginMCVersion.String
+			} else {
+				proxy.PluginMCVersion = "1.21.11"
 			}
 			proxyMap[proxyID] = proxy
 			proxyOrder = append(proxyOrder, proxyID)
@@ -238,12 +246,12 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var p models.ProxyResponse
-	var forwardingSecret sql.NullString
+	var forwardingSecret, pluginMCVersion sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, created_at
+		SELECT id, name, host_port, ram_mb, forwarding_secret, COALESCE(plugin_mc_version, '1.21.11'), status, canvas_x, canvas_y, created_at
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &p.CreatedAt)
+	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &pluginMCVersion, &p.Status, &p.CanvasX, &p.CanvasY, &p.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -262,6 +270,11 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if forwardingSecret.Valid {
 		p.ForwardingSecret = forwardingSecret.String
 	}
+	if pluginMCVersion.Valid {
+		p.PluginMCVersion = pluginMCVersion.String
+	} else {
+		p.PluginMCVersion = "1.21.11"
+	}
 
 	serverRows, err := h.db.Query("SELECT name FROM servers WHERE proxy_id = ?", p.ID)
 	if err == nil {
@@ -273,6 +286,8 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 		serverRows.Close()
 	}
+
+	p.IconPath = h.getIconPath(p.ID, p.Name)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(p)
@@ -335,10 +350,11 @@ func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateProxyRequest struct {
-	Name    *string `json:"name"`
-	RAMMB   *int    `json:"ram_mb"`
-	CanvasX *int    `json:"canvas_x"`
-	CanvasY *int    `json:"canvas_y"`
+	Name            *string `json:"name"`
+	RAMMB           *int    `json:"ram_mb"`
+	CanvasX         *int    `json:"canvas_x"`
+	CanvasY         *int    `json:"canvas_y"`
+	PluginMCVersion *string `json:"plugin_mc_version"`
 }
 
 func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -379,6 +395,9 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CanvasY != nil {
 		h.db.Exec("UPDATE proxies SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
+	}
+	if req.PluginMCVersion != nil {
+		h.db.Exec("UPDATE proxies SET plugin_mc_version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.PluginMCVersion, id)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -987,4 +1006,175 @@ func (h *ProxyHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ProxyHandler) getIconPath(id int64, name string) *string {
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	iconPath := filepath.Join(proxyPath, "icon.png")
+
+	if _, err := os.Stat(iconPath); err == nil {
+		path := fmt.Sprintf("/api/proxies/%d/icon", id)
+		return &path
+	}
+	return nil
+}
+
+func (h *ProxyHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file too large (max 2MB)"})
+		return
+	}
+
+	file, header, err := r.FormFile("icon")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon file required"})
+		return
+	}
+	defer file.Close()
+
+	if !strings.HasSuffix(strings.ToLower(header.Filename), ".png") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon must be a PNG file"})
+		return
+	}
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read file"})
+		return
+	}
+
+	if !h.isValidProxyIcon(content) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon must be a valid 64x64 PNG image"})
+		return
+	}
+
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	iconPath := filepath.Join(proxyPath, "icon.png")
+
+	if err := os.WriteFile(iconPath, content, 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save icon"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ProxyHandler) GetIcon(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	iconPath := filepath.Join(proxyPath, "icon.png")
+
+	content, err := os.ReadFile(iconPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write(content)
+}
+
+func (h *ProxyHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid proxy id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
+		return
+	}
+
+	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	iconPath := filepath.Join(proxyPath, "icon.png")
+
+	if _, err := os.Stat(iconPath); os.IsNotExist(err) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon not found"})
+		return
+	}
+
+	if err := os.Remove(iconPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete icon"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ProxyHandler) isValidProxyIcon(content []byte) bool {
+	if len(content) < 8 {
+		return false
+	}
+
+	reader := strings.NewReader(string(content))
+	img, _, err := image.DecodeConfig(reader)
+	if err != nil {
+		return false
+	}
+
+	return img.Width == 64 && img.Height == 64
 }

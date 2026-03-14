@@ -590,6 +590,17 @@
 		display: none;
 	}
 
+	.icon-actions label {
+		display: inline-block;
+		cursor: pointer;
+		user-select: none;
+		box-sizing: border-box;
+		line-height: 1.5;
+		vertical-align: middle;
+		margin: 0;
+		padding: 0;
+	}
+
 	.icon-upload-container {
 		display: flex;
 		align-items: center;

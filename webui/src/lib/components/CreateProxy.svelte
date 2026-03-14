@@ -13,6 +13,44 @@
 	let name = '';
 	let hostPort = 25565;
 	let ramMB = 512;
+	let iconFile: File | null = null;
+	let iconPreview: string | null = null;
+	let iconError = '';
+	let createdProxyId: number | null = null;
+
+	function handleIconSelect(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+
+		iconError = '';
+		
+		if (!file.type.includes('png')) {
+			iconError = 'Icon must be a PNG file';
+			return;
+		}
+
+		const img = new Image();
+		const url = URL.createObjectURL(file);
+		
+		img.onload = () => {
+			if (img.width !== 64 || img.height !== 64) {
+				iconError = 'Icon must be exactly 64x64 pixels';
+				URL.revokeObjectURL(url);
+				return;
+			}
+			
+			iconFile = file;
+			iconPreview = url;
+		};
+		
+		img.onerror = () => {
+			iconError = 'Failed to load image';
+			URL.revokeObjectURL(url);
+		};
+		
+		img.src = url;
+	}
 
 	async function createProxy() {
 		if (!name) return;
@@ -21,11 +59,17 @@
 		error = '';
 
 		try {
-			await api.post('/api/proxies', {
+			const result = await api.post('/api/proxies', {
 				name,
 				host_port: hostPort,
 				ram_mb: ramMB
-			});
+			}) as { id: number };
+			
+			createdProxyId = result.id;
+			
+			if (iconFile && createdProxyId) {
+				await api.uploadProxyIcon(createdProxyId, iconFile);
+			}
 			
 			await loadProxies();
 			dispatch('created');
@@ -43,6 +87,10 @@
 		name = '';
 		hostPort = 25565;
 		ramMB = 512;
+		iconFile = null;
+		iconPreview = null;
+		iconError = '';
+		createdProxyId = null;
 		error = '';
 	}
 </script>
@@ -94,6 +142,38 @@
 					<span class="hint">Java heap size (default: 512)</span>
 				</div>
 
+				<div class="field">
+					<label>Proxy Icon (Optional)</label>
+					<div class="icon-section">
+						{#if iconPreview}
+							<div class="icon-preview-container">
+								<img src={iconPreview} alt="Proxy icon" class="icon-preview" />
+								<button class="btn small" on:click={() => { iconFile = null; iconPreview = null; }}>
+									Clear
+								</button>
+							</div>
+						{:else}
+							<label class="upload-btn">
+								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+									<polyline points="17 8 12 3 7 8"></polyline>
+									<line x1="12" y1="3" x2="12" y2="15"></line>
+								</svg>
+								<span>Upload Icon</span>
+								<input 
+									type="file" 
+									accept="image/png"
+									on:change={handleIconSelect}
+								/>
+							</label>
+						{/if}
+						{#if iconError}
+							<div class="icon-error">{iconError}</div>
+						{/if}
+						<span class="hint">64x64 PNG image for canvas display (cosmetic only)</span>
+					</div>
+				</div>
+
 				<div class="info-box">
 					<p>Velocity proxies route players to backend servers. Create servers and assign them to this proxy from the server settings.</p>
 				</div>
@@ -128,7 +208,7 @@
 		border: 1px solid var(--border);
 		border-radius: 0.5rem;
 		width: 90%;
-		max-width: 450px;
+		max-width: 500px;
 	}
 
 	.modal-header {
@@ -204,6 +284,61 @@
 		opacity: 0.7;
 	}
 
+	.icon-section {
+		margin-bottom: 0.5rem;
+	}
+
+	.icon-preview-container {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.icon-preview {
+		width: 64px;
+		height: 64px;
+		object-fit: contain;
+		border-radius: 0.25rem;
+		background-color: var(--bg-tertiary);
+		padding: 0.25rem;
+	}
+
+	.upload-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		background-color: var(--bg-tertiary);
+		border: 2px dashed var(--border);
+		border-radius: 0.5rem;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.upload-btn:hover {
+		border-color: var(--accent);
+		background-color: var(--bg-secondary);
+	}
+
+	.upload-btn input {
+		display: none;
+	}
+
+	.upload-btn svg {
+		color: var(--text-secondary);
+	}
+
+	.upload-btn span {
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+	}
+
+	.icon-error {
+		color: var(--error);
+		font-size: 0.875rem;
+		margin-top: 0.5rem;
+	}
+
 	.info-box {
 		background: var(--bg-tertiary);
 		border-radius: 0.375rem;
@@ -263,5 +398,10 @@
 	.btn.secondary:hover:not(:disabled) {
 		background-color: var(--bg-tertiary);
 		border-color: var(--border);
+	}
+
+	.btn.small {
+		padding: 0.5rem 0.75rem;
+		font-size: 0.8125rem;
 	}
 </style>
