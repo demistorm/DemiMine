@@ -6,4 +6,6 @@ backups/
 *.db
 *.log
 manager/demimine
+manager/server
 .env
+node_modules/
