@@ -7,7 +7,6 @@
 
 	let name = proxy.name || '';
 	let ramMB = proxy.ram_mb || 512;
-	let pluginMCVersion = proxy.plugin_mc_version || '1.21.11';
 	let saving = false;
 	let error = '';
 	let success = '';
@@ -27,8 +26,7 @@
 		try {
 			await api.patch(`/api/proxies/${proxy.id}`, {
 				name: name !== proxy.name ? name : undefined,
-				ram_mb: ramMB !== proxy.ram_mb ? ramMB : undefined,
-				plugin_mc_version: pluginMCVersion !== (proxy.plugin_mc_version || '1.21.11') ? pluginMCVersion : undefined
+				ram_mb: ramMB !== proxy.ram_mb ? ramMB : undefined
 			});
 			
 			success = 'Settings saved successfully';
@@ -36,8 +34,7 @@
 				list.map(p => p.id === proxy.id ? { 
 					...p, 
 					name,
-					ram_mb: ramMB,
-					plugin_mc_version: pluginMCVersion
+					ram_mb: ramMB
 				} : p)
 			);
 			
@@ -237,16 +234,6 @@
 			<label for="ram">Memory (MB)</label>
 			<input type="number" id="ram" bind:value={ramMB} min="256" step="256" />
 			<span class="hint">Java heap size for the proxy (e.g., 512, 1024, 2048)</span>
-		</div>
-	</div>
-
-	<div class="section">
-		<h2>Plugin Settings</h2>
-		
-		<div class="field">
-			<label for="mc-version">Minecraft Version for Plugins</label>
-			<input type="text" id="mc-version" bind:value={pluginMCVersion} placeholder="1.21.11" />
-			<span class="hint">MC version used when searching/installing plugins from Modrinth (e.g., 1.21.11, 1.21.1)</span>
 		</div>
 	</div>
 

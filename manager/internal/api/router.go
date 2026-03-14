@@ -34,6 +34,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	fileUploadHandler := handlers.NewFileUploadHandler(database, cfg)
 	modrinthHandler := handlers.NewModrinthHandler()
 	pluginHandler := handlers.NewPluginHandler(database, cfg.ServersDir)
+	settingsHandler := handlers.NewSettingsHandler(database)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -66,6 +67,12 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 			r.Delete("/{type}/{id}/{project_id}", pluginHandler.Uninstall)
 			r.Get("/{type}/{id}/updates", pluginHandler.CheckUpdates)
 			r.Post("/{type}/{id}/{project_id}/update", pluginHandler.Update)
+		})
+
+		r.Route("/settings", func(r chi.Router) {
+			r.Use(middleware.Auth(database, cfg.JWTSecret))
+			r.Get("/", settingsHandler.Get)
+			r.Put("/", settingsHandler.Update)
 		})
 
 		r.Group(func(r chi.Router) {

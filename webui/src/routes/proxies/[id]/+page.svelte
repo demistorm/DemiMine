@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { proxies, loadProxies, updateProxyStatus } from '$lib/stores/servers';
+	import { proxyMCVersion, loadGlobalSettings } from '$lib/stores/settings';
 	import { api } from '$lib/api';
 	import Console from '$lib/components/Console.svelte';
 	import Files from '$lib/components/Files.svelte';
@@ -155,7 +156,7 @@
 					<PluginBrowser
 						targetType="proxy"
 						targetId={proxyId}
-						gameVersion={proxy.plugin_mc_version || '1.21.11'}
+						gameVersion={$proxyMCVersion}
 						loaders={['velocity']}
 					/>
 				</div>

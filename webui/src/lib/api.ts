@@ -246,7 +246,6 @@ export interface Proxy {
 	host_port: number;
 	ram_mb: number;
 	forwarding_secret: string;
-	plugin_mc_version: string;
 	status: string;
 	player_count: number;
 	connected_servers: string[];
@@ -409,4 +408,12 @@ export const pluginApi = {
 
 	update: (type: 'server' | 'proxy', id: number, projectId: string, gameVersion?: string) =>
 		api.post<InstalledPlugin>(`/api/plugins/${type}/${id}/${projectId}/update`, { game_version: gameVersion }),
+};
+
+export const settingsApi = {
+	get: () =>
+		api.get<{ [key: string]: string }>('/api/settings'),
+
+	update: (data: { proxy_mc_version: string }) =>
+		api.put<{ success: boolean }>('/api/settings', data),
 };

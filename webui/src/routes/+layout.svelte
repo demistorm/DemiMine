@@ -17,6 +17,9 @@
 		</div>
 		
 		<div class="nav-links">
+			<a href="/settings" class="nav-link" class:active={$page.url.pathname === '/settings'}>
+				Settings
+			</a>
 			<a href="/" class="nav-link" class:active={$page.url.pathname === '/'}>
 				Servers
 			</a>

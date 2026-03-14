@@ -40,7 +40,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, COALESCE(p.plugin_mc_version, '1.21.11'), p.status, p.canvas_x, p.canvas_y, p.created_at,
+		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.created_at,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -61,13 +61,13 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var proxyID int64
 		var name, status string
 		var hostPort, ramMB int
-		var forwardingSecret, pluginMCVersion sql.NullString
+		var forwardingSecret sql.NullString
 		var canvasX, canvasY int
 		var createdAt string
 		var serverName sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &pluginMCVersion, &status, &canvasX, &canvasY, &createdAt, &serverName,
+			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &createdAt, &serverName,
 		)
 		if err != nil {
 			continue
@@ -89,11 +89,6 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 			if forwardingSecret.Valid {
 				proxy.ForwardingSecret = forwardingSecret.String
-			}
-			if pluginMCVersion.Valid {
-				proxy.PluginMCVersion = pluginMCVersion.String
-			} else {
-				proxy.PluginMCVersion = "1.21.11"
 			}
 			proxyMap[proxyID] = proxy
 			proxyOrder = append(proxyOrder, proxyID)
@@ -246,12 +241,12 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var p models.ProxyResponse
-	var forwardingSecret, pluginMCVersion sql.NullString
+	var forwardingSecret sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT id, name, host_port, ram_mb, forwarding_secret, COALESCE(plugin_mc_version, '1.21.11'), status, canvas_x, canvas_y, created_at
+		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, created_at
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &pluginMCVersion, &p.Status, &p.CanvasX, &p.CanvasY, &p.CreatedAt)
+	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &p.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -269,11 +264,6 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	if forwardingSecret.Valid {
 		p.ForwardingSecret = forwardingSecret.String
-	}
-	if pluginMCVersion.Valid {
-		p.PluginMCVersion = pluginMCVersion.String
-	} else {
-		p.PluginMCVersion = "1.21.11"
 	}
 
 	serverRows, err := h.db.Query("SELECT name FROM servers WHERE proxy_id = ?", p.ID)
@@ -350,11 +340,10 @@ func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateProxyRequest struct {
-	Name            *string `json:"name"`
-	RAMMB           *int    `json:"ram_mb"`
-	CanvasX         *int    `json:"canvas_x"`
-	CanvasY         *int    `json:"canvas_y"`
-	PluginMCVersion *string `json:"plugin_mc_version"`
+	Name    *string `json:"name"`
+	RAMMB   *int    `json:"ram_mb"`
+	CanvasX *int    `json:"canvas_x"`
+	CanvasY *int    `json:"canvas_y"`
 }
 
 func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -395,9 +384,6 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CanvasY != nil {
 		h.db.Exec("UPDATE proxies SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
-	}
-	if req.PluginMCVersion != nil {
-		h.db.Exec("UPDATE proxies SET plugin_mc_version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.PluginMCVersion, id)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

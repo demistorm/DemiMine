@@ -120,7 +120,6 @@ type ProxyResponse struct {
 	HostPort         int      `json:"host_port"`
 	RAMMB            int      `json:"ram_mb"`
 	ForwardingSecret string   `json:"forwarding_secret"`
-	PluginMCVersion  string   `json:"plugin_mc_version"`
 	Status           string   `json:"status"`
 	PlayerCount      int      `json:"player_count"`
 	ConnectedServers []string `json:"connected_servers"`
