@@ -1,0 +1,314 @@
+package minimotd
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+const (
+	pluginSettingsFile = "plugin_settings.conf"
+	mainConfigFile     = "main.conf"
+	extraConfigsDir    = "extra-configs"
+	iconsDir           = "icons"
+)
+
+type Manager struct {
+	ProxiesDir string
+}
+
+func NewManager(proxiesDir string) *Manager {
+	return &Manager{
+		ProxiesDir: proxiesDir,
+	}
+}
+
+func (m *Manager) getProxyPath(proxyName string) string {
+	return filepath.Join(m.ProxiesDir, proxyName)
+}
+
+func (m *Manager) getMinimotdPluginsPath(proxyName string) string {
+	proxyPath := m.getProxyPath(proxyName)
+	minimotdDirs := []string{
+		"plugins/minimotd-velocity",
+		"plugins/minimotd",
+	}
+
+	for _, dir := range minimotdDirs {
+		fullPath := filepath.Join(proxyPath, dir)
+		if _, err := os.Stat(fullPath); err == nil {
+			return fullPath
+		}
+	}
+
+	return filepath.Join(proxyPath, "plugins/minimotd-velocity")
+}
+
+func (m *Manager) getExtraConfigPath(proxyName, serverName string) string {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+	return filepath.Join(minimotdPath, extraConfigsDir, serverName+".conf")
+}
+
+func (m *Manager) getIconPath(proxyName, serverName string) string {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+	return filepath.Join(minimotdPath, iconsDir, serverName+"-server.png")
+}
+
+func (m *Manager) getPluginSettingsPath(proxyName string) string {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+	return filepath.Join(minimotdPath, pluginSettingsFile)
+}
+
+func (m *Manager) CreateExtraConfig(proxyName, serverName, line1, line2 string, hasIcon bool) error {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+	extraConfigDir := filepath.Join(minimotdPath, extraConfigsDir)
+
+	if err := os.MkdirAll(extraConfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create extra-configs directory: %w", err)
+	}
+
+	configPath := m.getExtraConfigPath(proxyName, serverName)
+	config := m.generateExtraConfig(serverName, line1, line2, hasIcon)
+
+	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
+		return fmt.Errorf("failed to write extra config: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) UpdateExtraConfig(proxyName, serverName, line1, line2 string, hasIcon bool) error {
+	configPath := m.getExtraConfigPath(proxyName, serverName)
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return m.CreateExtraConfig(proxyName, serverName, line1, line2, hasIcon)
+	}
+
+	config := m.generateExtraConfig(serverName, line1, line2, hasIcon)
+
+	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
+		return fmt.Errorf("failed to update extra config: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) DeleteExtraConfig(proxyName, serverName string) error {
+	configPath := m.getExtraConfigPath(proxyName, serverName)
+
+	if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete extra config: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) CopyIcon(proxyName, serverName string, iconData []byte) error {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+	iconsPath := filepath.Join(minimotdPath, iconsDir)
+
+	if err := os.MkdirAll(iconsPath, 0755); err != nil {
+		return fmt.Errorf("failed to create icons directory: %w", err)
+	}
+
+	iconPath := m.getIconPath(proxyName, serverName)
+
+	if err := os.WriteFile(iconPath, iconData, 0644); err != nil {
+		return fmt.Errorf("failed to write icon: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) DeleteIcon(proxyName, serverName string) error {
+	iconPath := m.getIconPath(proxyName, serverName)
+
+	if err := os.Remove(iconPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete icon: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) RenameServer(proxyName, oldName, newName, domain, proxyPort string) error {
+	oldConfigPath := m.getExtraConfigPath(proxyName, oldName)
+	newConfigPath := m.getExtraConfigPath(proxyName, newName)
+
+	oldIconPath := m.getIconPath(proxyName, oldName)
+	newIconPath := m.getIconPath(proxyName, newName)
+
+	if _, err := os.Stat(oldConfigPath); err == nil {
+		if err := os.Rename(oldConfigPath, newConfigPath); err != nil {
+			return fmt.Errorf("failed to rename config: %w", err)
+		}
+
+		config := m.generateExtraConfig(newName, "", "", false)
+		if err := os.WriteFile(newConfigPath, []byte(config), 0644); err != nil {
+			return fmt.Errorf("failed to update config with new name: %w", err)
+		}
+	}
+
+	if _, err := os.Stat(oldIconPath); err == nil {
+		if err := os.Rename(oldIconPath, newIconPath); err != nil {
+			return fmt.Errorf("failed to rename icon: %w", err)
+		}
+	}
+
+	if domain != "" && proxyPort != "" {
+		if err := m.updateVirtualHostConfig(proxyName, "", proxyPort, domain, newName); err != nil {
+			return fmt.Errorf("failed to update virtual host config: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) AddVirtualHost(proxyName, domain, proxyPort, serverName string) error {
+	return m.updateVirtualHostConfig(proxyName, "", proxyPort, domain, serverName)
+}
+
+func (m *Manager) RemoveVirtualHost(proxyName, domain, proxyPort string) error {
+	return m.updateVirtualHostConfig(proxyName, "", proxyPort, domain, "")
+}
+
+func (m *Manager) createDefaultPluginSettings(proxyName string) error {
+	settingsPath := m.getPluginSettingsPath(proxyName)
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+
+	if err := os.MkdirAll(minimotdPath, 0755); err != nil {
+		return fmt.Errorf("failed to create minimotd directory: %w", err)
+	}
+
+	defaultContent := `# MiniMOTD Plugin Configuration
+
+# Settings only applicable when running on a proxy (Velocity or Waterfall/Bungeecord)
+proxy-settings {
+    # Here you can assign configs in 'extra-configs' folder to specific virtual hosts
+    # Either use name of config in 'extra-configs', or use "default" to use configuration in main.conf
+    # 
+    # Format is "hostname:port"="configName|default"
+    # Parts of domains can be substituted for wildcards, i.e. "*.mydomain.com:25565". Wildcard-containing configs are
+    # checked in order they are declared if there are no exact matches.
+    virtual-host-configs {
+    }
+    # Set whether to enable virtual host testing mode.
+    # When enabled, MiniMOTD will print virtual host debug info to console on each server ping.
+    virtual-host-test-mode=false
+}
+# Do you want plugin to check for updates on GitHub at launch?
+# https://github.com/jpenilla/MiniMOTD
+update-checker=true
+`
+
+	if err := os.WriteFile(settingsPath, []byte(defaultContent), 0644); err != nil {
+		return fmt.Errorf("failed to create plugin settings: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) updateVirtualHostConfig(proxyName, oldDomain, proxyPort, newDomain, serverName string) error {
+	settingsPath := m.getPluginSettingsPath(proxyName)
+
+	content, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if err := m.createDefaultPluginSettings(proxyName); err != nil {
+				return err
+			}
+			content, err = os.ReadFile(settingsPath)
+			if err != nil {
+				return fmt.Errorf("failed to read plugin settings after creating: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to read plugin settings: %w", err)
+		}
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	var inVirtualHosts bool
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == `proxy-settings {` {
+			inVirtualHosts = true
+			newLines = append(newLines, line)
+			continue
+		}
+
+		if inVirtualHosts && trimmed == `}` {
+			if newDomain != "" && serverName != "" {
+				newLines = append(newLines, fmt.Sprintf(`        "%s:%s"=%s`, newDomain, proxyPort, serverName))
+			}
+			inVirtualHosts = false
+			newLines = append(newLines, line)
+			continue
+		}
+
+		if inVirtualHosts && trimmed != "" && !strings.HasPrefix(trimmed, "#") && strings.Contains(trimmed, "=") {
+			if oldDomain != "" {
+				entryKey := strings.Split(trimmed, "=")[0]
+				expectedKey := fmt.Sprintf(`"%s:%s"`, oldDomain, proxyPort)
+				if strings.TrimSpace(entryKey) == expectedKey {
+					continue
+				}
+			}
+
+			if newDomain != "" && serverName != "" {
+				newEntryKey := fmt.Sprintf(`"%s:%s"`, newDomain, proxyPort)
+				entryKey := strings.Split(trimmed, "=")[0]
+				if strings.TrimSpace(entryKey) == newEntryKey {
+					continue
+				}
+			}
+		}
+
+		newLines = append(newLines, line)
+	}
+
+	newContent := strings.Join(newLines, "\n")
+
+	if err := os.WriteFile(settingsPath, []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to write plugin settings: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) generateExtraConfig(serverName, line1, line2 string, hasIcon bool) string {
+	iconSetting := ""
+	if hasIcon {
+		iconSetting = fmt.Sprintf("        icon=%s-server\n", serverName)
+	}
+
+	return fmt.Sprintf(`# Extra MiniMOTD config '%s'
+
+icon-enabled=true
+motd-enabled=true
+motds=[
+    {
+%s        line1="%s"
+        line2="%s"
+    }
+]
+player-count-settings {
+    allow-exceeding-maximum=false
+    disable-player-list-hover=false
+    fake-players {
+        fake-players="0"
+        fake-players-enabled=false
+    }
+    hide-player-count=false
+    just-x-more-settings {
+        just-x-more-enabled=false
+        x-value=0
+    }
+    max-players=20
+    max-players-enabled=false
+    servers=[]
+}
+`, serverName, iconSetting, line1, line2)
+}

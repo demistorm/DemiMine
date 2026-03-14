@@ -80,6 +80,8 @@ func RunMigrations(db *sql.DB) error {
 			status TEXT DEFAULT 'stopped',
 			canvas_x INTEGER DEFAULT 0,
 			canvas_y INTEGER DEFAULT 0,
+			minimotd_line1 TEXT,
+			minimotd_line2 TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (proxy_id) REFERENCES proxies(id) ON DELETE SET NULL
@@ -168,6 +170,8 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE proxies ADD COLUMN canvas_y INTEGER DEFAULT 0`,
 		`ALTER TABLE proxies ADD COLUMN ram_mb INTEGER DEFAULT 512`,
 		`ALTER TABLE proxies ADD COLUMN plugin_mc_version TEXT DEFAULT '1.21.11'`,
+		`ALTER TABLE servers ADD COLUMN minimotd_line1 TEXT`,
+		`ALTER TABLE servers ADD COLUMN minimotd_line2 TEXT`,
 	}
 
 	for _, alter := range alterMigrations {

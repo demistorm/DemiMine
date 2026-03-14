@@ -18,6 +18,7 @@ import (
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
 	"github.com/demimine/manager/internal/mc"
+	"github.com/demimine/manager/internal/minimotd"
 	"github.com/demimine/manager/internal/models"
 	"github.com/go-chi/chi/v5"
 )
@@ -27,9 +28,10 @@ type ServerHandler struct {
 	docker         *docker.Client
 	consoleManager *docker.ConsoleManager
 	cfg            *config.Config
+	minimotdMgr    *minimotd.Manager
 }
 
-func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config) *ServerHandler {
+func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, minimotdMgr *minimotd.Manager) *ServerHandler {
 	if dockerClient == nil {
 		panic("dockerClient is nil in NewServerHandler")
 	}
@@ -38,6 +40,7 @@ func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *d
 		docker:         dockerClient,
 		consoleManager: consoleManager,
 		cfg:            cfg,
+		minimotdMgr:    minimotdMgr,
 	}
 }
 
@@ -53,7 +56,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.created_at,
-		       COALESCE(pc.cnt, 0) as player_count
+		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
 		LEFT JOIN (SELECT server_id, COUNT(*) as cnt FROM players GROUP BY server_id) pc ON pc.server_id = s.id
@@ -76,11 +79,14 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		var scheduledStart sql.NullString
 		var scheduledStop sql.NullString
 		var hostPort sql.NullInt64
+		var minimotdLine1 sql.NullString
+		var minimotdLine2 sql.NullString
 
 		err := rows.Scan(
 			&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.CreatedAt, &s.PlayerCount,
+			&minimotdLine1, &minimotdLine2,
 		)
 		if err != nil {
 			continue
@@ -99,6 +105,8 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 			s.HostPort = &hp
 		}
 		s.IconPath = h.getIconPath(s.ID, s.Name)
+		s.MinimotdLine1 = nullStringToPtr(minimotdLine1)
+		s.MinimotdLine2 = nullStringToPtr(minimotdLine2)
 
 		servers = append(servers, s)
 	}
@@ -119,6 +127,8 @@ type CreateServerRequest struct {
 	AutoShutdownMinutes int     `json:"auto_shutdown_minutes"`
 	ScheduledStart      *string `json:"scheduled_start"`
 	ScheduledStop       *string `json:"scheduled_stop"`
+	MinimotdLine1       *string `json:"minimotd_line1"`
+	MinimotdLine2       *string `json:"minimotd_line2"`
 }
 
 func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -219,10 +229,22 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		hostPortValue = req.HostPort
 	}
 
+	var minimotdLine1, minimotdLine2 interface{}
+	if req.MinimotdLine1 != nil {
+		minimotdLine1 = *req.MinimotdLine1
+	} else {
+		minimotdLine1 = nil
+	}
+	if req.MinimotdLine2 != nil {
+		minimotdLine2 = *req.MinimotdLine2
+	} else {
+		minimotdLine2 = nil
+	}
+
 	result, err := h.db.Exec(`
-		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000)
-	`, req.Name, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop)
+		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y, minimotd_line1, minimotd_line2)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?)
+	`, req.Name, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop, minimotdLine1, minimotdLine2)
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -273,7 +295,9 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.ProxyID != nil {
 		var forwardingSecret string
-		err := h.db.QueryRow("SELECT forwarding_secret FROM proxies WHERE id = ?", *req.ProxyID).Scan(&forwardingSecret)
+		var proxyName string
+		var proxyHostPort int
+		err := h.db.QueryRow("SELECT forwarding_secret, name, host_port FROM proxies WHERE id = ?", *req.ProxyID).Scan(&forwardingSecret, &proxyName, &proxyHostPort)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -287,6 +311,42 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := SyncProxyConfig(h.db, *req.ProxyID, h.cfg.ServersDir); err != nil {
+		}
+
+		if req.MinimotdLine1 != nil && *req.MinimotdLine1 != "" || req.MinimotdLine2 != nil && *req.MinimotdLine2 != "" {
+			line1 := ""
+			line2 := ""
+			if req.MinimotdLine1 != nil {
+				line1 = *req.MinimotdLine1
+			}
+			if req.MinimotdLine2 != nil {
+				line2 = *req.MinimotdLine2
+			}
+
+			iconPath := filepath.Join(serverPath, "server-icon.png")
+			hasIcon := false
+			if _, err := os.Stat(iconPath); err == nil {
+				hasIcon = true
+			}
+
+			if err := h.minimotdMgr.CreateExtraConfig(proxyName, req.Name, line1, line2, hasIcon); err != nil {
+				fmt.Printf("Failed to create MiniMOTD extra config: %v\n", err)
+			}
+
+			if hasIcon {
+				iconData, err := os.ReadFile(iconPath)
+				if err == nil {
+					if err := h.minimotdMgr.CopyIcon(proxyName, req.Name, iconData); err != nil {
+						fmt.Printf("Failed to copy icon to MiniMOTD: %v\n", err)
+					}
+				}
+			}
+		}
+
+		if req.Domain != nil && *req.Domain != "" {
+			if err := h.minimotdMgr.AddVirtualHost(proxyName, *req.Domain, fmt.Sprintf("%d", proxyHostPort), req.Name); err != nil {
+				fmt.Printf("Failed to add virtual host to MiniMOTD: %v\n", err)
+			}
 		}
 	}
 
@@ -312,12 +372,15 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var scheduledStart sql.NullString
 	var scheduledStop sql.NullString
 	var hostPort sql.NullInt64
+	var minimotdLine1 sql.NullString
+	var minimotdLine2 sql.NullString
 
 	err = h.db.QueryRow(`
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.created_at,
-		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count
+		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count,
+		       s.minimotd_line1, s.minimotd_line2
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
 		WHERE s.id = ?
@@ -325,6 +388,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 		&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.CreatedAt, &s.PlayerCount,
+		&minimotdLine1, &minimotdLine2,
 	)
 
 	if err == sql.ErrNoRows {
@@ -372,7 +436,8 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	var name string
 	var status string
 	var proxyID sql.NullInt64
-	err = h.db.QueryRow("SELECT name, status, proxy_id FROM servers WHERE id = ?", id).Scan(&name, &status, &proxyID)
+	var domain sql.NullString
+	err = h.db.QueryRow("SELECT name, status, proxy_id, domain FROM servers WHERE id = ?", id).Scan(&name, &status, &proxyID, &domain)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -411,6 +476,16 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	if proxyID.Valid {
 		_ = SyncProxyConfig(h.db, proxyID.Int64, h.cfg.ServersDir)
+
+		var proxyName string
+		var proxyHostPort int
+		if err := h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxyName, &proxyHostPort); err == nil {
+			_ = h.minimotdMgr.DeleteExtraConfig(proxyName, name)
+			_ = h.minimotdMgr.DeleteIcon(proxyName, name)
+			if domain.Valid {
+				_ = h.minimotdMgr.RemoveVirtualHost(proxyName, domain.String, fmt.Sprintf("%d", proxyHostPort))
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -428,6 +503,8 @@ type UpdateServerRequest struct {
 	CanvasY             *int    `json:"canvas_y"`
 	ProxyID             *int64  `json:"proxy_id"`
 	Domain              *string `json:"domain"`
+	MinimotdLine1       *string `json:"minimotd_line1"`
+	MinimotdLine2       *string `json:"minimotd_line2"`
 }
 
 func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -481,10 +558,111 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.CanvasY != nil {
 		h.db.Exec("UPDATE servers SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
 	}
+	if req.MinimotdLine1 != nil {
+		h.db.Exec("UPDATE servers SET minimotd_line1 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.MinimotdLine1, id)
+	}
+	if req.MinimotdLine2 != nil {
+		h.db.Exec("UPDATE servers SET minimotd_line2 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.MinimotdLine2, id)
+	}
+
+	var currentName sql.NullString
+	var currentProxyID sql.NullInt64
+	var currentDomain sql.NullString
+	var proxyHostPort int
+	var proxyName string
+	h.db.QueryRow("SELECT name, proxy_id, domain FROM servers WHERE id = ?", id).Scan(&currentName, &currentProxyID, &currentDomain)
+
+	if currentProxyID.Valid {
+		h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", currentProxyID.Int64).Scan(&proxyName, &proxyHostPort)
+	}
+
+	if req.Name != nil {
+		h.db.Exec("UPDATE servers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, id)
+	}
+	if req.RAMMB != nil {
+		h.db.Exec("UPDATE servers SET ram_mb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.RAMMB, id)
+	}
+	if req.AutoShutdownMinutes != nil {
+		h.db.Exec("UPDATE servers SET auto_shutdown_minutes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.AutoShutdownMinutes, id)
+	}
+	if req.BackupIntervalDays != nil {
+		h.db.Exec("UPDATE servers SET backup_interval_days = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.BackupIntervalDays, id)
+	}
+	if req.ScheduledStart != nil {
+		h.db.Exec("UPDATE servers SET scheduled_start = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStart, id)
+	}
+	if req.ScheduledStop != nil {
+		h.db.Exec("UPDATE servers SET scheduled_stop = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStop, id)
+	}
+	if req.CanvasX != nil {
+		h.db.Exec("UPDATE servers SET canvas_x = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasX, id)
+	}
+	if req.CanvasY != nil {
+		h.db.Exec("UPDATE servers SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
+	}
+
+	var hasConfig bool
+	var minimotdLine1, minimotdLine2 sql.NullString
+	h.db.QueryRow("SELECT minimotd_line1, minimotd_line2 FROM servers WHERE id = ?", id).Scan(&minimotdLine1, &minimotdLine2)
+	hasConfig = minimotdLine1.Valid || minimotdLine2.Valid
+
 	if req.ProxyID != nil {
 		if *req.ProxyID == 0 {
+			if currentProxyID.Valid && hasConfig {
+				_ = h.minimotdMgr.DeleteExtraConfig(proxyName, currentName.String)
+				if currentDomain.Valid {
+					_ = h.minimotdMgr.RemoveVirtualHost(proxyName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
+				}
+			}
 			_ = RemoveServerFromProxy(h.db, id, h.cfg.ServersDir)
 		} else {
+			var newProxyName string
+			var newProxyHostPort int
+			err := h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", *req.ProxyID).Scan(&newProxyName, &newProxyHostPort)
+			if err == nil {
+				if hasConfig {
+					_ = h.minimotdMgr.DeleteExtraConfig(proxyName, currentName.String)
+					_ = h.minimotdMgr.DeleteIcon(proxyName, currentName.String)
+					if currentDomain.Valid {
+						_ = h.minimotdMgr.RemoveVirtualHost(proxyName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
+					}
+
+					line1 := ""
+					line2 := ""
+					if minimotdLine1.Valid {
+						line1 = minimotdLine1.String
+					}
+					if minimotdLine2.Valid {
+						line2 = minimotdLine2.String
+					}
+
+					serverPath := filepath.Join(h.cfg.ServersDir, currentName.String)
+					iconPath := filepath.Join(serverPath, "server-icon.png")
+					hasIcon := false
+					if _, err := os.Stat(iconPath); err == nil {
+						hasIcon = true
+					}
+
+					if err := h.minimotdMgr.CreateExtraConfig(newProxyName, currentName.String, line1, line2, hasIcon); err != nil {
+						fmt.Printf("Failed to create MiniMOTD extra config: %v\n", err)
+					}
+
+					if hasIcon {
+						iconData, err := os.ReadFile(iconPath)
+						if err == nil {
+							if err := h.minimotdMgr.CopyIcon(newProxyName, currentName.String, iconData); err != nil {
+								fmt.Printf("Failed to copy icon to MiniMOTD: %v\n", err)
+							}
+						}
+					}
+
+					if currentDomain.Valid {
+						if err := h.minimotdMgr.AddVirtualHost(newProxyName, currentDomain.String, fmt.Sprintf("%d", newProxyHostPort), currentName.String); err != nil {
+							fmt.Printf("Failed to add virtual host to MiniMOTD: %v\n", err)
+						}
+					}
+				}
+			}
 			_, _ = AssignServerToProxy(h.db, id, *req.ProxyID, h.cfg.ServersDir)
 		}
 	}
@@ -494,10 +672,62 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.db.QueryRow("SELECT proxy_id FROM servers WHERE id = ?", id).Scan(&proxyID)
 		if proxyID.Valid {
 			_ = SyncProxyConfig(h.db, proxyID.Int64, h.cfg.ServersDir)
+
+			if currentDomain.Valid {
+				_ = h.minimotdMgr.RemoveVirtualHost(proxyName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
+			}
+
+			if *req.Domain != "" && hasConfig {
+				if err := h.minimotdMgr.AddVirtualHost(proxyName, *req.Domain, fmt.Sprintf("%d", proxyHostPort), currentName.String); err != nil {
+					fmt.Printf("Failed to add virtual host to MiniMOTD: %v\n", err)
+				}
+			}
+		}
+	}
+
+	if req.Name != nil && hasConfig && currentProxyID.Valid {
+		domain := ""
+		if currentDomain.Valid {
+			domain = currentDomain.String
+		}
+
+		if err := h.minimotdMgr.RenameServer(proxyName, currentName.String, *req.Name, domain, fmt.Sprintf("%d", proxyHostPort)); err != nil {
+			fmt.Printf("Failed to rename MiniMOTD config: %v\n", err)
+		}
+	}
+
+	if (req.MinimotdLine1 != nil || req.MinimotdLine2 != nil) && currentProxyID.Valid {
+		line1 := ""
+		line2 := ""
+		if req.MinimotdLine1 != nil {
+			line1 = *req.MinimotdLine1
+		} else if minimotdLine1.Valid {
+			line1 = minimotdLine1.String
+		}
+		if req.MinimotdLine2 != nil {
+			line2 = *req.MinimotdLine2
+		} else if minimotdLine2.Valid {
+			line2 = minimotdLine2.String
+		}
+
+		serverPath := filepath.Join(h.cfg.ServersDir, currentName.String)
+		iconPath := filepath.Join(serverPath, "server-icon.png")
+		hasIcon := false
+		if _, err := os.Stat(iconPath); err == nil {
+			hasIcon = true
+		}
+
+		if line1 != "" || line2 != "" {
+			if err := h.minimotdMgr.UpdateExtraConfig(proxyName, currentName.String, line1, line2, hasIcon); err != nil {
+				fmt.Printf("Failed to update MiniMOTD extra config: %v\n", err)
+			}
+		} else {
+			_ = h.minimotdMgr.DeleteExtraConfig(proxyName, currentName.String)
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -1273,6 +1503,19 @@ func (h *ServerHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var proxyID sql.NullInt64
+	var minimotdLine1, minimotdLine2 sql.NullString
+	h.db.QueryRow("SELECT proxy_id, minimotd_line1, minimotd_line2 FROM servers WHERE id = ?", id).Scan(&proxyID, &minimotdLine1, &minimotdLine2)
+
+	if proxyID.Valid && (minimotdLine1.Valid || minimotdLine2.Valid) {
+		var proxyName string
+		if err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxyName); err == nil {
+			if err := h.minimotdMgr.CopyIcon(proxyName, name, content); err != nil {
+				fmt.Printf("Failed to copy icon to MiniMOTD: %v\n", err)
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
@@ -1323,7 +1566,8 @@ func (h *ServerHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var proxyID sql.NullInt64
+	err = h.db.QueryRow("SELECT name, proxy_id FROM servers WHERE id = ?", id).Scan(&name, &proxyID)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1346,6 +1590,13 @@ func (h *ServerHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete icon"})
 		return
+	}
+
+	if proxyID.Valid {
+		var proxyName string
+		if err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxyName); err == nil {
+			_ = h.minimotdMgr.DeleteIcon(proxyName, name)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

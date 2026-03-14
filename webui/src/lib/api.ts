@@ -253,6 +253,8 @@ export interface Server {
 	auto_shutdown_minutes: number;
 	scheduled_start: string | null;
 	scheduled_stop: string | null;
+	minimotd_line1: string | null;
+	minimotd_line2: string | null;
 	created_at: string;
 }
 

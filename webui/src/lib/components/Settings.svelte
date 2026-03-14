@@ -17,6 +17,8 @@
 	let iconPreview: string | null = server.icon_path || null;
 	let iconError = '';
 	let iconUploading = false;
+	let minimotdLine1 = server.minimotd_line1 || '';
+	let minimotdLine2 = server.minimotd_line2 || '';
 
 	const dispatch = createEventDispatcher();
 
@@ -26,12 +28,21 @@
 		success = '';
 
 		try {
-			await api.patch(`/api/servers/${server.id}`, {
+			const body: Record<string, any> = {
 				name: name !== server.name ? name : undefined,
 				ram_mb: ram !== server.ram_mb ? ram : undefined,
 				auto_shutdown_minutes: autoShutdown !== server.auto_shutdown_minutes ? autoShutdown : undefined,
 				backup_interval_days: backupInterval !== server.backup_interval_days ? backupInterval : undefined
-			});
+			};
+
+			if (minimotdLine1 !== (server.minimotd_line1 || '')) {
+				body.minimotd_line1 = minimotdLine1;
+			}
+			if (minimotdLine2 !== (server.minimotd_line2 || '')) {
+				body.minimotd_line2 = minimotdLine2;
+			}
+
+			await api.patch(`/api/servers/${server.id}`, body);
 			
 			success = 'Settings saved successfully';
 			servers.update(list => 
@@ -40,7 +51,9 @@
 					name,
 					ram_mb: ram,
 					auto_shutdown_minutes: autoShutdown,
-					backup_interval_days: backupInterval
+					backup_interval_days: backupInterval,
+					minimotd_line1: minimotdLine1,
+					minimotd_line2: minimotdLine2
 				} : s)
 			);
 			
@@ -311,6 +324,30 @@
 			/>
 		</div>
 	</div>
+
+	{#if server.proxy_id}
+		<div class="section">
+			<h2>MiniMOTD Configuration</h2>
+
+			<div class="field">
+				<label for="minimotdLine1">Line 1</label>
+				<input type="text" id="minimotdLine1" bind:value={minimotdLine1} placeholder="e.g., &lt;blue&gt;Welcome!&lt;/blue&gt;" />
+				<span class="hint">MiniMOTD will apply color codes automatically</span>
+			</div>
+
+			<div class="field">
+				<label for="minimotdLine2">Line 2</label>
+				<input type="text" id="minimotdLine2" bind:value={minimotdLine2} placeholder="e.g., &lt;gradient:blue:red&gt;Custom message&lt;/gradient&gt;" />
+				<span class="hint">MiniMOTD will apply color codes automatically</span>
+			</div>
+
+			<div class="field">
+				<div class="info-box">
+					<strong>Note:</strong> Changes to these lines will update the MiniMOTD configuration for this server in the proxy. If you leave both fields blank, the MiniMOTD configuration will be deleted.
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<div class="section danger">
 		<h2>Danger Zone</h2>
@@ -639,6 +676,19 @@
 	.btn.small {
 		padding: 0.375rem 0.75rem;
 		font-size: 0.8125rem;
+	}
+
+	.info-box {
+		padding: 0.75rem;
+		background: rgba(59, 130, 246, 0.1);
+		border: 1px solid rgba(59, 130, 246, 0.3);
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		line-height: 1.4;
+	}
+
+	.info-box strong {
+		color: var(--text-primary);
 	}
 
 </style>

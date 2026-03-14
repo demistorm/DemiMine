@@ -25,6 +25,8 @@
 	let iconFile: File | null = null;
 	let iconPreview: string | null = null;
 	let iconError = '';
+	let minimotdLine1 = '';
+	let minimotdLine2 = '';
 
 	const serverTypes = [
 		{ value: 'paper', label: 'Paper' },
@@ -67,8 +69,16 @@
 		step = 2;
 	}
 
+	function nextStep2() {
+		step = 3;
+	}
+
 	function prevStep() {
-		step = 1;
+		if (step === 3) {
+			step = 2;
+		} else {
+			step = 1;
+		}
 	}
 
 	async function createServer() {
@@ -93,10 +103,17 @@
 					body.domain = domain;
 				}
 			} else if (hostPort !== null) {
-				body.host_port = hostPort;
-			}
+                body.host_port = hostPort;
+            }
 
-			let endpoint = '/api/servers';
+            if (minimotdLine1) {
+                body.minimotd_line1 = minimotdLine1;
+            }
+            if (minimotdLine2) {
+                body.minimotd_line2 = minimotdLine2;
+            }
+
+            let endpoint = '/api/servers';
 			if (portConflictUsedBy) {
 				endpoint += '?force=true';
 			}
@@ -175,18 +192,20 @@
 
 	function close() {
 		show = false;
-		step = 1;
-		name = '';
-		type = 'paper';
-		version = '';
-		ram = 2048;
-		hostPort = 25565;
-		proxyId = null;
-		domain = '';
-		portConflictUsedBy = null;
-		clearIcon();
-		error = '';
-	}
+        step = 1;
+        name = '';
+        type = 'paper';
+        version = '';
+        ram = 2048;
+        hostPort = 25565;
+        proxyId = null;
+        domain = '';
+        portConflictUsedBy = null;
+        clearIcon();
+        minimotdLine1 = '';
+        minimotdLine2 = '';
+        error = '';
+    }
 </script>
 
 {#if show}
@@ -210,13 +229,25 @@
 			<div class="steps">
 				<div class="step-indicator">
 					<div class="step-dot" class:active={step === 1}>1</div>
-					<div class="step-line" class:active={step === 2}></div>
-					<div class="step-dot" class:active={step === 2}>2</div>
-				</div>
-				<div class="step-labels">
-					<span class:active={step === 1}>Basic Info</span>
-					<span class:active={step === 2}>Configuration</span>
-				</div>
+                    <div class="step-line" class:active={step === 2}></div>
+                    <div class="step-dot" class:active={step === 2}>2</div>
+                </div>
+                <div class="step-indicator">
+                    <div class="step-dot" class:active={step === 1}>1</div>
+                    <div class="step-line" class:active={step >= 2}></div>
+                    <div class="step-dot" class:active={step === 2}>2</div>
+                    {#if proxyId !== null}
+                        <div class="step-line" class:active={step >= 3}></div>
+                        <div class="step-dot" class:active={step === 3}>3</div>
+                    {/if}
+                </div>
+                <div class="step-labels">
+                    <span class:active={step === 1}>Basic Info</span>
+                    <span class:active={step === 2}>Configuration</span>
+                    {#if proxyId !== null}
+                        <span class:active={step === 3}>MiniMOTD</span>
+                    {/if}
+                </div>
 			</div>
 
 			{#if step === 1}
@@ -285,7 +316,7 @@
 						</button>
 					</div>
 				</div>
-			{:else}
+			{:else if step === 2}
 				<div class="form-step">
 					<div class="field">
 						<label for="ram">RAM Allocation (MB)</label>
@@ -390,6 +421,50 @@
 						{:else}
 							<span class="hint">64x64 PNG image for the server list</span>
 						{/if}
+					</div>
+
+					<div class="actions">
+						<button class="btn secondary" on:click={prevStep}>Back</button>
+						{#if proxyId !== null}
+							<button class="btn primary" on:click={nextStep2} disabled={loading}>
+								Next
+							</button>
+						{:else}
+							<button class="btn primary" on:click={createServer} disabled={loading}>
+								{loading ? 'Creating...' : 'Create Server'}
+							</button>
+						{/if}
+					</div>
+				</div>
+			{:else if step === 3}
+				<div class="form-step">
+					<div class="section">
+						<h2>MiniMOTD Configuration</h2>
+						<div class="info-box">
+							Configure the server list message that players will see for this server.
+						</div>
+					</div>
+
+					<div class="field">
+						<label for="minimotdLine1">Line 1</label>
+						<input 
+							type="text" 
+							id="minimotdLine1" 
+							bind:value={minimotdLine1} 
+							placeholder="e.g., &lt;blue&gt;Welcome!&lt;/blue&gt;" 
+						/>
+						<span class="hint">MiniMOTD will apply color codes automatically</span>
+					</div>
+
+					<div class="field">
+						<label for="minimotdLine2">Line 2</label>
+						<input 
+							type="text" 
+							id="minimotdLine2" 
+							bind:value={minimotdLine2} 
+							placeholder="e.g., &lt;gradient:blue:red&gt;Custom message&lt;/gradient&gt;" 
+						/>
+						<span class="hint">MiniMOTD will apply color codes automatically</span>
 					</div>
 
 					<div class="actions">
@@ -782,5 +857,24 @@
 	.hint.warning {
 		color: var(--warning, #f59e0b);
 		opacity: 1;
+	}
+
+	.section {
+		margin-bottom: 1.5rem;
+	}
+
+	.section h2 {
+		margin: 0 0 0.75rem 0;
+		color: var(--text-primary);
+		font-size: 1rem;
+	}
+
+	.info-box {
+		background: var(--bg-tertiary);
+		padding: 0.75rem 1rem;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		color: var(--text-secondary);
+		border-left: 3px solid var(--accent);
 	}
 </style>
