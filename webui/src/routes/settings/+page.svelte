@@ -1,33 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { globalSettings, proxyMCVersion, loadGlobalSettings, saveGlobalSettings } from '$lib/stores/settings';
-
-	let saving = false;
-	let error = '';
-	let success = '';
-	let localProxyMCVersion = '';
-
-	$: localProxyMCVersion = $proxyMCVersion;
-
-	function handleVersionInput(e: Event) {
-		localProxyMCVersion = (e.target as HTMLInputElement).value;
-	}
-
-	async function saveChanges() {
-		saving = true;
-		error = '';
-		success = '';
-
-		try {
-			await saveGlobalSettings({ proxy_mc_version: localProxyMCVersion });
-			success = 'Settings saved successfully';
-			setTimeout(() => success = '', 3000);
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to save settings';
-		} finally {
-			saving = false;
-		}
-	}
+	import { loadGlobalSettings } from '$lib/stores/settings';
 
 	onMount(() => {
 		loadGlobalSettings();
@@ -39,27 +12,8 @@
 </svelte:head>
 
 <main class="settings-container">
-	{#if error}
-		<div class="alert error">{error}<button on:click={() => error = ''}>×</button></div>
-	{/if}
-	{#if success}
-		<div class="alert success">{success}</div>
-	{/if}
-
 	<div class="section">
-		<h2>Proxy Settings</h2>
-		
-		<div class="field">
-			<label for="mc-version">Minecraft Version for Plugins</label>
-			<input type="text" id="mc-version" value={localProxyMCVersion} on:input={handleVersionInput} placeholder="e.g., 1.21.11" />
-			<span class="hint">MC version used when searching/installing plugins from Modrinth (e.g., 1.21.11, 1.21.1)</span>
-		</div>
-	</div>
-
-	<div class="save-bar">
-		<button class="btn primary" on:click={saveChanges} disabled={saving}>
-			{saving ? 'Saving...' : 'Save Changes'}
-		</button>
+		<p class="empty-state">No settings available yet. More settings will be added in the future.</p>
 	</div>
 </main>
 
