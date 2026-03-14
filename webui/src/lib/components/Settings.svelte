@@ -13,6 +13,10 @@
 	let error = '';
 	let success = '';
 	let deleteStep = 0;
+	let iconFile: File | null = null;
+	let iconPreview: string | null = server.icon_path || null;
+	let iconError = '';
+	let iconUploading = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -80,6 +84,92 @@
 		}
 		return `${mb} MB`;
 	}
+
+	function handleIconSelect(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+
+		iconError = '';
+		
+		if (!file.type.includes('png')) {
+			iconError = 'Icon must be a PNG file';
+			return;
+		}
+
+		const img = new Image();
+		const url = URL.createObjectURL(file);
+		
+		img.onload = async () => {
+			if (img.width !== 64 || img.height !== 64) {
+				iconError = 'Icon must be exactly 64x64 pixels';
+				URL.revokeObjectURL(url);
+				return;
+			}
+			
+			iconFile = file;
+			iconPreview = url;
+			
+			await uploadIcon();
+		};
+		
+		img.onerror = () => {
+			iconError = 'Failed to load image';
+			URL.revokeObjectURL(url);
+		};
+		
+		img.src = url;
+	}
+
+	async function uploadIcon() {
+		if (!iconFile) return;
+		
+		iconUploading = true;
+		iconError = '';
+		
+		try {
+			await api.uploadIcon(server.id, iconFile);
+			servers.update(list => 
+				list.map(s => s.id === server.id ? { 
+					...s, 
+					icon_path: `/api/servers/${server.id}/icon`
+				} : s)
+			);
+			success = 'Icon uploaded successfully';
+			setTimeout(() => success = '', 3000);
+		} catch (err) {
+			iconError = err instanceof Error ? err.message : 'Failed to upload icon';
+		} finally {
+			iconUploading = false;
+		}
+	}
+
+	async function deleteIcon() {
+		iconUploading = true;
+		iconError = '';
+		
+		try {
+			await api.deleteIcon(server.id);
+			if (iconPreview && !iconPreview.startsWith('/api/')) {
+				URL.revokeObjectURL(iconPreview);
+			}
+			iconPreview = null;
+			iconFile = null;
+			servers.update(list => 
+				list.map(s => s.id === server.id ? { 
+					...s, 
+					icon_path: null
+				} : s)
+			);
+			success = 'Icon removed successfully';
+			setTimeout(() => success = '', 3000);
+		} catch (err) {
+			iconError = err instanceof Error ? err.message : 'Failed to delete icon';
+		} finally {
+			iconUploading = false;
+		}
+	}
+
 </script>
 
 <div class="settings">
@@ -92,6 +182,56 @@
 
 	<div class="section">
 		<h2>General Settings</h2>
+		
+		<div class="field">
+			<label>Server Icon</label>
+			<div class="icon-section">
+				{#if iconPreview}
+					<div class="icon-preview-container">
+						<img src={iconPreview} alt="Server icon" class="icon-preview" />
+						<div class="icon-actions">
+							<label class="btn small">
+								Replace
+								<input 
+									type="file" 
+									accept="image/png"
+									on:change={handleIconSelect}
+									disabled={iconUploading}
+								/>
+							</label>
+							<button 
+								class="btn small danger" 
+								on:click={deleteIcon}
+								disabled={iconUploading}
+							>
+								Remove
+							</button>
+						</div>
+					</div>
+				{:else}
+					<div class="icon-upload-container">
+						<label class="icon-dropzone" class:uploading={iconUploading}>
+							<input 
+								type="file" 
+								accept="image/png"
+								on:change={handleIconSelect}
+								disabled={iconUploading}
+							/>
+							{#if iconUploading}
+								<span>Uploading...</span>
+							{:else}
+								<span>Click to upload 64x64 PNG</span>
+							{/if}
+						</label>
+					</div>
+				{/if}
+			</div>
+			{#if iconError}
+				<span class="hint warning">{iconError}</span>
+			{:else}
+				<span class="hint">64x64 PNG image displayed in the server list</span>
+			{/if}
+		</div>
 		
 		<div class="field">
 			<label for="name">Server Name</label>
@@ -420,4 +560,74 @@
 		justify-content: flex-end;
 		z-index: 10;
 	}
+
+	.icon-section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.icon-preview-container {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.icon-preview {
+		width: 64px;
+		height: 64px;
+		border-radius: 0.375rem;
+		object-fit: contain;
+		background: var(--bg-tertiary);
+	}
+
+	.icon-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.icon-actions input {
+		display: none;
+	}
+
+	.icon-upload-container {
+		display: flex;
+		align-items: center;
+	}
+
+	.icon-dropzone {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 80px;
+		height: 80px;
+		border: 2px dashed var(--border);
+		border-radius: 0.375rem;
+		cursor: pointer;
+		transition: border-color 0.2s, background-color 0.2s;
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		text-align: center;
+		padding: 0.5rem;
+	}
+
+	.icon-dropzone:hover:not(.uploading) {
+		border-color: var(--accent);
+		background-color: var(--bg-tertiary);
+	}
+
+	.icon-dropzone.uploading {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.icon-dropzone input {
+		display: none;
+	}
+
+	.btn.small {
+		padding: 0.375rem 0.75rem;
+		font-size: 0.8125rem;
+	}
+
 </style>

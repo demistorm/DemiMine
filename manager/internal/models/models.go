@@ -110,6 +110,7 @@ type ServerResponse struct {
 	PlayerCount         int     `json:"player_count"`
 	CanvasX             int     `json:"canvas_x"`
 	CanvasY             int     `json:"canvas_y"`
+	IconPath            *string `json:"icon_path"`
 	CreatedAt           string  `json:"created_at"`
 }
 

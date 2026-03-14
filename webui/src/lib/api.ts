@@ -127,10 +127,48 @@ class ApiClient {
 		}
 
 		if (!response.ok) {
-			throw new Error('Upload failed');
+			const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+			throw new Error(error.error || 'Upload failed');
 		}
 
 		return response.json();
+	}
+
+	async uploadIcon(serverId: number, file: File): Promise<{ success: boolean }> {
+		const formData = new FormData();
+		formData.append('icon', file);
+
+		const url = `${this.baseUrl}/api/servers/${serverId}/icon`;
+		const headers: HeadersInit = {};
+		
+		if (this.token) {
+			headers['Authorization'] = `Bearer ${this.token}`;
+		}
+
+		const response = await fetch(url, {
+			method: 'POST',
+			headers,
+			body: formData,
+		});
+
+		if (response.status === 401) {
+			this.setToken(null);
+			if (typeof window !== 'undefined') {
+				window.location.replace('/login');
+			}
+			return new Promise(() => {});
+		}
+
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+			throw new Error(error.error || 'Upload failed');
+		}
+
+		return response.json();
+	}
+
+	async deleteIcon(serverId: number): Promise<{ success: boolean }> {
+		return this.delete<{ success: boolean }>(`/api/servers/${serverId}/icon`);
 	}
 }
 

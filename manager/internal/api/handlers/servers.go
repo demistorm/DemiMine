@@ -98,6 +98,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 			hp := int(hostPort.Int64)
 			s.HostPort = &hp
 		}
+		s.IconPath = h.getIconPath(s.ID, s.Name)
 
 		servers = append(servers, s)
 	}
@@ -352,6 +353,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		hp := int(hostPort.Int64)
 		s.HostPort = &hp
 	}
+	s.IconPath = h.getIconPath(s.ID, s.Name)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s)
@@ -1175,6 +1177,185 @@ func (h *ServerHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ServerHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file too large (max 2MB)"})
+		return
+	}
+
+	file, header, err := r.FormFile("icon")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon file required"})
+		return
+	}
+	defer file.Close()
+
+	if !strings.HasSuffix(strings.ToLower(header.Filename), ".png") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon must be a PNG file"})
+		return
+	}
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read file"})
+		return
+	}
+
+	if !isValidPNGIcon(content) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon must be a valid 64x64 PNG image"})
+		return
+	}
+
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	iconPath := filepath.Join(serverPath, "server-icon.png")
+
+	if err := os.WriteFile(iconPath, content, 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save icon"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *ServerHandler) GetIcon(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	iconPath := filepath.Join(serverPath, "server-icon.png")
+
+	content, err := os.ReadFile(iconPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write(content)
+}
+
+func (h *ServerHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid server id"})
+		return
+	}
+
+	var name string
+	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err == sql.ErrNoRows {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+		return
+	}
+
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	iconPath := filepath.Join(serverPath, "server-icon.png")
+
+	if _, err := os.Stat(iconPath); os.IsNotExist(err) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "icon not found"})
+		return
+	}
+
+	if err := os.Remove(iconPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete icon"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func isValidPNGIcon(content []byte) bool {
+	if len(content) < 8 {
+		return false
+	}
+
+	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	for i := 0; i < 8; i++ {
+		if content[i] != pngHeader[i] {
+			return false
+		}
+	}
+
+	if len(content) < 33 {
+		return false
+	}
+
+	width := int(content[16])<<24 | int(content[17])<<16 | int(content[18])<<8 | int(content[19])
+	height := int(content[20])<<24 | int(content[21])<<16 | int(content[22])<<8 | int(content[23])
+
+	return width == 64 && height == 64
+}
+
+func (h *ServerHandler) getIconPath(id int64, name string) *string {
+	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	iconPath := filepath.Join(serverPath, "server-icon.png")
+
+	if _, err := os.Stat(iconPath); err == nil {
+		path := fmt.Sprintf("/api/servers/%d/icon", id)
+		return &path
+	}
+	return nil
 }
 
 func isTextFile(content []byte) bool {

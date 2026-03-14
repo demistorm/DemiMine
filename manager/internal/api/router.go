@@ -97,6 +97,9 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 						r.Post("/upload", fileUploadHandler.Upload)
 					})
 				})
+
+				r.Post("/{id}/icon", serverHandler.UploadIcon)
+				r.Delete("/{id}/icon", serverHandler.DeleteIcon)
 			})
 
 			r.Route("/proxies", func(r chi.Router) {
@@ -126,6 +129,8 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 			})
 		})
 	})
+
+	r.Get("/api/servers/{id}/icon", serverHandler.GetIcon)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

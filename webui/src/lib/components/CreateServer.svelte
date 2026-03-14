@@ -21,6 +21,9 @@
 	let hostPort: number | null = 25565;
 	let proxyId: number | null = null;
 	let domain = '';
+	let iconFile: File | null = null;
+	let iconPreview: string | null = null;
+	let iconError = '';
 
 	const serverTypes = [
 		{ value: 'paper', label: 'Paper' },
@@ -92,16 +95,67 @@
 				body.host_port = hostPort;
 			}
 
-			await api.post('/api/servers', body);
+			const result = await api.post<{ id: number }>('/api/servers', body);
+			
+			if (iconFile && result.id) {
+				try {
+					await api.uploadIcon(result.id, iconFile);
+				} catch (iconErr) {
+					console.error('Failed to upload icon:', iconErr);
+				}
+			}
 			
 			await loadServers();
 			dispatch('created');
-			show = false;
+			close();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to create server';
 		} finally {
 			loading = false;
 		}
+	}
+
+	function handleIconSelect(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+
+		iconError = '';
+		
+		if (!file.type.includes('png')) {
+			iconError = 'Icon must be a PNG file';
+			return;
+		}
+
+		const img = new Image();
+		const url = URL.createObjectURL(file);
+		
+		img.onload = () => {
+			if (img.width !== 64 || img.height !== 64) {
+				iconError = 'Icon must be exactly 64x64 pixels';
+				URL.revokeObjectURL(url);
+				return;
+			}
+			
+			iconFile = file;
+			iconPreview = url;
+		};
+		
+		img.onerror = () => {
+			iconError = 'Failed to load image';
+			URL.revokeObjectURL(url);
+		};
+		
+		img.src = url;
+	}
+
+	function clearIcon() {
+		if (iconPreview) {
+			URL.revokeObjectURL(iconPreview);
+		}
+		iconFile = null;
+		iconPreview = null;
+		iconError = '';
 	}
 
 	function close() {
@@ -114,6 +168,7 @@
 		hostPort = 25565;
 		proxyId = null;
 		domain = '';
+		clearIcon();
 		error = '';
 	}
 </script>
@@ -287,6 +342,32 @@
 							<span class="hint">The port players will connect to</span>
 						</div>
 					{/if}
+
+					<div class="field">
+						<label>Server Icon (Optional)</label>
+						<div class="icon-upload">
+							{#if iconPreview}
+								<div class="icon-preview">
+									<img src={iconPreview} alt="Server icon preview" />
+									<button class="remove-icon" on:click={clearIcon}>×</button>
+								</div>
+							{:else}
+								<label class="icon-dropzone">
+									<input 
+										type="file" 
+										accept="image/png"
+										on:change={handleIconSelect}
+									/>
+									<span class="dropzone-text">Click to upload 64x64 PNG</span>
+								</label>
+							{/if}
+						</div>
+						{#if iconError}
+							<span class="hint warning">{iconError}</span>
+						{:else}
+							<span class="hint">64x64 PNG image for the server list</span>
+						{/if}
+					</div>
 
 					<div class="actions">
 						<button class="btn secondary" on:click={prevStep}>Back</button>
@@ -601,5 +682,76 @@
 	.btn.secondary:hover:not(:disabled) {
 		background-color: var(--bg-tertiary);
 		border-color: var(--border);
+	}
+
+	.icon-upload {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.icon-preview {
+		position: relative;
+		display: inline-flex;
+	}
+
+	.icon-preview img {
+		width: 64px;
+		height: 64px;
+		border-radius: 0.375rem;
+		object-fit: contain;
+		background: var(--bg-tertiary);
+	}
+
+	.icon-preview .remove-icon {
+		position: absolute;
+		top: -8px;
+		right: -8px;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: var(--error);
+		color: white;
+		border: none;
+		cursor: pointer;
+		font-size: 0.875rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 1;
+	}
+
+	.icon-dropzone {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 64px;
+		height: 64px;
+		border: 2px dashed var(--border);
+		border-radius: 0.375rem;
+		cursor: pointer;
+		transition: border-color 0.2s, background-color 0.2s;
+	}
+
+	.icon-dropzone:hover {
+		border-color: var(--accent);
+		background-color: var(--bg-tertiary);
+	}
+
+	.icon-dropzone input {
+		display: none;
+	}
+
+	.dropzone-text {
+		font-size: 0.625rem;
+		color: var(--text-secondary);
+		text-align: center;
+		padding: 0.25rem;
+		line-height: 1.2;
+	}
+
+	.hint.warning {
+		color: var(--warning, #f59e0b);
+		opacity: 1;
 	}
 </style>
