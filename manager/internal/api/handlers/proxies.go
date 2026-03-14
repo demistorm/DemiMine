@@ -884,8 +884,35 @@ func (h *ProxyHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(fullPath)))
+	baseName := filepath.Base(fullPath)
+	ext := strings.ToLower(filepath.Ext(baseName))
+
+	contentType := "application/octet-stream"
+	contentDisposition := "attachment"
+
+	switch ext {
+	case ".png":
+		contentType = "image/png"
+		contentDisposition = "inline"
+	case ".jpg", ".jpeg":
+		contentType = "image/jpeg"
+		contentDisposition = "inline"
+	case ".gif":
+		contentType = "image/gif"
+		contentDisposition = "inline"
+	case ".webp":
+		contentType = "image/webp"
+		contentDisposition = "inline"
+	case ".bmp":
+		contentType = "image/bmp"
+		contentDisposition = "inline"
+	case ".ico":
+		contentType = "image/x-icon"
+		contentDisposition = "inline"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%s", contentDisposition, baseName))
 	io.Copy(w, file)
 }
 

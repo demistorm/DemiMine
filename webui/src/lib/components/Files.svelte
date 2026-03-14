@@ -16,6 +16,11 @@
 		modified: string;
 	}
 
+	function isImageFile(filename: string): boolean {
+		const ext = filename.split('.').pop()?.toLowerCase();
+		return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'].includes(ext || '');
+	}
+
 	let currentPath = '/';
 	let files: FileEntry[] = [];
 	let loading = false;
@@ -29,6 +34,8 @@
 	let uploadLoading = false;
 	let error = '';
 	let isGzipped = false;
+	let isImageFileOpen = false;
+	let imageUrl = '';
 
 	onMount(() => {
 		loadFiles();
@@ -92,19 +99,30 @@
 
 		loading = true;
 		isGzipped = file.name.endsWith('.gz');
-		try {
-			const response = await api.get<{ content: string; is_gzipped?: string }>(
-				`${apiPrefix}/${id}/files/content?path=${encodeURIComponent(currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`)}`
-			);
+		isImageFileOpen = isImageFile(file.name);
+		imageUrl = '';
+
+		if (isImageFileOpen) {
+			const filePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
+			imageUrl = `${apiPrefix}/${id}/files/download?path=${encodeURIComponent(filePath)}`;
 			selectedFile = file;
-			fileContent = response.content;
-			isGzipped = response.is_gzipped === 'true';
 			editingFile = true;
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to open file';
-			console.error('Failed to open file:', err);
-		} finally {
 			loading = false;
+		} else {
+			try {
+				const response = await api.get<{ content: string; is_gzipped?: string }>(
+					`${apiPrefix}/${id}/files/content?path=${encodeURIComponent(currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`)}`
+				);
+				selectedFile = file;
+				fileContent = response.content;
+				isGzipped = response.is_gzipped === 'true';
+				editingFile = true;
+			} catch (err) {
+				error = err instanceof Error ? err.message : 'Failed to open file';
+				console.error('Failed to open file:', err);
+			} finally {
+				loading = false;
+			}
 		}
 	}
 
@@ -136,6 +154,8 @@
 		selectedFile = null;
 		fileContent = '';
 		isGzipped = false;
+		isImageFileOpen = false;
+		imageUrl = '';
 	}
 
 	async function deleteFile(file: FileEntry) {
@@ -268,16 +288,20 @@
 				{/if}
 			</div>
 			<div class="editor-actions">
-				<button class="btn" on:click={saveFile} disabled={loading || isGzipped}>Save</button>
+				<button class="btn" on:click={saveFile} disabled={loading || isGzipped || isImageFileOpen}>Save</button>
 				<button class="btn secondary" on:click={closeEditor}>Cancel</button>
 			</div>
 		</div>
-		{#if isGzipped}
+		{#if isImageFileOpen}
+			<div class="image-viewer">
+				<img src={imageUrl} alt={selectedFile?.name} />
+			</div>
+		{:else if isGzipped}
 			<textarea bind:value={fileContent} class="editor" disabled={loading || isGzipped} readonly></textarea>
 		{:else}
-			<AceEditor 
-				bind:value={fileContent} 
-				language={getAceMode(selectedFile?.name || '')} 
+			<AceEditor
+				bind:value={fileContent}
+				language={getAceMode(selectedFile?.name || '')}
 				readonly={false}
 			/>
 		{/if}
@@ -635,6 +659,23 @@
 
 	.editor:focus {
 		outline: none;
+	}
+
+	.image-viewer {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		width: 100%;
+		background: #0a0a0a;
+	}
+
+	.image-viewer img {
+		width: 60vw;
+		height: 60vh;
+		object-fit: contain;
+		image-rendering: pixelated;
+		image-rendering: crisp-edges;
 	}
 
 	.modal-overlay {
