@@ -1,8 +1,24 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-interface ApiError {
+interface ApiErrorData {
 	error: string;
 	message?: string;
+	port?: number;
+	used_by?: string;
+}
+
+export class ApiError extends Error {
+	error: string;
+	port?: number;
+	used_by?: string;
+
+	constructor(data: ApiErrorData) {
+		super(data.message || data.error);
+		this.name = 'ApiError';
+		this.error = data.error;
+		this.port = data.port;
+		this.used_by = data.used_by;
+	}
 }
 
 class ApiClient {
@@ -56,11 +72,11 @@ class ApiClient {
 		}
 
 		if (!response.ok) {
-			const error: ApiError = await response.json().catch(() => ({ 
+			const errorData: ApiErrorData = await response.json().catch(() => ({ 
 				error: 'unknown_error',
 				message: response.statusText 
 			}));
-			throw new Error(error.message || error.error);
+			throw new ApiError(errorData);
 		}
 
 		if (response.status === 204) {
@@ -127,8 +143,8 @@ class ApiClient {
 		}
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-			throw new Error(error.error || 'Upload failed');
+			const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+			throw new ApiError(errorData as ApiErrorData);
 		}
 
 		return response.json();
@@ -160,8 +176,8 @@ class ApiClient {
 		}
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-			throw new Error(error.error || 'Upload failed');
+			const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+			throw new ApiError(errorData as ApiErrorData);
 		}
 
 		return response.json();
@@ -197,8 +213,8 @@ class ApiClient {
 		}
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-			throw new Error(error.error || 'Upload failed');
+			const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+			throw new ApiError(errorData as ApiErrorData);
 		}
 
 		return response.json();

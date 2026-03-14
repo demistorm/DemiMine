@@ -10,6 +10,7 @@
 	let step = 1;
 	let loading = false;
 	let error = '';
+	let portConflictUsedBy: string | null = null;
 	let versions: string[] = [];
 	let versionsLoading = false;
 	let versionDropdownOpen = false;
@@ -95,7 +96,12 @@
 				body.host_port = hostPort;
 			}
 
-			const result = await api.post<{ id: number }>('/api/servers', body);
+			let endpoint = '/api/servers';
+			if (portConflictUsedBy) {
+				endpoint += '?force=true';
+			}
+
+			const result = await api.post<{ id: number }>(endpoint, body);
 			
 			if (iconFile && result.id) {
 				try {
@@ -109,7 +115,12 @@
 			dispatch('created');
 			close();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to create server';
+			if (err && typeof err === 'object' && 'error' in err && err.error === 'port_in_use') {
+				portConflictUsedBy = (err as any).used_by || 'another server';
+				error = '';
+			} else {
+				error = err instanceof Error ? err.message : 'Failed to create server';
+			}
 		} finally {
 			loading = false;
 		}
@@ -158,6 +169,10 @@
 		iconError = '';
 	}
 
+	function handlePortChange() {
+		portConflictUsedBy = null;
+	}
+
 	function close() {
 		show = false;
 		step = 1;
@@ -168,6 +183,7 @@
 		hostPort = 25565;
 		proxyId = null;
 		domain = '';
+		portConflictUsedBy = null;
 		clearIcon();
 		error = '';
 	}
@@ -183,6 +199,12 @@
 
 			{#if error}
 				<div class="error-banner">{error}</div>
+			{/if}
+
+			{#if portConflictUsedBy}
+				<div class="warning-banner">
+					Port {hostPort} is already used by '{portConflictUsedBy}'. Only one server on this port can run at a time. Click Create again to confirm.
+				</div>
 			{/if}
 
 			<div class="steps">
@@ -336,6 +358,7 @@
 								type="number" 
 								id="port" 
 								bind:value={hostPort}
+								on:change={handlePortChange}
 								min={1}
 								max={65535}
 							/>
@@ -434,6 +457,12 @@
 
 	.error-banner {
 		background: var(--error);
+		color: white;
+		padding: 0.75rem 1rem;
+	}
+
+	.warning-banner {
+		background: var(--warning, #f59e0b);
 		color: white;
 		padding: 0.75rem 1rem;
 	}
