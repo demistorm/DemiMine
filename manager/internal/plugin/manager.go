@@ -115,8 +115,12 @@ func (m *Manager) Install(opts InstallOptions) (*InstalledPlugin, error) {
 	if opts.VersionID != "" {
 		version, err = m.modrinth.GetVersion(opts.VersionID)
 	} else {
+		var gameVersions []string
+		if opts.GameVersion != "" {
+			gameVersions = []string{opts.GameVersion}
+		}
 		var versions []modrinth.Version
-		versions, err = m.modrinth.GetProjectVersions(opts.ProjectID, []string{opts.GameVersion}, opts.Loaders)
+		versions, err = m.modrinth.GetProjectVersions(opts.ProjectID, gameVersions, opts.Loaders)
 		if err == nil {
 			version = modrinth.FindBestVersion(versions, opts.GameVersion, opts.Loaders)
 			if version == nil {

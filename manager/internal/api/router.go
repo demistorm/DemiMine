@@ -10,6 +10,7 @@ import (
 	"github.com/demimine/manager/internal/api/middleware"
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
+	"github.com/demimine/manager/internal/plugin"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 )
@@ -26,9 +27,11 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	rateLimiter := middleware.NewRateLimiter(500, 15*time.Minute)
 	r.Use(rateLimiter.Middleware)
 
+	pluginMgr := plugin.NewManager(database, cfg.ServersDir)
+
 	authHandler := handlers.NewAuthHandler(database, cfg.JWTSecret)
 	serverHandler := handlers.NewServerHandler(database, dockerClient, consoleManager, cfg)
-	proxyHandler := handlers.NewProxyHandler(database, dockerClient, consoleManager, cfg)
+	proxyHandler := handlers.NewProxyHandler(database, dockerClient, consoleManager, cfg, pluginMgr)
 	versionsHandler := handlers.NewVersionsHandler()
 	javaHandler := handlers.NewJavaHandler()
 	fileUploadHandler := handlers.NewFileUploadHandler(database, cfg)

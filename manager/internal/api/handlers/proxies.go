@@ -19,6 +19,7 @@ import (
 	"github.com/demimine/manager/internal/docker"
 	"github.com/demimine/manager/internal/mc"
 	"github.com/demimine/manager/internal/models"
+	"github.com/demimine/manager/internal/plugin"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -27,14 +28,16 @@ type ProxyHandler struct {
 	docker         *docker.Client
 	consoleManager *docker.ConsoleManager
 	cfg            *config.Config
+	pluginManager  *plugin.Manager
 }
 
-func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config) *ProxyHandler {
+func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, pluginManager *plugin.Manager) *ProxyHandler {
 	return &ProxyHandler{
 		db:             db,
 		docker:         dockerClient,
 		consoleManager: consoleManager,
 		cfg:            cfg,
+		pluginManager:  pluginManager,
 	}
 }
 
@@ -224,6 +227,15 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to write velocity.toml"})
 		return
 	}
+
+	// Auto-install MiniMOTD for MOTD support (non-blocking)
+	_, _ = h.pluginManager.Install(plugin.InstallOptions{
+		TargetType: "proxy",
+		TargetID:   id,
+		ProjectID:  "minimotd",
+		Loaders:    []string{"velocity"},
+		PluginsDir: req.Name,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
