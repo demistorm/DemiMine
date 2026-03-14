@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@types/node": "^20.0.0",
+    "ace-builds": "^1.43.6",
     "ansi_up": "^6.0.6"
   },
   "type": "module"
