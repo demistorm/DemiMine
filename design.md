@@ -321,6 +321,7 @@ CREATE TABLE players (
     uuid TEXT NOT NULL,
     server_id INTEGER NOT NULL,
     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    skin_url TEXT,
     FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
 );
 
@@ -618,6 +619,27 @@ GET /api/servers/:id/players
       }
     ]
   }
+
+POST /api/players/join
+  Body: {
+    "player_name": string,
+    "player_uuid": string,
+    "server_id": number,
+    "server_name": string
+  }
+  Response: { "success": true }
+  Notes: Called by Velocity dynamic plugin when player joins from ANY source
+         (direct connection, proxy, portal from another server, /server command, etc.)
+         Updates player count in database and sends WebSocket event
+
+POST /api/players/leave
+  Body: {
+    "player_uuid": string,
+    "server_id": number
+  }
+  Response: { "success": true }
+  Notes: Called by Velocity dynamic plugin when player leaves a server
+         Updates player count in database and sends WebSocket event
 ```
 
 #### Backups
@@ -782,6 +804,15 @@ GET /api/system/resources
     "servers_running": number,
     "servers_allocated_mb": number
   }
+  Notes: Phase 6 - Real-time resource monitoring for all running servers
+
+GET /api/servers/:id/resources
+  Response: {
+    "cpu_percent": number,
+    "memory_mb": number,
+    "uptime_seconds": number
+  }
+  Notes: Phase 6 - Per-server resource monitoring (updated periodically)
 
 GET /api/crashes
   Response: [
@@ -816,11 +847,14 @@ WS /api/ws
 
   Server → Client:
     { "type": "server_status", "server_id": 1, "status": "running" }
-    { "type": "player_join", "server_id": 1, "player": { "name": "...", "uuid": "..." } }
-    { "type": "player_leave", "server_id": 1, "player": { "name": "..." } }
+    { "type": "player_join", "server_id": 1, "player": { "name": "...", "uuid": "...", "joined_at": "...", "skin_url": "..." } }
+    { "type": "player_leave", "server_id": 1, "player": { "name": "...", "uuid": "..." } }
     { "type": "log", "server_id": 1, "line": "...", "level": "INFO" }
     { "type": "resources", "server_id": 1, "cpu_percent": 5.2, "memory_mb": 1024 }
     { "type": "crash", "server_id": 1, "crash_log_id": 5 }
+    Notes:
+      - player_join/player_leave events sent when dynamic plugin calls API
+      - resources events sent periodically (Phase 6)
 ```
 
 ---
@@ -1687,22 +1721,23 @@ prompt_message = "§ePlease type the password in chat to continue."
 
 ### Dynamic Plugin
 
-**Purpose**: Start stopped servers on demand, shutdown idle servers.
+**Purpose**: Start stopped servers on demand, shutdown idle servers, track player joins/leaves for accurate counts.
 
 **Flow (Server Start)**:
-1. Player attempts to connect to stopped server
-2. Plugin intercepts `ServerPreConnectEvent`
+1. Player attempts to connect to stopped server (from ANY source - direct connection, proxy, or portal from another server)
+2. Plugin intercepts `ServerPreConnectEvent` (watching ALL connection attempts)
 3. Check if player has `demimine.authenticated` permission
 4. If not authenticated, deny with message
 5. Call Manager API: `POST /api/servers/:name/start`
 6. If error (insufficient RAM):
-   - Check for servers with `auto_shutdown` active
-   - Call `POST /api/servers/:id/stop` on shortest-timer server
-   - Retry start
-   - If still fails, deny connection with error message
-7. Show "Starting server..." message
+    - Check for servers with `auto_shutdown` active
+    - Call `POST /api/servers/:id/stop` on shortest-timer server
+    - Retry start
+    - If still fails, deny connection with error message
+7. **While starting**: Send player to queue server (hub/lobby) or show "Starting server..." message
 8. Poll server status every 1 second
 9. On `running`, allow connection
+10. Send player info to Manager API: `POST /api/players/join` (for accurate player counts)
 
 **Flow (Server Stop)**:
 1. Player leaves server
@@ -1710,6 +1745,7 @@ prompt_message = "§ePlease type the password in chat to continue."
 3. Start 15-minute timer
 4. If player rejoins, cancel timer
 5. On timer expiry, call Manager API: `POST /api/servers/:id/stop`
+6. Send player info to Manager API: `POST /api/players/leave` (for accurate player counts)
 
 **Configuration** (`plugins/demi-dynamic/config.toml`):
 ```toml
@@ -1717,7 +1753,13 @@ manager_url = "http://host.docker.internal:8080"
 api_key = "from-manager-api-keys-page"
 check_interval_seconds = 1
 start_timeout_seconds = 120
+queue_server = "nexus"  # Server to send players to while waiting
 ```
+
+**Important Notes**:
+- Plugin must watch for ALL player join attempts, including those from other servers (e.g., portal systems, commands like `/server survival`)
+- Player join/leave events are sent to the Manager API for real-time accurate player counts across all servers
+- Queue server (typically nexus/hub) holds players while target server is starting
 
 ### velocity.toml Updates
 
@@ -2019,7 +2061,6 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 **Days 3-4: Server Operations**
 - [ ] Console log streaming
 - [ ] Command execution
-- [ ] Player tracking
 - [ ] Resource monitoring
 
 **Day 5: File Management**
@@ -2078,6 +2119,12 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 
 ### Phase 6: Polish & Testing (Week 6)
 
+**Days 1-2: Player Tracking & Monitoring**
+- [ ] Player tracking implementation (join/leave events from dynamic plugin)
+- [ ] Resource monitoring (CPU/memory graphs, uptime)
+- [ ] WebSocket integration for real-time player counts
+
+**Days 3-5: Polish & Testing**
 - [ ] Error handling review
 - [ ] Graceful shutdown
 - [ ] Documentation
@@ -2155,9 +2202,7 @@ docker ps --filter label=demimine.managed=true
 
 ---
 
-## Future Enhancements
-
-### Player Tracking API
+## Player Tracking API (Phase 6)
 
 Track currently online players across all servers with real-time updates.
 
@@ -2174,6 +2219,8 @@ type OnlinePlayer struct {
 ```
 
 **API Endpoints:**
+- `POST /api/players/join` - Called by dynamic plugin when player joins a server (from ANY source - direct, proxy, portal, command)
+- `POST /api/players/leave` - Called by dynamic plugin when player leaves a server
 - `GET /api/players/online` - List all online players across all servers
 - `GET /api/servers/:id/players` - List online players for specific server
 - WebSocket event: `player_join`, `player_leave`, `player_switch`
@@ -2184,6 +2231,6 @@ type OnlinePlayer struct {
 - Activity logging for audit trails
 
 **Implementation Notes:**
-- Requires Velocity plugin to track player connections
-- Backend servers report player joins/leaves via RCON or plugin messaging
+- Velocity dynamic plugin tracks ALL player join attempts (including cross-server portals/commands)
+- Plugin sends join/leave events to Manager API for accurate counts
 - Skin URLs from Crafatar API: `https://crafatar.com/avatars/{uuid}`
