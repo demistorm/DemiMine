@@ -40,6 +40,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	modrinthHandler := handlers.NewModrinthHandler()
 	pluginHandler := handlers.NewPluginHandler(database, cfg.ServersDir)
 	settingsHandler := handlers.NewSettingsHandler(database)
+	jarUpdateHandler := handlers.NewJarUpdateHandler(database, cfg)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -108,6 +109,9 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 						r.Post("/rename", serverHandler.RenameFile)
 						r.Post("/upload", fileUploadHandler.Upload)
 					})
+
+					r.Get("/jar-update", jarUpdateHandler.CheckServerJarUpdate)
+					r.Post("/jar-update", jarUpdateHandler.UpdateServerJar)
 				})
 
 				r.Post("/{id}/icon", serverHandler.UploadIcon)
@@ -137,6 +141,9 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 						r.Post("/rename", proxyHandler.RenameFile)
 						r.Post("/upload", fileUploadHandler.UploadProxy)
 					})
+
+					r.Get("/jar-update", jarUpdateHandler.CheckProxyJarUpdate)
+					r.Post("/jar-update", jarUpdateHandler.UpdateProxyJar)
 				})
 
 				r.Post("/{id}/icon", proxyHandler.UploadIcon)

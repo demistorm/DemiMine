@@ -264,11 +264,22 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jarPath := filepath.Join(serverPath, "server.jar")
-	if err := mc.DownloadServerJar(req.Type, req.Version, jarPath); err != nil {
+	jarBuild, jarHash, err := mc.DownloadServerJar(req.Type, req.Version, jarPath)
+	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to download server jar: %v", err)})
 		return
+	}
+
+	if req.Type == "paper" {
+		if _, err := h.db.Exec("UPDATE servers SET jar_build = ? WHERE id = ?", jarBuild, id); err != nil {
+			fmt.Printf("Failed to update jar_build for server %d: %v\n", id, err)
+		}
+	} else if req.Type == "purpur" {
+		if _, err := h.db.Exec("UPDATE servers SET jar_hash = ? WHERE id = ?", jarHash, id); err != nil {
+			fmt.Printf("Failed to update jar_hash for server %d: %v\n", id, err)
+		}
 	}
 
 	if err := mc.WriteEntrypointScript(serverPath); err != nil {

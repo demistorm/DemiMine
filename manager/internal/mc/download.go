@@ -17,43 +17,69 @@ type PaperBuildInfo struct {
 	} `json:"downloads"`
 }
 
-func DownloadPaperJar(version, destPath string) error {
-	buildResp, err := httpClient.Get(fmt.Sprintf("https://api.papermc.io/v2/projects/paper/versions/%s", version))
+func DownloadPaperJar(version, destPath string) (int, string, error) {
+	buildResp, err := fillGet(fmt.Sprintf("%s/projects/paper/versions/%s/builds", fillAPIBaseURL, version))
 	if err != nil {
-		return fmt.Errorf("failed to get paper builds: %w", err)
+		return 0, "", fmt.Errorf("failed to get paper builds: %w", err)
 	}
 	defer buildResp.Body.Close()
 
-	var buildData PaperBuildResponse
-	if err := json.NewDecoder(buildResp.Body).Decode(&buildData); err != nil {
-		return fmt.Errorf("failed to decode build response: %w", err)
+	var builds []FillBuild
+	if err := json.NewDecoder(buildResp.Body).Decode(&builds); err != nil {
+		return 0, "", fmt.Errorf("failed to decode build response: %w", err)
 	}
 
-	if len(buildData.Builds) == 0 {
-		return fmt.Errorf("no builds available for paper %s", version)
+	if len(builds) == 0 {
+		return 0, "", fmt.Errorf("no builds available for paper %s", version)
 	}
 
-	latestBuild := buildData.Builds[0]
-	for _, b := range buildData.Builds {
-		if b > latestBuild {
-			latestBuild = b
+	var latestBuild *FillBuild
+	for i := range builds {
+		if latestBuild == nil || builds[i].ID > latestBuild.ID {
+			if builds[i].Channel == "STABLE" {
+				latestBuild = &builds[i]
+			}
 		}
 	}
 
-	downloadURL := fmt.Sprintf(
-		"https://api.papermc.io/v2/projects/paper/versions/%s/builds/%d/downloads/%s-%s-%d.jar",
-		version, latestBuild, "paper", version, latestBuild,
-	)
+	if latestBuild == nil {
+		latestBuild = &builds[0]
+	}
 
-	return downloadFile(downloadURL, destPath)
+	downloadURL := latestBuild.Downloads["server:default"].URL
+	sha256 := latestBuild.Downloads["server:default"].Checksums["sha256"]
+
+	if err := downloadFillFile(downloadURL, destPath); err != nil {
+		return 0, "", err
+	}
+
+	return latestBuild.ID, sha256, nil
 }
 
-func DownloadPurpurJar(version, destPath string) error {
+func DownloadPurpurJar(version, destPath string) (string, error) {
+	buildInfoResp, err := httpClient.Get(fmt.Sprintf("https://api.purpurmc.org/v2/purpur/%s/latest", version))
+	if err != nil {
+		return "", fmt.Errorf("failed to get purpur build info: %w", err)
+	}
+	defer buildInfoResp.Body.Close()
+
+	var buildInfo struct {
+		Hash string `json:"md5"`
+	}
+	if err := json.NewDecoder(buildInfoResp.Body).Decode(&buildInfo); err != nil {
+		return "", fmt.Errorf("failed to decode purpur build hash: %w", err)
+	}
+
 	downloadURL := fmt.Sprintf(
 		"https://api.purpurmc.org/v2/purpur/%s/latest/download",
 		version,
 	)
-	return downloadFile(downloadURL, destPath)
+
+	if err := downloadFile(downloadURL, destPath); err != nil {
+		return "", err
+	}
+
+	return buildInfo.Hash, nil
 }
 
 func DownloadFabricInstaller(serverDir string) error {
@@ -127,25 +153,30 @@ func DownloadForgeInstaller(version, serverDir string) error {
 	return downloadFile(downloadURL, installerPath)
 }
 
-func DownloadServerJar(serverType, version, destPath string) error {
+func DownloadServerJar(serverType, version, destPath string) (int, string, error) {
 	serverDir := filepath.Dir(destPath)
 	if err := os.MkdirAll(serverDir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return 0, "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	switch serverType {
 	case "paper":
-		return DownloadPaperJar(version, destPath)
+		build, hash, err := DownloadPaperJar(version, destPath)
+		return build, hash, err
 	case "purpur":
-		return DownloadPurpurJar(version, destPath)
+		hash, err := DownloadPurpurJar(version, destPath)
+		return 0, hash, err
 	case "fabric":
-		return DownloadFabricInstaller(serverDir)
+		err := DownloadFabricInstaller(serverDir)
+		return 0, "", err
 	case "neoforge":
-		return DownloadNeoForgeInstaller(version, serverDir)
+		err := DownloadNeoForgeInstaller(version, serverDir)
+		return 0, "", err
 	case "forge":
-		return DownloadForgeInstaller(version, serverDir)
+		err := DownloadForgeInstaller(version, serverDir)
+		return 0, "", err
 	default:
-		return fmt.Errorf("unsupported server type: %s", serverType)
+		return 0, "", fmt.Errorf("unsupported server type: %s", serverType)
 	}
 }
 

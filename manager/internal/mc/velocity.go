@@ -23,52 +23,62 @@ type VelocityConfig struct {
 	ForcedHosts      map[string][]string
 }
 
-func DownloadVelocityJar(destPath string) error {
-	resp, err := httpClient.Get("https://api.papermc.io/v2/projects/velocity")
+func DownloadVelocityJar(destPath string) (string, int, error) {
+	resp, err := fillGet(fmt.Sprintf("%s/projects/velocity", fillAPIBaseURL))
 	if err != nil {
-		return fmt.Errorf("failed to get velocity versions: %w", err)
+		return "", 0, fmt.Errorf("failed to get velocity versions: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var data struct {
-		VersionGroups []string `json:"version_groups"`
-		Versions      []string `json:"versions"`
-	}
+	var data FillProjectResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return fmt.Errorf("failed to decode velocity versions: %w", err)
+		return "", 0, fmt.Errorf("failed to decode velocity versions: %w", err)
 	}
 
-	if len(data.Versions) == 0 {
-		return fmt.Errorf("no velocity versions available")
+	versions, ok := data.Versions["3.0.0"]
+	if !ok || len(versions) == 0 {
+		return "", 0, fmt.Errorf("no velocity versions available")
 	}
 
-	latestVersion := data.Versions[len(data.Versions)-1]
+	for _, version := range versions {
+		buildResp, err := fillGet(fmt.Sprintf("%s/projects/velocity/versions/%s/builds", fillAPIBaseURL, version))
+		if err != nil {
+			continue
+		}
 
-	buildResp, err := httpClient.Get(fmt.Sprintf("https://api.papermc.io/v2/projects/velocity/versions/%s", latestVersion))
-	if err != nil {
-		return fmt.Errorf("failed to get velocity builds: %w", err)
+		var builds []FillBuild
+		if err := json.NewDecoder(buildResp.Body).Decode(&builds); err != nil {
+			buildResp.Body.Close()
+			continue
+		}
+		buildResp.Body.Close()
+
+		if len(builds) == 0 {
+			continue
+		}
+
+		var latestBuild *FillBuild
+		for i := range builds {
+			if latestBuild == nil || builds[i].ID > latestBuild.ID {
+				if builds[i].Channel == "STABLE" {
+					latestBuild = &builds[i]
+				}
+			}
+		}
+
+		if latestBuild == nil {
+			latestBuild = &builds[0]
+		}
+
+		downloadURL := latestBuild.Downloads["server:default"].URL
+		if err := downloadFillFile(downloadURL, destPath); err != nil {
+			return "", 0, err
+		}
+
+		return version, latestBuild.ID, nil
 	}
-	defer buildResp.Body.Close()
 
-	var buildData struct {
-		Builds []int `json:"builds"`
-	}
-	if err := json.NewDecoder(buildResp.Body).Decode(&buildData); err != nil {
-		return fmt.Errorf("failed to decode velocity builds: %w", err)
-	}
-
-	if len(buildData.Builds) == 0 {
-		return fmt.Errorf("no builds available for velocity %s", latestVersion)
-	}
-
-	latestBuild := buildData.Builds[len(buildData.Builds)-1]
-
-	downloadURL := fmt.Sprintf(
-		"https://api.papermc.io/v2/projects/velocity/versions/%s/builds/%d/downloads/velocity-%s-%d.jar",
-		latestVersion, latestBuild, latestVersion, latestBuild,
-	)
-
-	return downloadFile(downloadURL, destPath)
+	return "", 0, fmt.Errorf("no stable builds available for velocity")
 }
 
 func GenerateForwardingSecret() (string, error) {

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
-	import { api, type Server } from '$lib/api';
+	import { createEventDispatcher, onMount } from 'svelte';
+	import { api, type Server, jarUpdateApi, type JarUpdateInfo } from '$lib/api';
 	import { servers } from '$lib/stores/servers';
 
 	export let server: Server;
@@ -20,7 +20,57 @@
 	let minimotdLine1 = server.minimotd_line1 || '';
 	let minimotdLine2 = server.minimotd_line2 || '';
 
+	let updateInfo: JarUpdateInfo | null = null;
+	let checkingUpdate = false;
+	let updatingJar = false;
+
 	const dispatch = createEventDispatcher();
+
+	async function checkJarUpdate() {
+		if (server.type !== 'paper' && server.type !== 'purpur') {
+			return;
+		}
+
+		checkingUpdate = true;
+		try {
+			updateInfo = await jarUpdateApi.checkServer(server.id);
+		} catch (err) {
+			console.error('Failed to check for JAR update:', err);
+		} finally {
+			checkingUpdate = false;
+		}
+	}
+
+	async function updateJar() {
+		if (!updateInfo || !updateInfo.has_update) {
+			return;
+		}
+
+		updatingJar = true;
+		error = '';
+
+		try {
+			await jarUpdateApi.updateServer(server.id);
+			success = 'JAR updated successfully';
+			updateInfo.has_update = false;
+
+			const updatedServer = await api.get<Server>(`/api/servers/${server.id}`);
+			servers.update(list =>
+				list.map(s => s.id === server.id ? updatedServer : s)
+			);
+			Object.assign(server, updatedServer);
+
+			setTimeout(() => success = '', 3000);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update JAR';
+		} finally {
+			updatingJar = false;
+		}
+	}
+
+	onMount(() => {
+		checkJarUpdate();
+	});
 
 	async function saveChanges() {
 		saving = true;
@@ -191,6 +241,56 @@
 	{/if}
 	{#if success}
 		<div class="alert success">{success}</div>
+	{/if}
+
+	{#if server.type === 'paper' || server.type === 'purpur'}
+		<div class="section">
+			<h2>Software Updates</h2>
+
+			{#if checkingUpdate}
+				<div class="field">
+					<span>Checking for updates...</span>
+				</div>
+			{:else if updateInfo}
+				<div class="field">
+					<label>Current Version</label>
+					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${server.version} (build ${server.jar_build || 'unknown'})`} disabled />
+				</div>
+
+				<div class="field">
+					<label>Latest Version</label>
+					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${updateInfo.latest_version} (build ${updateInfo.latest_build})`} disabled />
+				</div>
+
+				{#if updateInfo.has_update}
+					{#if server.status === 'running'}
+						<div class="field">
+							<div class="info-box warning">
+								Server must be stopped to update the JAR
+							</div>
+						</div>
+					{:else}
+						<div class="field">
+							<button class="btn primary" on:click={updateJar} disabled={updatingJar}>
+								{updatingJar ? 'Updating...' : `Update to Build ${updateInfo.latest_build}`}
+							</button>
+						</div>
+					{/if}
+				{:else}
+					<div class="field">
+						<div class="info-box">
+							Server is up to date!
+						</div>
+					</div>
+				{/if}
+			{:else}
+				<div class="field">
+					<div class="info-box warning">
+						Failed to check for updates
+					</div>
+				</div>
+			{/if}
+		</div>
 	{/if}
 
 	<div class="section">
@@ -689,6 +789,11 @@
 
 	.info-box strong {
 		color: var(--text-primary);
+	}
+
+	.info-box.warning {
+		background: rgba(234, 179, 8, 0.1);
+		border-color: rgba(234, 179, 8, 0.3);
 	}
 
 </style>

@@ -206,11 +206,16 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jarPath := filepath.Join(proxyPath, "velocity.jar")
-	if err := mc.DownloadVelocityJar(jarPath); err != nil {
+	jarVersion, jarBuild, err := mc.DownloadVelocityJar(jarPath)
+	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to download velocity jar: %v", err)})
 		return
+	}
+
+	if _, err := h.db.Exec("UPDATE proxies SET jar_version = ?, jar_build = ? WHERE id = ?", jarVersion, jarBuild, id); err != nil {
+		fmt.Printf("Failed to update jar_version/jar_build for proxy %d: %v\n", id, err)
 	}
 
 	if err := mc.WriteForwardingSecret(proxyPath, forwardingSecret); err != nil {

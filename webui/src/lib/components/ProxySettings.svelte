@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
-	import { api, type Proxy } from '$lib/api';
+	import { createEventDispatcher, onMount } from 'svelte';
+	import { api, type Proxy, jarUpdateApi, type JarUpdateInfo } from '$lib/api';
 	import { proxies } from '$lib/stores/servers';
 
 	export let proxy: Proxy;
@@ -16,7 +16,53 @@
 	let iconError = '';
 	let iconUploading = false;
 
+	let updateInfo: JarUpdateInfo | null = null;
+	let checkingUpdate = false;
+	let updatingJar = false;
+
 	const dispatch = createEventDispatcher();
+
+	async function checkJarUpdate() {
+		checkingUpdate = true;
+		try {
+			updateInfo = await jarUpdateApi.checkProxy(proxy.id);
+		} catch (err) {
+			console.error('Failed to check for JAR update:', err);
+		} finally {
+			checkingUpdate = false;
+		}
+	}
+
+	async function updateJar() {
+		if (!updateInfo || !updateInfo.has_update) {
+			return;
+		}
+
+		updatingJar = true;
+		error = '';
+
+		try {
+			await jarUpdateApi.updateProxy(proxy.id);
+			success = 'JAR updated successfully';
+			updateInfo.has_update = false;
+
+			const updatedProxy = await api.get<Proxy>(`/api/proxies/${proxy.id}`);
+			proxies.update(list =>
+				list.map(p => p.id === proxy.id ? updatedProxy : p)
+			);
+			Object.assign(proxy, updatedProxy);
+
+			setTimeout(() => success = '', 3000);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to update JAR';
+		} finally {
+			updatingJar = false;
+		}
+	}
+
+	onMount(() => {
+		checkJarUpdate();
+	});
 
 	async function saveChanges() {
 		saving = true;
@@ -171,6 +217,54 @@
 	{#if success}
 		<div class="alert success">{success}</div>
 	{/if}
+
+	<div class="section">
+		<h2>Software Updates</h2>
+
+		{#if checkingUpdate}
+			<div class="field">
+				<span>Checking for updates...</span>
+			</div>
+		{:else if updateInfo}
+			<div class="field">
+				<label>Current Version</label>
+				<input type="text" value={`Velocity ${proxy.jar_version || 'unknown'} (build ${proxy.jar_build || 'unknown'})`} disabled />
+			</div>
+
+			<div class="field">
+				<label>Latest Version</label>
+				<input type="text" value={`Velocity ${updateInfo.latest_version} (build ${updateInfo.latest_build})`} disabled />
+			</div>
+
+			{#if updateInfo.has_update}
+				{#if proxy.status === 'running'}
+					<div class="field">
+						<div class="info-box warning">
+							Proxy must be stopped to update the JAR
+						</div>
+					</div>
+				{:else}
+					<div class="field">
+						<button class="btn primary" on:click={updateJar} disabled={updatingJar}>
+							{updatingJar ? 'Updating...' : `Update to ${updateInfo.latest_version}`}
+						</button>
+					</div>
+				{/if}
+			{:else}
+				<div class="field">
+					<div class="info-box">
+						Proxy is up to date!
+					</div>
+				</div>
+			{/if}
+		{:else}
+			<div class="field">
+				<div class="info-box warning">
+					Failed to check for updates
+				</div>
+			</div>
+		{/if}
+	</div>
 
 	<div class="section">
 		<h2>General Settings</h2>
@@ -497,6 +591,11 @@
 	.hint.warning {
 		color: var(--error);
 		opacity: 1;
+	}
+
+	.info-box.warning {
+		background: rgba(234, 179, 8, 0.1);
+		border-color: rgba(234, 179, 8, 0.3);
 	}
 
 	.secret-field {

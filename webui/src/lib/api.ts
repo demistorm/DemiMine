@@ -256,6 +256,32 @@ export interface Server {
 	minimotd_line1: string | null;
 	minimotd_line2: string | null;
 	created_at: string;
+	jar_build: number;
+}
+
+export interface Proxy {
+	id: number;
+	name: string;
+	host_port: number;
+	ram_mb: number;
+	forwarding_secret: string;
+	status: string;
+	player_count: number;
+	connected_servers: string[];
+	canvas_x: number;
+	canvas_y: number;
+	icon_path: string | null;
+	created_at: string;
+	jar_version: string | null;
+	jar_build: number;
+}
+
+export interface JarUpdateInfo {
+	has_update: boolean;
+	current_build: number;
+	latest_build: number;
+	current_version: string;
+	latest_version: string;
 }
 
 export interface Proxy {
@@ -434,4 +460,18 @@ export const settingsApi = {
 
 	update: (data: { proxy_mc_version: string }) =>
 		api.put<{ success: boolean }>('/api/settings', data),
+};
+
+export const jarUpdateApi = {
+	checkServer: (id: number) =>
+		api.get<JarUpdateInfo>(`/api/servers/${id}/jar-update`),
+
+	updateServer: (id: number) =>
+		api.post<{ status: string; message: string }>(`/api/servers/${id}/jar-update`),
+
+	checkProxy: (id: number) =>
+		api.get<JarUpdateInfo>(`/api/proxies/${id}/jar-update`),
+
+	updateProxy: (id: number) =>
+		api.post<{ status: string; message: string }>(`/api/proxies/${id}/jar-update`),
 };
