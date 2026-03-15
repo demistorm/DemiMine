@@ -55,7 +55,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
-		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.created_at,
+		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
@@ -85,7 +85,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(
 			&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
-			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.CreatedAt, &s.PlayerCount,
+			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 			&minimotdLine1, &minimotdLine2,
 		)
 		if err != nil {
@@ -389,7 +389,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	err = h.db.QueryRow(`
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
-		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.created_at,
+		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count,
 		       s.minimotd_line1, s.minimotd_line2
 		FROM servers s
@@ -398,7 +398,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	`, id).Scan(
 		&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
-		&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.CreatedAt, &s.PlayerCount,
+		&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 		&minimotdLine1, &minimotdLine2,
 	)
 

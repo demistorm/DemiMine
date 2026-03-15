@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type PaperBuildInfo struct {
@@ -56,18 +57,24 @@ func DownloadPaperJar(version, destPath string) (int, string, error) {
 	return latestBuild.ID, sha256, nil
 }
 
-func DownloadPurpurJar(version, destPath string) (string, error) {
+func DownloadPurpurJar(version, destPath string) (int, string, error) {
 	buildInfoResp, err := httpClient.Get(fmt.Sprintf("https://api.purpurmc.org/v2/purpur/%s/latest", version))
 	if err != nil {
-		return "", fmt.Errorf("failed to get purpur build info: %w", err)
+		return 0, "", fmt.Errorf("failed to get purpur build info: %w", err)
 	}
 	defer buildInfoResp.Body.Close()
 
 	var buildInfo struct {
-		Hash string `json:"md5"`
+		Build string `json:"build"`
+		Hash  string `json:"md5"`
 	}
 	if err := json.NewDecoder(buildInfoResp.Body).Decode(&buildInfo); err != nil {
-		return "", fmt.Errorf("failed to decode purpur build hash: %w", err)
+		return 0, "", fmt.Errorf("failed to decode purpur build hash: %w", err)
+	}
+
+	build, err := strconv.Atoi(buildInfo.Build)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to parse purpur build number: %w", err)
 	}
 
 	downloadURL := fmt.Sprintf(
@@ -76,10 +83,10 @@ func DownloadPurpurJar(version, destPath string) (string, error) {
 	)
 
 	if err := downloadFile(downloadURL, destPath); err != nil {
-		return "", err
+		return 0, "", err
 	}
 
-	return buildInfo.Hash, nil
+	return build, buildInfo.Hash, nil
 }
 
 func DownloadFabricInstaller(serverDir string) error {
@@ -164,8 +171,8 @@ func DownloadServerJar(serverType, version, destPath string) (int, string, error
 		build, hash, err := DownloadPaperJar(version, destPath)
 		return build, hash, err
 	case "purpur":
-		hash, err := DownloadPurpurJar(version, destPath)
-		return 0, hash, err
+		build, hash, err := DownloadPurpurJar(version, destPath)
+		return build, hash, err
 	case "fabric":
 		err := DownloadFabricInstaller(serverDir)
 		return 0, "", err

@@ -113,6 +113,7 @@ type ServerResponse struct {
 	IconPath            *string `json:"icon_path"`
 	MinimotdLine1       *string `json:"minimotd_line1"`
 	MinimotdLine2       *string `json:"minimotd_line2"`
+	JarBuild            int     `json:"jar_build"`
 	CreatedAt           string  `json:"created_at"`
 }
 
@@ -128,5 +129,7 @@ type ProxyResponse struct {
 	CanvasX          int      `json:"canvas_x"`
 	CanvasY          int      `json:"canvas_y"`
 	IconPath         *string  `json:"icon_path"`
+	JarVersion       *string  `json:"jar_version"`
+	JarBuild         int      `json:"jar_build"`
 	CreatedAt        string   `json:"created_at"`
 }

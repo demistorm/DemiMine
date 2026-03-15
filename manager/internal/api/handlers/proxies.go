@@ -43,7 +43,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.created_at,
+		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.jar_version, p.jar_build, p.created_at,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -66,11 +66,13 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var hostPort, ramMB int
 		var forwardingSecret sql.NullString
 		var canvasX, canvasY int
+		var jarVersion sql.NullString
+		var jarBuild int
 		var createdAt string
 		var serverName sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &createdAt, &serverName,
+			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &jarVersion, &jarBuild, &createdAt, &serverName,
 		)
 		if err != nil {
 			continue
@@ -86,12 +88,16 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 				Status:           status,
 				CanvasX:          canvasX,
 				CanvasY:          canvasY,
+				JarBuild:         jarBuild,
 				CreatedAt:        createdAt,
 				ConnectedServers: []string{},
 				IconPath:         h.getIconPath(proxyID, name),
 			}
 			if forwardingSecret.Valid {
 				proxy.ForwardingSecret = forwardingSecret.String
+			}
+			if jarVersion.Valid {
+				proxy.JarVersion = &jarVersion.String
 			}
 			proxyMap[proxyID] = proxy
 			proxyOrder = append(proxyOrder, proxyID)
@@ -259,11 +265,12 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	var p models.ProxyResponse
 	var forwardingSecret sql.NullString
+	var jarVersion sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, created_at
+		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, jar_version, jar_build, created_at
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &p.CreatedAt)
+	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &jarVersion, &p.JarBuild, &p.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -281,6 +288,10 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	if forwardingSecret.Valid {
 		p.ForwardingSecret = forwardingSecret.String
+	}
+
+	if jarVersion.Valid {
+		p.JarVersion = &jarVersion.String
 	}
 
 	serverRows, err := h.db.Query("SELECT name FROM servers WHERE proxy_id = ?", p.ID)

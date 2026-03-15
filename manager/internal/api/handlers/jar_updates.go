@@ -53,15 +53,17 @@ func (h *JarUpdateHandler) CheckServerJarUpdate(w http.ResponseWriter, r *http.R
 	case "paper":
 		updateInfo, checkErr = mc.CheckPaperUpdate(serverVersion, build)
 	case "purpur":
-		var currentHash string
+		var currentHash sql.NullString
 		hashErr := h.db.QueryRow(
 			"SELECT jar_hash FROM servers WHERE id = ?",
 			serverID,
 		).Scan(&currentHash)
-		if hashErr != nil && hashErr != sql.ErrNoRows {
-			currentHash = ""
+
+		hash := ""
+		if hashErr == nil && currentHash.Valid {
+			hash = currentHash.String
 		}
-		updateInfo, checkErr = mc.CheckPurpurUpdate(serverVersion, currentHash)
+		updateInfo, checkErr = mc.CheckPurpurUpdate(serverVersion, build, hash)
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -117,7 +119,7 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	case "purpur":
-		hash, err = mc.DownloadPurpurJar(serverVersion, jarPath)
+		build, hash, err = mc.DownloadPurpurJar(serverVersion, jarPath)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to download JAR: %v", err), http.StatusInternalServerError)
 			return
@@ -138,8 +140,8 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 		}
 	case "purpur":
 		_, err = h.db.Exec(
-			"UPDATE servers SET jar_hash = ? WHERE id = ?",
-			hash, serverID,
+			"UPDATE servers SET jar_build = ?, jar_hash = ? WHERE id = ?",
+			build, hash, serverID,
 		)
 	}
 

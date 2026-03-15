@@ -254,7 +254,7 @@
 			{:else if updateInfo}
 				<div class="field">
 					<label>Current Version</label>
-					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${server.version} (build ${server.jar_build || 'unknown'})`} disabled />
+					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${server.version} (build ${server.jar_build > 0 ? server.jar_build : 'unknown'})`} disabled />
 				</div>
 
 				<div class="field">

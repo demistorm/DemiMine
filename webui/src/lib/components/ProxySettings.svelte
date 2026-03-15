@@ -228,7 +228,7 @@
 		{:else if updateInfo}
 			<div class="field">
 				<label>Current Version</label>
-				<input type="text" value={`Velocity ${proxy.jar_version || 'unknown'} (build ${proxy.jar_build || 'unknown'})`} disabled />
+				<input type="text" value={`Velocity ${proxy.jar_version || 'unknown'} (build ${proxy.jar_build > 0 ? proxy.jar_build : 'unknown'})`} disabled />
 			</div>
 
 			<div class="field">

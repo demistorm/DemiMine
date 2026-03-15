@@ -3,6 +3,7 @@ package mc
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,8 +62,8 @@ func getPaperCacheKey(version string, currentBuild int) string {
 	return fmt.Sprintf("%s-%d", version, currentBuild)
 }
 
-func getPurpurCacheKey(version string, currentHash string) string {
-	return fmt.Sprintf("%s-%s", version, currentHash)
+func getPurpurCacheKey(version string, currentBuild int) string {
+	return fmt.Sprintf("%s-%d", version, currentBuild)
 }
 
 func getVelocityCacheKey(version string, build int) string {
@@ -151,11 +152,9 @@ func CheckPaperUpdate(version string, currentBuild int) (*JarUpdateInfo, error) 
 }
 
 type PurpurVersionDetailResponse struct {
-	Version struct {
-		Project string `json:"project"`
-		Version string `json:"version"`
-	} `json:"version"`
-	Builds struct {
+	Project string `json:"project"`
+	Version string `json:"version"`
+	Builds  struct {
 		Latest string   `json:"latest"`
 		All    []string `json:"all"`
 	} `json:"builds"`
@@ -165,8 +164,8 @@ type PurpurBuildInfo struct {
 	Hash string `json:"md5"`
 }
 
-func CheckPurpurUpdate(version string, currentHash string) (*JarUpdateInfo, error) {
-	cacheKey := getPurpurCacheKey(version, currentHash)
+func CheckPurpurUpdate(version string, currentBuild int, currentHash string) (*JarUpdateInfo, error) {
+	cacheKey := getPurpurCacheKey(version, currentBuild)
 	purpurUpdateCacheMu.RLock()
 	cached, exists := purpurUpdateCache[cacheKey]
 	purpurUpdateCacheMu.RUnlock()
@@ -187,6 +186,10 @@ func CheckPurpurUpdate(version string, currentHash string) (*JarUpdateInfo, erro
 	}
 	defer verResp.Body.Close()
 
+	if verResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("purpur version API returned status %d", verResp.StatusCode)
+	}
+
 	var verData PurpurVersionDetailResponse
 	if err := json.NewDecoder(verResp.Body).Decode(&verData); err != nil {
 		return nil, fmt.Errorf("failed to decode purpur version response: %w", err)
@@ -195,30 +198,22 @@ func CheckPurpurUpdate(version string, currentHash string) (*JarUpdateInfo, erro
 	if verData.Builds.Latest == "" {
 		return &JarUpdateInfo{
 			HasUpdate:      false,
-			CurrentBuild:   0,
+			CurrentBuild:   currentBuild,
 			LatestBuild:    0,
 			CurrentVersion: version,
 			LatestVersion:  version,
 		}, nil
 	}
 
-	buildInfoResp, err := httpClient.Get(fmt.Sprintf("https://api.purpurmc.org/v2/purpur/%s/%s", version, verData.Builds.Latest))
+	latestBuild, err := strconv.Atoi(verData.Builds.Latest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get purpur build info: %w", err)
-	}
-	defer buildInfoResp.Body.Close()
-
-	var buildInfo struct {
-		Hash string `json:"md5"`
-	}
-	if err := json.NewDecoder(buildInfoResp.Body).Decode(&buildInfo); err != nil {
-		return nil, fmt.Errorf("failed to decode purpur build hash: %w", err)
+		return nil, fmt.Errorf("failed to parse purpur latest build number: %w", err)
 	}
 
 	info := JarUpdateInfo{
-		HasUpdate:      currentHash == "" || buildInfo.Hash != currentHash,
-		CurrentBuild:   0,
-		LatestBuild:    0,
+		HasUpdate:      currentBuild == 0 || latestBuild > currentBuild,
+		CurrentBuild:   currentBuild,
+		LatestBuild:    latestBuild,
 		CurrentVersion: version,
 		LatestVersion:  version,
 	}

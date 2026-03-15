@@ -259,23 +259,6 @@ export interface Server {
 	jar_build: number;
 }
 
-export interface Proxy {
-	id: number;
-	name: string;
-	host_port: number;
-	ram_mb: number;
-	forwarding_secret: string;
-	status: string;
-	player_count: number;
-	connected_servers: string[];
-	canvas_x: number;
-	canvas_y: number;
-	icon_path: string | null;
-	created_at: string;
-	jar_version: string | null;
-	jar_build: number;
-}
-
 export interface JarUpdateInfo {
 	has_update: boolean;
 	current_build: number;
@@ -296,6 +279,8 @@ export interface Proxy {
 	canvas_x: number;
 	canvas_y: number;
 	icon_path: string | null;
+	jar_version: string | null;
+	jar_build: number;
 	created_at: string;
 }
 
