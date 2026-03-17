@@ -199,6 +199,15 @@ func (c *Client) ProxyContainerExists(ctx context.Context, name string) (bool, e
 	return true, nil
 }
 
+func (c *Client) GetProxyContainerID(ctx context.Context, name string) (string, error) {
+	name = "demimine-proxy-" + sanitizeName(name)
+	ctr, err := c.cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return ctr.ID, nil
+}
+
 func splitLines(s string) []string {
 	var lines []string
 	start := 0

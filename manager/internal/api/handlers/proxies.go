@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
@@ -570,7 +571,25 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	timeout := 30
-	_ = h.docker.StopProxyContainer(ctx, name, &timeout)
+
+	if err := h.docker.StopProxyContainer(ctx, name, &timeout); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to stop proxy: %v", err)})
+		return
+	}
+
+	h.db.Exec("UPDATE proxies SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+
+	containerID, err := h.docker.GetProxyContainerID(ctx, name)
+	if err == nil && containerID != "" {
+		if err := h.docker.WaitForContainer(ctx, containerID, 45*time.Second); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to wait for container to stop: %v", err)})
+			return
+		}
+	}
 
 	cfg := &docker.ProxyContainerConfig{
 		Name:        name,
