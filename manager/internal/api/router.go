@@ -41,6 +41,8 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	pluginHandler := handlers.NewPluginHandler(database, cfg.ServersDir)
 	settingsHandler := handlers.NewSettingsHandler(database)
 	jarUpdateHandler := handlers.NewJarUpdateHandler(database, cfg)
+	playerHandler := handlers.NewPlayerHandler(database, dockerClient, cfg)
+	apiKeyHandler := handlers.NewAPIKeyHandler(database)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -81,6 +83,23 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 			r.Put("/", settingsHandler.Update)
 		})
 
+		r.Route("/players", func(r chi.Router) {
+			r.Post("/join", playerHandler.Join)
+			r.Post("/leave", playerHandler.Leave)
+		})
+
+		r.Route("/api-keys", func(r chi.Router) {
+			r.Use(middleware.Auth(database, cfg.JWTSecret))
+			r.Get("/", apiKeyHandler.List)
+			r.Post("/", apiKeyHandler.Create)
+			r.Delete("/{id}", apiKeyHandler.Delete)
+		})
+
+		r.Get("/servers/auto-shutdown", playerHandler.GetAutoShutdownServers)
+		r.Get("/servers/{name}/status", playerHandler.GetServerStatus)
+		r.Post("/servers/{name}/start-by-name", playerHandler.StartServerByName)
+		r.Post("/servers/{name}/stop-by-name", playerHandler.StopServerByName)
+
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(database, cfg.JWTSecret))
 
@@ -112,6 +131,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 
 					r.Get("/jar-update", jarUpdateHandler.CheckServerJarUpdate)
 					r.Post("/jar-update", jarUpdateHandler.UpdateServerJar)
+					r.Get("/players", playerHandler.GetServerPlayers)
 				})
 
 				r.Post("/{id}/icon", serverHandler.UploadIcon)

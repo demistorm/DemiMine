@@ -13,7 +13,9 @@
 
 <main class="settings-container">
 	<div class="section">
-		<p class="empty-state">No settings available yet. More settings will be added in the future.</p>
+		<h2>API Keys</h2>
+		<p class="hint">Generate and manage API keys for external integrations like the DemiDynamic plugin.</p>
+		<a href="/api-keys" class="btn primary">Manage API Keys</a>
 	</div>
 </main>
 

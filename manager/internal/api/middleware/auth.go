@@ -42,7 +42,7 @@ func Auth(db *sql.DB, jwtSecret string) func(http.Handler) http.Handler {
 				var keyHash string
 				err = db.QueryRow(
 					"SELECT key_hash FROM api_keys WHERE key_hash = ?",
-					hashAPIKey(key),
+					HashAPIKey(key),
 				).Scan(&keyHash)
 
 				if err == nil {
@@ -64,7 +64,7 @@ func Auth(db *sql.DB, jwtSecret string) func(http.Handler) http.Handler {
 	}
 }
 
-func hashAPIKey(key string) string {
+func HashAPIKey(key string) string {
 	h := sha256.Sum256([]byte(key))
 	return base64.StdEncoding.EncodeToString(h[:])
 }

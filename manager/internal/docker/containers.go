@@ -104,7 +104,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 	hostConfig := &container.HostConfig{
 		Binds: []string{fmt.Sprintf("%s:/server:rw", cfg.ServerPath)},
 		Resources: container.Resources{
-			Memory: int64(cfg.RAMMB) * 1024 * 1024,
+			Memory: int64(cfg.RAMMB+512) * 1024 * 1024,
 		},
 		AutoRemove: true,
 		RestartPolicy: container.RestartPolicy{

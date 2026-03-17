@@ -178,6 +178,51 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE servers ADD COLUMN jar_hash TEXT`,
 	}
 
+	recreateMigrations := []struct {
+		name      string
+		oldTable  string
+		newTable  string
+		createDDL string
+		copyData  string
+	}{
+		{
+			name:     "add_unique_constraint_to_players_uuid",
+			oldTable: "players",
+			newTable: "players_new",
+			createDDL: `CREATE TABLE players_new (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT NOT NULL,
+				uuid TEXT NOT NULL UNIQUE,
+				server_id INTEGER NOT NULL,
+				joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+			)`,
+			copyData: `INSERT INTO players_new (id, name, uuid, server_id, joined_at) 
+			           SELECT id, name, uuid, server_id, joined_at FROM players`,
+		},
+	}
+
+	for _, rm := range recreateMigrations {
+		var exists bool
+		db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=? AND sql LIKE '%uuid TEXT NOT NULL UNIQUE%'", rm.oldTable).Scan(&exists)
+		if exists {
+			continue
+		}
+
+		if _, err := db.Exec(rm.createDDL); err != nil {
+			continue
+		}
+
+		if _, err := db.Exec(rm.copyData); err != nil {
+			db.Exec(fmt.Sprintf("DROP TABLE %s", rm.newTable))
+			continue
+		}
+
+		db.Exec(fmt.Sprintf("DROP TABLE %s", rm.oldTable))
+		db.Exec(fmt.Sprintf("ALTER TABLE %s RENAME TO %s", rm.newTable, rm.oldTable))
+		db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_players_server ON %s(server_id)", rm.oldTable))
+	}
+
 	for _, alter := range alterMigrations {
 		db.Exec(alter)
 	}
