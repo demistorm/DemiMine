@@ -839,6 +839,12 @@ func (h *ServerHandler) Stop(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	timeout := 30
 	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
+		if strings.Contains(err.Error(), "No such container") {
+			h.db.Exec("UPDATE servers SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to stop server: %v", err)})
