@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/demimine/manager/internal/websocket"
 	"github.com/docker/docker/api/types/events"
@@ -84,7 +85,7 @@ func (lm *LogManager) StartContainerStreamingByContainer(ctx context.Context, se
 		return fmt.Errorf("stream already exists for server %d", serverID)
 	}
 
-	containerName = "demimine-" + sanitizeName(name)
+	containerName = strings.TrimPrefix(containerName, "/")
 	lm.serverIDs[containerName] = serverID
 
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -102,31 +103,74 @@ func (lm *LogManager) StartContainerStreamingByContainer(ctx context.Context, se
 }
 
 func (lm *LogManager) streamLogs(ctx context.Context, serverID int64, containerName string) {
-	logChan := make(chan string, 100)
-
-	go func() {
-		defer close(logChan)
-		if err := lm.docker.StreamLogs(ctx, containerName, logChan); err != nil {
-			log.Printf("Log stream error for server %d: %v", serverID, err)
-		}
+	defer func() {
+		lm.mu.Lock()
+		delete(lm.streams, serverID)
+		delete(lm.serverIDs, containerName)
+		lm.mu.Unlock()
+		log.Printf("Log stream ended for server %d (%s)", serverID, containerName)
 	}()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case logLine, ok := <-logChan:
-			if !ok {
+	const maxRetries = 3
+	var retryCount int
+
+	for retryCount <= maxRetries {
+		if retryCount > 0 {
+			delay := time.Duration(1<<uint(retryCount-1)) * time.Second
+			log.Printf("Retrying log stream for server %d in %v (attempt %d/%d)", serverID, delay, retryCount, maxRetries)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
 				return
 			}
-			if logLine != "" {
-				if err := lm.BroadcastLog(serverID, logLine); err != nil {
-					log.Printf("Failed to broadcast log for server %d: %v", serverID, err)
+		}
+
+		logChan := make(chan string, 100)
+		errChan := make(chan error, 1)
+		streamClosed := false
+
+		go func() {
+			defer close(logChan)
+			if err := lm.docker.StreamLogs(ctx, containerName, logChan); err != nil {
+				errChan <- err
+			}
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case logLine, ok := <-logChan:
+				if !ok {
+					streamClosed = true
+					break
 				}
-				log.Printf("[%d] %s", serverID, logLine)
+				if logLine != "" {
+					if err := lm.BroadcastLog(serverID, logLine); err != nil {
+						log.Printf("Failed to broadcast log for server %d: %v", serverID, err)
+					}
+					log.Printf("[%d] %s", serverID, logLine)
+				}
+			}
+
+			if streamClosed {
+				select {
+				case err := <-errChan:
+					if err != nil {
+						log.Printf("Log stream error for server %d: %v", serverID, err)
+						retryCount++
+					} else {
+						return
+					}
+				default:
+					return
+				}
+				break
 			}
 		}
 	}
+
+	log.Printf("Max retries reached for server %d, giving up", serverID)
 }
 
 func (lm *LogManager) StopContainerStreaming(serverID int64) {
@@ -176,15 +220,6 @@ func (lm *LogManager) StartStreamingForRunningContainers(ctx context.Context, db
 	rows.Close()
 
 	for _, s := range servers {
-		lm.mu.RLock()
-		_, exists := lm.streams[s.ID]
-		lm.mu.RUnlock()
-
-		if exists {
-			log.Printf("Already streaming logs for server %d (%s)", s.ID, s.Name)
-			continue
-		}
-
 		log.Printf("Starting log streaming for running server %d (%s)", s.ID, s.Name)
 		if err := lm.StartContainerStreamingByContainer(ctx, s.ID, s.Name, "demimine-"+sanitizeName(s.Name)); err != nil {
 			log.Printf("Failed to start log streaming for server %d: %v", s.ID, err)
@@ -200,22 +235,24 @@ func (lm *LogManager) HandleContainerEvent(event events.Message) {
 	}
 
 	containerName := event.Actor.Attributes["name"]
+	normalizedContainerName := strings.TrimPrefix(containerName, "/")
 
-	if strings.HasPrefix(containerName, "demimine-proxy-") {
+	if strings.HasPrefix(normalizedContainerName, "demimine-proxy-") {
 		lm.handleProxyContainerEvent(event, containerName)
 		return
 	}
 
-	serverName := strings.TrimPrefix(containerName, "demimine-")
+	serverName := strings.TrimPrefix(normalizedContainerName, "demimine-")
 
 	lm.mu.RLock()
-	serverID, exists := lm.serverIDs[event.Actor.ID]
+	serverID, exists := lm.serverIDs[normalizedContainerName]
 	lm.mu.RUnlock()
 
 	if !exists {
 		var id int64
-		err := lm.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverName).Scan(&id)
+		err := lm.db.QueryRow("SELECT id FROM servers WHERE name = ? COLLATE NOCASE", serverName).Scan(&id)
 		if err != nil {
+			log.Printf("Failed to find server ID for container %s (name=%s): %v", containerName, serverName, err)
 			return
 		}
 
@@ -231,16 +268,18 @@ func (lm *LogManager) HandleContainerEvent(event events.Message) {
 }
 
 func (lm *LogManager) handleProxyContainerEvent(event events.Message, containerName string) {
-	proxyName := strings.TrimPrefix(containerName, "demimine-proxy-")
+	normalizedContainerName := strings.TrimPrefix(containerName, "/")
+	proxyName := strings.TrimPrefix(normalizedContainerName, "demimine-proxy-")
 
 	lm.mu.RLock()
-	proxyID, exists := lm.proxyIDs[containerName]
+	proxyID, exists := lm.proxyIDs[normalizedContainerName]
 	lm.mu.RUnlock()
 
 	if !exists {
 		var id int64
-		err := lm.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyName).Scan(&id)
+		err := lm.db.QueryRow("SELECT id FROM proxies WHERE name = ? COLLATE NOCASE", proxyName).Scan(&id)
 		if err != nil {
+			log.Printf("Failed to find proxy ID for container %s (name=%s): %v", containerName, proxyName, err)
 			return
 		}
 		proxyID = id
@@ -272,6 +311,7 @@ func (lm *LogManager) StartProxyLogStreaming(ctx context.Context, proxyID int64,
 	}
 
 	containerName := "demimine-proxy-" + sanitizeName(name)
+	containerName = strings.TrimPrefix(containerName, "/")
 	lm.proxyIDs[containerName] = proxyID
 
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -289,31 +329,74 @@ func (lm *LogManager) StartProxyLogStreaming(ctx context.Context, proxyID int64,
 }
 
 func (lm *LogManager) streamProxyLogs(ctx context.Context, proxyID int64, containerName string) {
-	logChan := make(chan string, 100)
-
-	go func() {
-		defer close(logChan)
-		if err := lm.docker.StreamLogs(ctx, containerName, logChan); err != nil {
-			log.Printf("Log stream error for proxy %d: %v", proxyID, err)
-		}
+	defer func() {
+		lm.mu.Lock()
+		delete(lm.proxyStreams, proxyID)
+		delete(lm.proxyIDs, containerName)
+		lm.mu.Unlock()
+		log.Printf("Log stream ended for proxy %d (%s)", proxyID, containerName)
 	}()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case logLine, ok := <-logChan:
-			if !ok {
+	const maxRetries = 3
+	var retryCount int
+
+	for retryCount <= maxRetries {
+		if retryCount > 0 {
+			delay := time.Duration(1<<uint(retryCount-1)) * time.Second
+			log.Printf("Retrying log stream for proxy %d in %v (attempt %d/%d)", proxyID, delay, retryCount, maxRetries)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
 				return
 			}
-			if logLine != "" {
-				if err := lm.BroadcastProxyLog(proxyID, logLine); err != nil {
-					log.Printf("Failed to broadcast log for proxy %d: %v", proxyID, err)
+		}
+
+		logChan := make(chan string, 100)
+		errChan := make(chan error, 1)
+		streamClosed := false
+
+		go func() {
+			defer close(logChan)
+			if err := lm.docker.StreamLogs(ctx, containerName, logChan); err != nil {
+				errChan <- err
+			}
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case logLine, ok := <-logChan:
+				if !ok {
+					streamClosed = true
+					break
 				}
-				log.Printf("[proxy:%d] %s", proxyID, logLine)
+				if logLine != "" {
+					if err := lm.BroadcastProxyLog(proxyID, logLine); err != nil {
+						log.Printf("Failed to broadcast log for proxy %d: %v", proxyID, err)
+					}
+					log.Printf("[proxy:%d] %s", proxyID, logLine)
+				}
+			}
+
+			if streamClosed {
+				select {
+				case err := <-errChan:
+					if err != nil {
+						log.Printf("Log stream error for proxy %d: %v", proxyID, err)
+						retryCount++
+					} else {
+						return
+					}
+				default:
+					return
+				}
+				break
 			}
 		}
 	}
+
+	log.Printf("Max retries reached for proxy %d, giving up", proxyID)
 }
 
 func (lm *LogManager) StopProxyLogStreaming(proxyID int64) {
@@ -380,15 +463,6 @@ func (lm *LogManager) StartStreamingForRunningProxies(ctx context.Context) error
 	rows.Close()
 
 	for _, p := range proxies {
-		lm.mu.RLock()
-		_, exists := lm.proxyStreams[p.ID]
-		lm.mu.RUnlock()
-
-		if exists {
-			log.Printf("Already streaming logs for proxy %d (%s)", p.ID, p.Name)
-			continue
-		}
-
 		log.Printf("Starting log streaming for running proxy %d (%s)", p.ID, p.Name)
 		if err := lm.StartProxyLogStreaming(ctx, p.ID, p.Name); err != nil {
 			log.Printf("Failed to start log streaming for proxy %d: %v", p.ID, err)

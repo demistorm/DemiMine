@@ -47,6 +47,7 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) StreamLogs(ctx context.Context, containerName string, logChan chan<- string) error {
+	containerName = strings.TrimPrefix(containerName, "/")
 	if !strings.HasPrefix(containerName, "demimine-") {
 		containerName = "demimine-" + sanitizeName(containerName)
 	}

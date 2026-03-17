@@ -59,6 +59,7 @@ func (cm *ConsoleManager) StartConsoleStreaming(ctx context.Context, serverID in
 	}
 
 	containerName := "demimine-" + sanitizeName(name)
+	containerName = strings.TrimPrefix(containerName, "/")
 	cm.serverIDs[containerName] = serverID
 
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -148,20 +149,23 @@ func (cm *ConsoleManager) HandleContainerEvent(containerName string, action stri
 		return
 	}
 
-	if strings.HasPrefix(containerName, "demimine-proxy-") {
+	normalizedContainerName := strings.TrimPrefix(containerName, "/")
+
+	if strings.HasPrefix(normalizedContainerName, "demimine-proxy-") {
 		cm.HandleProxyContainerEvent(containerName, action)
 		return
 	}
 
 	cm.mu.RLock()
-	serverID, exists := cm.serverIDs[containerName]
+	serverID, exists := cm.serverIDs[normalizedContainerName]
 	cm.mu.RUnlock()
 
 	if !exists {
-		serverName := strings.TrimPrefix(containerName, "demimine-")
+		serverName := strings.TrimPrefix(normalizedContainerName, "demimine-")
 		var id int64
-		err := cm.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverName).Scan(&id)
+		err := cm.db.QueryRow("SELECT id FROM servers WHERE name = ? COLLATE NOCASE", serverName).Scan(&id)
 		if err != nil {
+			log.Printf("Failed to find server ID for container %s (name=%s): %v", containerName, serverName, err)
 			return
 		}
 		serverID = id
@@ -259,6 +263,7 @@ func (cm *ConsoleManager) StartProxyConsoleStreaming(ctx context.Context, proxyI
 	}
 
 	containerName := "demimine-proxy-" + sanitizeName(name)
+	containerName = strings.TrimPrefix(containerName, "/")
 	cm.proxyIDs[containerName] = proxyID
 
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -348,15 +353,18 @@ func (cm *ConsoleManager) HandleProxyContainerEvent(containerName string, action
 		return
 	}
 
+	normalizedContainerName := strings.TrimPrefix(containerName, "/")
+
 	cm.mu.RLock()
-	proxyID, exists := cm.proxyIDs[containerName]
+	proxyID, exists := cm.proxyIDs[normalizedContainerName]
 	cm.mu.RUnlock()
 
 	if !exists {
-		proxyName := strings.TrimPrefix(containerName, "demimine-proxy-")
+		proxyName := strings.TrimPrefix(normalizedContainerName, "demimine-proxy-")
 		var id int64
-		err := cm.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyName).Scan(&id)
+		err := cm.db.QueryRow("SELECT id FROM proxies WHERE name = ? COLLATE NOCASE", proxyName).Scan(&id)
 		if err != nil {
+			log.Printf("Failed to find proxy ID for container %s (name=%s): %v", containerName, proxyName, err)
 			return
 		}
 		proxyID = id
