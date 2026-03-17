@@ -206,24 +206,26 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	validTypes := map[string]bool{
 		"paper": true, "purpur": true, "fabric": true, "neoforge": true, "forge": true,
+		"nanolimbo": true,
 	}
 	if !validTypes[strings.ToLower(req.Type)] {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid server type (must be paper, purpur, fabric, neoforge, or forge)",
+			"error": "invalid server type (must be paper, purpur, fabric, neoforge, forge, or nanolimbo)",
 		})
 		return
 	}
 
 	var hostPortValue *int
 	if req.ProxyID != nil {
-		var serverCount int
-		err = h.db.QueryRow("SELECT COUNT(*) FROM servers WHERE proxy_id = ?", *req.ProxyID).Scan(&serverCount)
+		basePort := 30000 + int(*req.ProxyID*100)
+		var maxPort sql.NullInt64
+		err = h.db.QueryRow("SELECT COALESCE(MAX(host_port), ?) FROM servers WHERE proxy_id = ?", basePort, *req.ProxyID).Scan(&maxPort)
 		if err != nil {
-			serverCount = 0
+			maxPort.Int64 = int64(basePort)
 		}
-		autoPort := 30000 + int(*req.ProxyID*100) + serverCount + 1
+		autoPort := int(maxPort.Int64) + 1
 		hostPortValue = &autoPort
 	} else if req.HostPort != nil {
 		hostPortValue = req.HostPort
@@ -315,6 +317,16 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to get forwarding secret"})
 			return
 		}
+
+		// Generate NanoLimbo config if server type is nanolimbo
+		if strings.ToLower(req.Type) == "nanolimbo" {
+			if hostPortValue != nil {
+				if err := mc.WriteNanoLimboConfig(serverPath, forwardingSecret, *hostPortValue); err != nil {
+					fmt.Printf("Failed to write NanoLimbo config: %v\n", err)
+				}
+			}
+		}
+
 		if err := ConfigureServerProxy(serverPath, req.Type, req.Version, forwardingSecret); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -322,6 +334,13 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := SyncProxyConfig(h.db, *req.ProxyID, h.cfg.ServersDir); err != nil {
+		}
+
+		if strings.ToLower(req.Type) == "nanolimbo" && isAuthServer(req.Name, req.Type) {
+			proxyPath := filepath.Join(h.cfg.ServersDir, proxyName)
+			if err := updateDemiAuthLoginServer(proxyPath, req.Name); err != nil {
+				fmt.Printf("Warning: failed to update DemiAuth config: %v\n", err)
+			}
 		}
 
 		if req.MinimotdLine1 != nil && *req.MinimotdLine1 != "" || req.MinimotdLine2 != nil && *req.MinimotdLine2 != "" {

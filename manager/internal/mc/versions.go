@@ -44,11 +44,12 @@ func (c *cachedVersions) set(versions []VersionInfo) {
 }
 
 var (
-	paperCache    = &cachedVersions{}
-	purpurCache   = &cachedVersions{}
-	fabricCache   = &cachedVersions{}
-	neoforgeCache = &cachedVersions{}
-	forgeCache    = &cachedVersions{}
+	paperCache     = &cachedVersions{}
+	purpurCache    = &cachedVersions{}
+	fabricCache    = &cachedVersions{}
+	neoforgeCache  = &cachedVersions{}
+	nanolimboCache = &cachedVersions{}
+	forgeCache     = &cachedVersions{}
 )
 
 type PaperVersionResponse struct {
@@ -306,6 +307,8 @@ func GetVersions(serverType string) ([]VersionInfo, error) {
 		return GetNeoForgeVersions()
 	case "forge":
 		return GetForgeVersions()
+	case "nanolimbo":
+		return GetNanoLimboVersions()
 	default:
 		return nil, fmt.Errorf("unsupported server type: %s", serverType)
 	}
@@ -426,4 +429,42 @@ func extractSnapshotNum(version string) int {
 		return num
 	}
 	return 0
+}
+
+type NanoLimboRelease struct {
+	TagName string `json:"tag_name"`
+	Name    string `json:"name"`
+	Assets  []struct {
+		Name string `json:"name"`
+		URL  string `json:"browser_download_url"`
+	} `json:"assets"`
+}
+
+func GetNanoLimboVersions() ([]VersionInfo, error) {
+	if versions, ok := nanolimboCache.get(); ok {
+		return versions, nil
+	}
+
+	resp, err := httpClient.Get("https://api.github.com/repos/BoomEaro/NanoLimbo/releases")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch nanolimbo versions: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var releases []NanoLimboRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("failed to decode nanolimbo response: %w", err)
+	}
+
+	var versions []VersionInfo
+	for _, release := range releases {
+		versions = append(versions, VersionInfo{
+			Version: release.TagName,
+			Stable:  true,
+			Builds:  len(release.Assets),
+		})
+	}
+
+	nanolimboCache.set(versions)
+	return versions, nil
 }

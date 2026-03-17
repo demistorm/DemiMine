@@ -33,7 +33,8 @@
 		{ value: 'purpur', label: 'Purpur' },
 		{ value: 'fabric', label: 'Fabric' },
 		{ value: 'neoforge', label: 'NeoForge' },
-		{ value: 'forge', label: 'Forge' }
+		{ value: 'forge', label: 'Forge' },
+		{ value: 'nanolimbo', label: 'NanoLimbo' }
 	];
 
 	$: {

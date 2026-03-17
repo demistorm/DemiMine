@@ -20,7 +20,7 @@ set -e
 cd /server
 
 RAM_MB="${RAM_MB:-2048}"
-JAVA_ARGS="-Xmx${RAM_MB}M -Xms$((RAM_MB/2))M"
+JAVA_ARGS="-Xmx${RAM_MB}M -Xms${RAM_MB}M"
 
 log_info() {
     echo "[DemiMine] $1"
@@ -87,6 +87,9 @@ start_server() {
             ;;
         neoforge|forge)
             exec sh run.sh nogui
+            ;;
+        nanolimbo)
+            exec java -jar server.jar
             ;;
         paper|purpur|*)
             exec java $JAVA_ARGS -jar server.jar nogui

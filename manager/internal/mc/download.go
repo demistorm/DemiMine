@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 type PaperBuildInfo struct {
@@ -160,6 +161,46 @@ func DownloadForgeInstaller(version, serverDir string) error {
 	return downloadFile(downloadURL, installerPath)
 }
 
+func DownloadNanoLimboJar(version, destPath string) (int, string, error) {
+	resp, err := httpClient.Get(fmt.Sprintf("https://api.github.com/repos/BoomEaro/NanoLimbo/releases/tags/%s", version))
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to get nanolimbo release info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, "", fmt.Errorf("nanolimbo version %s not found", version)
+	}
+
+	var release struct {
+		Assets []struct {
+			Name string `json:"name"`
+			URL  string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return 0, "", fmt.Errorf("failed to decode nanolimbo release: %w", err)
+	}
+
+	var downloadURL string
+	for _, asset := range release.Assets {
+		if strings.HasSuffix(asset.Name, ".jar") && !strings.Contains(asset.Name, "sources") {
+			downloadURL = asset.URL
+			break
+		}
+	}
+
+	if downloadURL == "" {
+		return 0, "", fmt.Errorf("no JAR file found for nanolimbo %s", version)
+	}
+
+	if err := downloadFile(downloadURL, destPath); err != nil {
+		return 0, "", err
+	}
+
+	return 0, "", nil
+}
+
 func DownloadServerJar(serverType, version, destPath string) (int, string, error) {
 	serverDir := filepath.Dir(destPath)
 	if err := os.MkdirAll(serverDir, 0755); err != nil {
@@ -182,6 +223,9 @@ func DownloadServerJar(serverType, version, destPath string) (int, string, error
 	case "forge":
 		err := DownloadForgeInstaller(version, serverDir)
 		return 0, "", err
+	case "nanolimbo":
+		build, hash, err := DownloadNanoLimboJar(version, destPath)
+		return build, hash, err
 	default:
 		return 0, "", fmt.Errorf("unsupported server type: %s", serverType)
 	}

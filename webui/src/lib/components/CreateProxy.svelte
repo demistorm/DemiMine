@@ -13,6 +13,8 @@
 	let name = '';
 	let hostPort = 25565;
 	let ramMB = 512;
+	let installDemiAuth = false;
+	let installLuckPerms = false;
 	let iconFile: File | null = null;
 	let iconPreview: string | null = null;
 	let iconError = '';
@@ -62,7 +64,9 @@
 			const result = await api.post('/api/proxies', {
 				name,
 				host_port: hostPort,
-				ram_mb: ramMB
+				ram_mb: ramMB,
+				install_demiauth: installDemiAuth,
+				install_luckperms: installLuckPerms
 			}) as { id: number };
 			
 			createdProxyId = result.id;
@@ -132,14 +136,31 @@
 
 				<div class="field">
 					<label for="ram">Memory (MB)</label>
-					<input 
-						type="number" 
-						id="ram" 
+					<input
+						type="number"
+						id="ram"
 						bind:value={ramMB}
 						min={256}
 						step={256}
 					/>
 					<span class="hint">Java heap size (default: 512)</span>
+				</div>
+
+				<div class="field">
+					<label>Plugins (Optional)</label>
+					<div class="checkbox-group">
+						<label class="checkbox-label">
+							<input type="checkbox" bind:checked={installDemiAuth} />
+							<span>Install DemiAuth (chat-based authentication)</span>
+						</label>
+						<span class="hint">Requires NanoLimbo server named "login" or "auth"</span>
+					</div>
+					<div class="checkbox-group">
+						<label class="checkbox-label">
+							<input type="checkbox" bind:checked={installLuckPerms} />
+							<span>Install LuckPerms (permissions)</span>
+						</label>
+					</div>
 				</div>
 
 				<div class="field">

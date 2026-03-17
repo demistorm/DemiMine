@@ -58,7 +58,8 @@ func (h *JavaHandler) GetRequired(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	javaVersion := java.GetRequiredJavaVersion(version)
+	serverType := r.URL.Query().Get("server_type")
+	javaVersion := java.GetRequiredJavaVersionForServerType(serverType, version)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -118,9 +119,11 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateProxyRequest struct {
-	Name     string `json:"name"`
-	HostPort int    `json:"host_port"`
-	RAMMB    int    `json:"ram_mb"`
+	Name             string `json:"name"`
+	HostPort         int    `json:"host_port"`
+	RAMMB            int    `json:"ram_mb"`
+	InstallDemiAuth  bool   `json:"install_demiauth"`
+	InstallLuckPerms bool   `json:"install_luckperms"`
 }
 
 func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -247,6 +250,54 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Loaders:    []string{"velocity"},
 		PluginsDir: req.Name,
 	})
+
+	// Install DemiAuth if requested
+	if req.InstallDemiAuth {
+		pluginsDir := filepath.Join(h.cfg.ServersDir, req.Name, "plugins")
+		if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+			fmt.Printf("Failed to create plugins directory for proxy %d: %v\n", id, err)
+		}
+
+		demiauthJar := filepath.Join(pluginsDir, "DemiAuth-1.0.0.jar")
+		demiauthResource := "/app/resources/DemiAuth-1.0.0.jar"
+
+		srcFile, err := os.Open(demiauthResource)
+		if err != nil {
+			fmt.Printf("Failed to open DemiAuth resource for proxy %d: %v\n", id, err)
+		} else {
+			defer srcFile.Close()
+			destFile, err := os.Create(demiauthJar)
+			if err != nil {
+				fmt.Printf("Failed to create DemiAuth file for proxy %d: %v\n", id, err)
+			} else {
+				_, err := io.Copy(destFile, srcFile)
+				destFile.Close()
+				if err != nil {
+					fmt.Printf("Failed to copy DemiAuth for proxy %d: %v\n", id, err)
+				} else {
+					fmt.Printf("Installed DemiAuth for proxy %d\n", id)
+				}
+			}
+		}
+
+		if err := configureDemiAuth(proxyPath, req.Name); err != nil {
+			fmt.Printf("Failed to configure DemiAuth for proxy %d: %v\n", id, err)
+		}
+	}
+
+	// Install LuckPerms if requested (via Modrinth API for correct Velocity version)
+	if req.InstallLuckPerms {
+		_, err := h.pluginManager.Install(plugin.InstallOptions{
+			TargetType: "proxy",
+			TargetID:   id,
+			ProjectID:  "Vebnzrzj",
+			Loaders:    []string{"velocity"},
+			PluginsDir: req.Name,
+		})
+		if err != nil {
+			fmt.Printf("Failed to install LuckPerms for proxy %d: %v\n", id, err)
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1218,4 +1269,124 @@ func (h *ProxyHandler) isValidProxyIcon(content []byte) bool {
 	}
 
 	return img.Width == 64 && img.Height == 64
+}
+
+func downloadPluginFile(url, dest string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status %d", resp.StatusCode)
+	}
+
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
+}
+
+func configureDemiAuth(proxyPath, proxyName string) error {
+	configPath := filepath.Join(proxyPath, "plugins", "demiauth", "config.toml")
+	if err := os.MkdirAll(filepath.Join(proxyPath, "plugins", "demiauth"), 0755); err != nil {
+		return fmt.Errorf("failed to create demiauth config directory: %w", err)
+	}
+
+	configContent := `#
+# demiauth Configuration for Velocity Proxy
+# Players must type in password in chat to authenticate
+
+[core]
+	# The server name set in Velocity that is used for authentication
+	loginServer = "login"
+	
+	# The server name set in Velocity that player will be transferred to after logging in
+	hubServer = "survival"
+	
+	# The password(s) players must type in chat to log in
+	# Multiple passwords can be set. Add more passwords by adding them to the list like ["1234", "password"]
+	serverPassword = ["changeme"]
+	
+	# Change to false to make players have to write password on every connection
+	oneTimeLogin = true
+
+[core.bypass]
+	# If set to true, plugin will grant bypass permission to players automatically. Requires LuckPerms.
+	# If you don't use LuckPerms, you must set bypass permissions manually
+	pluginGrantsBypass = true
+	
+	# The permission node to check if a player has bypass permissions
+	# Must exist either on the user or on a group the user is in
+	bypassNode = "demimine.authenticated"
+	
+	# If a player with bypass permission transfers to the login server, how should they be handled?
+	# Options: auto - automatically transfer them to the hub server
+	#          deny-entry - prevent them from joining the login server
+	bypasserLoginExitMethod = "auto"
+
+[core.bypass.methods]
+	# Method to grant bypass permissions when oneTimeLogin is enabled
+	# "user" will grant bypassNode to the player
+	# "group" will add the player to the bypassGroup (group must exist in permissions plugin)
+	bypassMethod = "user"
+	bypassGroup = "default"
+
+[core.kick]
+	# The amount of time to wait before kicking the player (in seconds)
+	kickTimeout = 120
+	
+	# Message sent to player if they fail to authenticate within kickTimeout
+	kickMessage = "Too many failed attempts"
+
+[messages]
+	# Message shown when player enters wrong password
+	wrongPassword = "Wrong password. Please try again."
+	
+	# Message shown when player joins the login server
+	# Accepts MiniMessage formatting: https://docs.papermc.io/adventure/minimessage/format/
+	welcomeMessage = "<gradient:#ff6b6b:#feca57><b>Type your password in chat to continue</b></gradient>"
+
+[misc]
+	# Do not change this. Used for config migrations.
+	configVersion = 1
+	
+	# Set to false to disable the plugin without removing it
+	pluginEnabled = true
+	
+	# Set to true to enable debug logging
+	debugMode = false
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		return fmt.Errorf("failed to write DemiAuth config: %w", err)
+	}
+
+	return nil
+}
+
+func updateDemiAuthLoginServer(proxyPath, loginServerName string) error {
+	configPath := filepath.Join(proxyPath, "plugins", "demiauth", "config.toml")
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read demiauth config: %w", err)
+	}
+
+	configStr := string(content)
+	re := regexp.MustCompile(`loginServer\s*=\s*"[^"]*"`)
+	configStr = re.ReplaceAllString(configStr, fmt.Sprintf(`loginServer = "%s"`, loginServerName))
+
+	if err := os.WriteFile(configPath, []byte(configStr), 0644); err != nil {
+		return fmt.Errorf("failed to write demiauth config: %w", err)
+	}
+
+	return nil
 }

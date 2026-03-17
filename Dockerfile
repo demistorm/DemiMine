@@ -11,6 +11,9 @@ RUN go mod download
 # Copy backend source
 COPY manager/ ./
 
+# Copy DemiAuth plugin for Velocity proxies
+COPY DemiAuth/build/libs/DemiAuth-1.0.0.jar manager/resources/
+
 # Build backend
 RUN CGO_ENABLED=0 GOOS=linux go build -o /demimine ./cmd/server
 
@@ -47,6 +50,9 @@ COPY --from=backend-builder /demimine /usr/local/bin/demimine
 
 # Copy built frontend
 COPY --from=frontend-builder /build/build /app/webui/build
+
+# Copy resources (DemiAuth plugin)
+COPY --from=backend-builder /build/resources /app/resources
 
 # Create necessary directories
 RUN mkdir -p /data /servers /proxies /backups /java

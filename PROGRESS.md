@@ -44,11 +44,22 @@ The Forge/NeoForge installers are executed during server creation, which can tak
 - ⏳ WebSocket integration for real-time updates (deferred)
 - ⏳ Icon upload (deferred)
 
-## Phase 4: Proxy System (PLANNED)
-- Velocity proxy container management
-- Custom auth plugin for Velocity
-- Dynamic server registration plugin for Velocity
-- Proxy configuration sync
+## Phase 4: Proxy System ✅ COMPLETE
+- ✅ Velocity proxy container management
+- ✅ Proxy CRUD endpoints (create, read, update, delete)
+- ✅ Proxy console and file access
+- ✅ Proxy icon upload
+- ✅ Automatic velocity.toml sync when servers assigned/removed
+- ✅ MiniMOTD integration for server list customization
+- ✅ Plugin management for proxies
+- ✅ DemiAuth plugin (chat-based authentication, no `/login` command)
+  - Permission node: `demimine.authenticated`
+  - 120-second timeout, 3-attempt disconnect limit
+  - Auto-configured for NanoLimbo servers named with "auth" or "login"
+- ✅ NanoLimbo server type support (BoomEaro fork)
+- ✅ LuckPerms auto-installation option for proxies
+- ✅ Proxy creation UI with DemiAuth/LuckPerms checkboxes
+- ✅ Server creation UI with NanoLimbo option
 
 ## Phase 5: Backup System (PLANNED)
 - Backup creation (scheduled and manual)

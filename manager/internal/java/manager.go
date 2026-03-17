@@ -45,3 +45,10 @@ func GetRequiredJavaVersion(mcVersion string) string {
 		return "8"
 	}
 }
+
+func GetRequiredJavaVersionForServerType(serverType, version string) string {
+	if strings.ToLower(serverType) == "nanolimbo" {
+		return "21"
+	}
+	return GetRequiredJavaVersion(version)
+}

@@ -55,7 +55,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 		})
 	}
 
-	javaVersion := java.GetRequiredJavaVersion(cfg.Version)
+	javaVersion := java.GetRequiredJavaVersionForServerType(cfg.ServerType, cfg.Version)
 	javaImage := "eclipse-temurin:21-jre-alpine"
 	switch javaVersion {
 	case "8":

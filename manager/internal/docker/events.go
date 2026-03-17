@@ -97,6 +97,11 @@ func (em *EventManager) broadcastStatusChange(serverID int64, action events.Acti
 		return
 	}
 
+	_, err := em.db.Exec("UPDATE servers SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", status, serverID)
+	if err != nil {
+		log.Printf("Failed to update server %d status in database: %v", serverID, err)
+	}
+
 	msg := map[string]interface{}{
 		"type":      "server_status",
 		"server_id": serverID,

@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -88,4 +90,86 @@ func MergeServerProperties(base, override ServerProperties) ServerProperties {
 		result[k] = v
 	}
 	return result
+}
+
+func DefaultNanoLimboConfig(velocitySecret string, port int) string {
+	config := fmt.Sprintf(`#
+# NanoLimbo configuration
+#
+
+# Server's host address and port. Set ip empty to use public address
+bind:
+  ip: '0.0.0.0'
+  port: {{AUTO_ASSIGNED_PORT}}
+
+# Max number of players can join to server
+# Set -1 to make it infinite
+maxPlayers: -1
+
+# Server's data in servers list
+ping:
+  description: '{"text": "&9DemiMine Login"}'
+  version: 'Login'
+  protocol: -1
+
+# Available dimensions: OVERWORLD, NETHER, THE_END
+dimension: THE_END
+
+# Whether to display the player in the player list
+playerList:
+  enable: false
+  username: 'Limboland'
+
+# Whether to display header and footer in the player list
+headerAndFooter:
+  enable: false
+  header: '{"text": "&eWelcome!"}'
+  footer: '{"text": "&9DemiMine"}'
+
+# Setup player's game mode
+# 0 - Survival
+# 1 - Creative (hide HP and food bar)
+# 2 - Adventure
+# 3 - Spectator (hide all UI bars)
+gameMode: 3
+
+# Server name which is shown under F3
+brandName:
+  enable: true
+  content: 'DemiAuth'
+
+# Message sends when player joins to the server
+joinMessage:
+  enable: true
+  text: '{"text": "&eType password in chat to continue"}'
+
+# BossBar displays when player joins to the server
+bossBar:
+  enable: true
+  text: '{"text": "&6Authentication Required"}'
+  health: 1.0
+  color: YELLOW
+  division: SOLID
+
+# Display title and subtitle
+title:
+  enable: true
+  title: '{"text": "&9&lWelcome!"}'
+  subtitle: '{"text": "&6Please enter password"}'
+  fadeIn: 10
+  stay: 100
+  fadeOut: 10
+
+# Player info forwarding support
+infoForwarding:
+  type: MODERN
+  secret: '%s'
+ `, velocitySecret)
+	return strings.Replace(config, "{{AUTO_ASSIGNED_PORT}}", strconv.Itoa(port), 1)
+}
+
+func WriteNanoLimboConfig(serverPath, velocitySecret string, port int) error {
+	configPath := filepath.Join(serverPath, "settings.yml")
+	configContent := DefaultNanoLimboConfig(velocitySecret, port)
+	return os.WriteFile(configPath, []byte(configContent), 0644)
 }

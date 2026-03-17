@@ -3,7 +3,9 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/demimine/manager/internal/mc"
 )
@@ -22,13 +24,14 @@ func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir s
 		return 0, fmt.Errorf("proxy not found: %w", err)
 	}
 
-	var serverCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM servers WHERE proxy_id = ?", proxyID).Scan(&serverCount)
+	basePort := 30000 + int(proxyID*100)
+	var maxPort sql.NullInt64
+	err = db.QueryRow("SELECT COALESCE(MAX(host_port), ?) FROM servers WHERE proxy_id = ?", basePort, proxyID).Scan(&maxPort)
 	if err != nil {
-		serverCount = 0
+		maxPort.Int64 = int64(basePort)
 	}
 
-	port := 30000 + int(proxyID*100) + serverCount + 1
+	port := int(maxPort.Int64) + 1
 
 	_, err = db.Exec(`
 		UPDATE servers SET proxy_id = ?, host_port = ?, domain = ?, updated_at = CURRENT_TIMESTAMP 
@@ -57,6 +60,13 @@ func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir s
 
 	if err := SyncProxyConfig(db, proxyID, serversDir); err != nil {
 		return port, fmt.Errorf("failed to sync proxy config: %w", err)
+	}
+
+	if isAuthServer(serverName, serverType) {
+		proxyPath := filepath.Join(serversDir, proxyName)
+		if err := updateDemiAuthLoginServer(proxyPath, serverName); err != nil {
+			fmt.Printf("Warning: failed to update DemiAuth config: %v\n", err)
+		}
 	}
 
 	return port, nil
@@ -212,4 +222,24 @@ func RevertServerProxyConfig(serverPath, serverType, mcVersion string) error {
 		}
 	}
 	return nil
+}
+
+func isAuthServer(serverName, serverType string) bool {
+	if strings.ToLower(serverType) != "nanolimbo" {
+		return false
+	}
+	lowerName := strings.ToLower(serverName)
+	return strings.Contains(lowerName, "auth") || strings.Contains(lowerName, "login")
+}
+
+func hasDemiAuthLoginServerConfigured(proxyPath string) bool {
+	configPath := filepath.Join(proxyPath, "plugins", "demiauth", "config.toml")
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return false
+	}
+
+	configStr := string(content)
+	return !strings.Contains(configStr, `loginServer = "login"`) && !strings.Contains(configStr, `loginServer="login"`)
 }

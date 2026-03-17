@@ -60,13 +60,14 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 
 	cmd := []string{"java", fmt.Sprintf("-Xmx%dM", ramMB), "-jar", "velocity.jar"}
 
+	proxyPort := fmt.Sprintf("%d", cfg.HostPort)
 	config := &container.Config{
 		Image:        javaImage,
 		Hostname:     containerName,
 		Cmd:          cmd,
 		Env:          env,
 		WorkingDir:   "/proxy",
-		ExposedPorts: nat.PortSet{"25565/tcp": {}},
+		ExposedPorts: nat.PortSet{nat.Port(proxyPort + "/tcp"): {}},
 		Labels: map[string]string{
 			"demimine.managed":  "true",
 			"demimine.proxy_id": cfg.Name,
@@ -86,8 +87,8 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 			Name: "no",
 		},
 		PortBindings: nat.PortMap{
-			"25565/tcp": []nat.PortBinding{
-				{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.HostPort)},
+			nat.Port(proxyPort + "/tcp"): []nat.PortBinding{
+				{HostIP: "0.0.0.0", HostPort: proxyPort},
 			},
 		},
 	}
