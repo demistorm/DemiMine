@@ -250,7 +250,10 @@ func (lm *LogManager) HandleContainerEvent(event events.Message) {
 
 	if !exists {
 		var id int64
-		err := lm.db.QueryRow("SELECT id FROM servers WHERE name = ? COLLATE NOCASE", serverName).Scan(&id)
+		err := lm.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverName).Scan(&id)
+		if err == sql.ErrNoRows {
+			err = lm.db.QueryRow("SELECT id FROM servers WHERE name = ? COLLATE NOCASE", serverName).Scan(&id)
+		}
 		if err != nil {
 			log.Printf("Failed to find server ID for container %s (name=%s): %v", containerName, serverName, err)
 			return
@@ -277,7 +280,10 @@ func (lm *LogManager) handleProxyContainerEvent(event events.Message, containerN
 
 	if !exists {
 		var id int64
-		err := lm.db.QueryRow("SELECT id FROM proxies WHERE name = ? COLLATE NOCASE", proxyName).Scan(&id)
+		err := lm.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyName).Scan(&id)
+		if err == sql.ErrNoRows {
+			err = lm.db.QueryRow("SELECT id FROM proxies WHERE name = ? COLLATE NOCASE", proxyName).Scan(&id)
+		}
 		if err != nil {
 			log.Printf("Failed to find proxy ID for container %s (name=%s): %v", containerName, proxyName, err)
 			return

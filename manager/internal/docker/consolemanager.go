@@ -163,7 +163,10 @@ func (cm *ConsoleManager) HandleContainerEvent(containerName string, action stri
 	if !exists {
 		serverName := strings.TrimPrefix(normalizedContainerName, "demimine-")
 		var id int64
-		err := cm.db.QueryRow("SELECT id FROM servers WHERE name = ? COLLATE NOCASE", serverName).Scan(&id)
+		err := cm.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverName).Scan(&id)
+		if err == sql.ErrNoRows {
+			err = cm.db.QueryRow("SELECT id FROM servers WHERE name = ? COLLATE NOCASE", serverName).Scan(&id)
+		}
 		if err != nil {
 			log.Printf("Failed to find server ID for container %s (name=%s): %v", containerName, serverName, err)
 			return
@@ -362,7 +365,10 @@ func (cm *ConsoleManager) HandleProxyContainerEvent(containerName string, action
 	if !exists {
 		proxyName := strings.TrimPrefix(normalizedContainerName, "demimine-proxy-")
 		var id int64
-		err := cm.db.QueryRow("SELECT id FROM proxies WHERE name = ? COLLATE NOCASE", proxyName).Scan(&id)
+		err := cm.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyName).Scan(&id)
+		if err == sql.ErrNoRows {
+			err = cm.db.QueryRow("SELECT id FROM proxies WHERE name = ? COLLATE NOCASE", proxyName).Scan(&id)
+		}
 		if err != nil {
 			log.Printf("Failed to find proxy ID for container %s (name=%s): %v", containerName, proxyName, err)
 			return
