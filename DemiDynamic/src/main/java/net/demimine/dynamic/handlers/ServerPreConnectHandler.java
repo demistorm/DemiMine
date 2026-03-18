@@ -42,7 +42,7 @@ public class ServerPreConnectHandler {
 
     @com.velocitypowered.api.event.Subscribe
     public EventTask onServerPreConnect(ServerPreConnectEvent event) {
-        return EventTask.async(() -> {
+        return EventTask.withContinuation(continuation -> {
             Player player = event.getPlayer();
             RegisteredServer targetServer = event.getOriginalServer();
             String serverName = targetServer.getServerInfo().getName();
@@ -53,6 +53,7 @@ public class ServerPreConnectHandler {
                 MiniMessage mm = MiniMessage.miniMessage();
                 player.sendMessage(mm.deserialize("<red>You must authenticate first! Please reconnect and complete authentication."));
                 event.setResult(ServerPreConnectEvent.ServerResult.denied());
+                continuation.resume();
                 return;
             }
 
@@ -66,8 +67,14 @@ public class ServerPreConnectHandler {
                     handleDirectConnectionPlayer(event, player, serverName, currentServerName);
                 }
             } else {
-                event.setResult(ServerPreConnectEvent.ServerResult.allowed(targetServer));
+                String targetName = targetServer.getServerInfo().getName();
+                if (queueManager.isInQueue(player, targetName) && isServerRunning(targetName)) {
+                    event.setResult(ServerPreConnectEvent.ServerResult.allowed(targetServer));
+                } else {
+                    event.setResult(ServerPreConnectEvent.ServerResult.denied());
+                }
             }
+            continuation.resume();
         });
     }
 
@@ -172,6 +179,7 @@ public class ServerPreConnectHandler {
                                 queueManager.startCountdown(player, serverName, () -> {
                                     player.createConnectionRequest(targetServer.get()).fireAndForget();
                                     apiClient.reportPlayerJoin(player.getUniqueId().toString(), player.getUsername(), serverName);
+                                    queueManager.removeFromQueue(player);
                                 });
                             } else {
                                 player.createConnectionRequest(targetServer.get()).fireAndForget();
