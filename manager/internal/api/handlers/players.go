@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/demimine/manager/internal/config"
@@ -287,9 +288,22 @@ func (h *PlayerHandler) StopServerByName(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	ctx := context.Background()
+	timeout := 30
+	if err := h.docker.StopContainer(ctx, serverName, &timeout); err != nil {
+		if !strings.Contains(err.Error(), "No such container") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to stop server: %v", err)})
+			return
+		}
+	}
+
+	h.db.Exec("UPDATE servers SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", serverID)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"server_id": serverID})
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
 func (h *PlayerHandler) StartServerByName(w http.ResponseWriter, r *http.Request) {

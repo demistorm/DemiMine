@@ -3,17 +3,22 @@ package net.demimine.dynamic;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
-import okhttp3.*;
 
 import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpRequest.BodyPublishers;
+import java.net.http.HttpResponse;
+import java.net.http.HttpResponse.BodyHandlers;
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 public class ApiClient {
-    private final OkHttpClient httpClient;
+    private final HttpClient httpClient;
     private final Gson gson;
     private final Logger logger;
     private Config config;
@@ -35,10 +40,8 @@ public class ApiClient {
         this.config = config;
         this.logger = logger;
         this.gson = new Gson();
-        this.httpClient = new OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+        this.httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(30))
             .build();
     }
 
@@ -48,69 +51,75 @@ public class ApiClient {
 
     public boolean startServer(String serverName) {
         String url = config.configVar.managerUrl + "/api/servers/" + serverName + "/start-by-name";
-        RequestBody body = RequestBody.create(new byte[0]);
-        Request request = new Request.Builder()
-            .url(url)
-            .post(body)
-            .addHeader("Authorization", "Bearer " + config.configVar.apiKey)
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .POST(BodyPublishers.ofString(""))
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .timeout(Duration.ofSeconds(30))
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful()) {
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 logger.info("Started server: " + serverName);
                 return true;
             } else {
-                logger.error("Failed to start server " + serverName + ": " + response.code());
+                logger.error("Failed to start server " + serverName + ": " + response.statusCode());
                 return false;
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             logger.error("Error starting server " + serverName, e);
+            Thread.currentThread().interrupt();
             return false;
         }
     }
 
     public boolean stopServer(String serverId) {
         String url = config.configVar.managerUrl + "/api/servers/" + serverId + "/stop";
-        RequestBody body = RequestBody.create(new byte[0]);
-        Request request = new Request.Builder()
-            .url(url)
-            .post(body)
-            .addHeader("Authorization", "Bearer " + config.configVar.apiKey)
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .POST(BodyPublishers.ofString(""))
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .timeout(Duration.ofSeconds(30))
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful()) {
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 logger.info("Stopped server: " + serverId);
                 return true;
             } else {
-                logger.error("Failed to stop server " + serverId + ": " + response.code());
+                logger.error("Failed to stop server " + serverId + ": " + response.statusCode());
                 return false;
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             logger.error("Error stopping server " + serverId, e);
+            Thread.currentThread().interrupt();
             return false;
         }
     }
 
     public boolean stopServerByName(String serverName) {
         String url = config.configVar.managerUrl + "/api/servers/" + serverName + "/stop-by-name";
-        RequestBody body = RequestBody.create(new byte[0]);
-        Request request = new Request.Builder()
-            .url(url)
-            .post(body)
-            .addHeader("Authorization", "Bearer " + config.configVar.apiKey)
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .POST(BodyPublishers.ofString(""))
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .timeout(Duration.ofSeconds(30))
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful()) {
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 logger.info("Stopped server by name: " + serverName);
                 return true;
             } else {
-                logger.error("Failed to stop server " + serverName + ": " + response.code());
+                logger.error("Failed to stop server " + serverName + ": " + response.statusCode());
                 return false;
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             logger.error("Error stopping server " + serverName, e);
+            Thread.currentThread().interrupt();
             return false;
         }
     }
@@ -122,22 +131,24 @@ public class ApiClient {
         requestBody.addProperty("name", name);
         requestBody.addProperty("server_name", serverName);
 
-        RequestBody body = RequestBody.create(requestBody.toString(), MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-            .url(url)
-            .post(body)
-            .addHeader("Authorization", "Bearer " + config.configVar.apiKey)
-            .addHeader("Content-Type", "application/json")
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .POST(BodyPublishers.ofString(requestBody.toString()))
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .header("Content-Type", "application/json")
+            .timeout(Duration.ofSeconds(30))
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                logger.warn("Failed to report player join: " + response.code());
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                logger.warn("Failed to report player join: " + response.statusCode());
                 return false;
             }
             return true;
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             logger.warn("Error reporting player join", e);
+            Thread.currentThread().interrupt();
             return false;
         }
     }
@@ -148,62 +159,70 @@ public class ApiClient {
         requestBody.addProperty("uuid", uuid);
         requestBody.addProperty("server_name", serverName);
 
-        RequestBody body = RequestBody.create(requestBody.toString(), MediaType.parse("application/json"));
-        Request request = new Request.Builder()
-            .url(url)
-            .post(body)
-            .addHeader("Authorization", "Bearer " + config.configVar.apiKey)
-            .addHeader("Content-Type", "application/json")
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .POST(BodyPublishers.ofString(requestBody.toString()))
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .header("Content-Type", "application/json")
+            .timeout(Duration.ofSeconds(30))
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                logger.warn("Failed to report player leave: " + response.code());
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                logger.warn("Failed to report player leave: " + response.statusCode());
                 return false;
             }
             return true;
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             logger.warn("Error reporting player leave", e);
+            Thread.currentThread().interrupt();
             return false;
         }
     }
 
     public List<AutoShutdownServer> getAutoShutdownServers() {
         String url = config.configVar.managerUrl + "/api/servers/auto-shutdown";
-        Request request = new Request.Builder()
-            .url(url)
-            .get()
-            .addHeader("Authorization", "Bearer " + config.configVar.apiKey)
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .GET()
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .timeout(Duration.ofSeconds(30))
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful()) {
-                String body = response.body().string();
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                String body = response.body();
                 Type listType = new TypeToken<List<AutoShutdownServer>>(){}.getType();
                 List<AutoShutdownServer> servers = gson.fromJson(body, listType);
                 return servers;
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             logger.warn("Error getting auto-shutdown servers", e);
+            Thread.currentThread().interrupt();
         }
         return null;
     }
 
     public ServerStatus getServerStatus(String serverName) {
         String url = config.configVar.managerUrl + "/api/servers/" + serverName + "/status";
-        Request request = new Request.Builder()
-            .url(url)
-            .get()
-            .addHeader("Authorization", "Bearer " + config.configVar.apiKey)
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .GET()
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .timeout(Duration.ofSeconds(30))
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful()) {
-                String body = response.body().string();
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                String body = response.body();
                 return gson.fromJson(body, ServerStatus.class);
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             logger.warn("Error getting server status for " + serverName, e);
+            Thread.currentThread().interrupt();
         }
         return null;
     }

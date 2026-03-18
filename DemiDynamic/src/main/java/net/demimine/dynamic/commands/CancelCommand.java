@@ -70,6 +70,7 @@ public class CancelCommand implements SimpleCommand {
 
         if (queueManager.isQueueEmpty(targetServer)) {
             queueManager.clearQueue(targetServer);
+            cancelServerStart(targetServer);
         }
 
         MiniMessage mm = MiniMessage.miniMessage();

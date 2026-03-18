@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class QueueManager {
     private final ProxyServer server;
@@ -28,13 +29,16 @@ public class QueueManager {
     }
 
     public boolean addToQueue(Player player, String targetServer) {
-        Set<Player> queue = waitingPlayers.computeIfAbsent(targetServer, k -> ConcurrentHashMap.newKeySet());
-        if (queue.add(player)) {
-            playerQueues.put(player, new QueueEntry(targetServer));
-            logger.info("Added " + player.getUsername() + " to queue for " + targetServer);
-            return true;
+        QueueEntry newEntry = new QueueEntry(targetServer);
+        QueueEntry existing = playerQueues.putIfAbsent(player, newEntry);
+        if (existing != null) {
+            return false;
         }
-        return false;
+        
+        Set<Player> queue = waitingPlayers.computeIfAbsent(targetServer, k -> ConcurrentHashMap.newKeySet());
+        queue.add(player);
+        logger.info("Added " + player.getUsername() + " to queue for " + targetServer);
+        return true;
     }
 
     public boolean removeFromQueue(Player player) {
@@ -95,11 +99,14 @@ public class QueueManager {
             Placeholder.parsed("seconds", "5"));
         player.sendMessage(message);
 
+        final AtomicBoolean completed = new AtomicBoolean(false);
         final int[] secondsLeft = {4};
         entry.countdownTask = scheduler.scheduleAtFixedRate(() -> {
             if (secondsLeft[0] <= 0) {
-                entry.countdownTask.cancel(false);
-                scheduler.execute(onComplete);
+                if (completed.compareAndSet(false, true)) {
+                    entry.countdownTask.cancel(false);
+                    scheduler.execute(onComplete);
+                }
             } else {
                 Component countdownMsg = mm.deserialize(config.configVar.messages.countdown,
                     Placeholder.parsed("seconds", String.valueOf(secondsLeft[0])));
