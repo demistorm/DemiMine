@@ -14,16 +14,18 @@ public class AutoStopManager {
     private final QueueManager queueManager;
     private final ScheduledExecutorService scheduler;
     private final DemiDynamic plugin;
+    private final ApiClient apiClient;
 
     private final Map<String, Set<Player>> serverPlayers = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> stopTimers = new ConcurrentHashMap<>();
 
-    public AutoStopManager(ProxyServer server, Config config, Logger logger, QueueManager queueManager, DemiDynamic plugin) {
+    public AutoStopManager(ProxyServer server, Config config, Logger logger, QueueManager queueManager, DemiDynamic plugin, ApiClient apiClient) {
         this.server = server;
         this.config = config;
         this.logger = logger;
         this.queueManager = queueManager;
         this.plugin = plugin;
+        this.apiClient = apiClient;
         this.scheduler = Executors.newScheduledThreadPool(4);
     }
 
@@ -55,14 +57,17 @@ public class AutoStopManager {
 
         logger.info("Scheduling auto-stop for " + serverName + " in " + config.configVar.autoStopTimeoutMinutes + " minutes");
 
+        int warningDelay = Math.max(0, config.configVar.autoStopTimeoutMinutes - 1);
+        scheduler.schedule(() -> {
+            if (stopTimers.containsKey(serverName) && isServerEmpty(serverName)) {
+                logger.info("Auto-stop warning: " + serverName + " will shut down in 1 minute");
+            }
+        }, warningDelay, TimeUnit.MINUTES);
+
         ScheduledFuture<?> task = scheduler.schedule(() -> {
             if (isServerEmpty(serverName)) {
                 logger.info("Auto-stopping " + serverName);
-                String serverId = getServerId(serverName);
-                if (serverId != null) {
-                    server.getScheduler().buildTask(plugin, () -> {
-                    }).schedule();
-                }
+                apiClient.stopServerByName(serverName);
             } else {
                 logger.debug("Auto-stop canceled for " + serverName + " - players present");
             }
@@ -90,14 +95,6 @@ public class AutoStopManager {
             task.cancel(false);
             logger.info("Canceled stop timer for " + serverName + " - server starting");
         }
-    }
-
-    private String getServerId(String serverName) {
-        var registeredServer = server.getServer(serverName);
-        if (registeredServer.isPresent()) {
-            return String.valueOf(registeredServer.get().getServerInfo().getName().hashCode());
-        }
-        return null;
     }
 
     public void shutdown() {

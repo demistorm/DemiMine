@@ -44,8 +44,8 @@ public class DemiDynamic {
         this.dataDirectory = dataDirectory;
         this.config = new Config(logger, dataDirectory);
         this.queueManager = new QueueManager(server, config, logger);
-        this.autoStopManager = new AutoStopManager(server, config, logger, queueManager, this);
         this.apiClient = new ApiClient(config, logger);
+        this.autoStopManager = new AutoStopManager(server, config, logger, queueManager, this, apiClient);
     }
 
     @Subscribe
@@ -60,7 +60,7 @@ public class DemiDynamic {
 
         server.getEventManager().register(this, new ServerPreConnectHandler(server, config, logger, queueManager, autoStopManager, apiClient, this));
         server.getEventManager().register(this, new DisconnectHandler(server, config, logger, autoStopManager, apiClient));
-        server.getEventManager().register(this, new ServerConnectedHandler(server, config, logger, autoStopManager));
+        server.getEventManager().register(this, new ServerConnectedHandler(server, config, logger, autoStopManager, apiClient));
 
         CommandManager commandManager = server.getCommandManager();
         CommandMeta commandMeta = commandManager.metaBuilder("cancel").plugin(this).build();
