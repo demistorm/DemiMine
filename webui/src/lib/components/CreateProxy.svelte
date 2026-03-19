@@ -14,6 +14,7 @@
 	let hostPort = 25565;
 	let ramMB = 512;
 	let installDemiAuth = false;
+	let installDemiDynamic = false;
 	let installLuckPerms = false;
 	let iconFile: File | null = null;
 	let iconPreview: string | null = null;
@@ -66,6 +67,7 @@
 				host_port: hostPort,
 				ram_mb: ramMB,
 				install_demiauth: installDemiAuth,
+				install_demidynamic: installDemiDynamic,
 				install_luckperms: installLuckPerms
 			}) as { id: number };
 			
@@ -91,6 +93,9 @@
 		name = '';
 		hostPort = 25565;
 		ramMB = 512;
+		installDemiAuth = false;
+		installDemiDynamic = false;
+		installLuckPerms = false;
 		iconFile = null;
 		iconPreview = null;
 		iconError = '';
@@ -154,6 +159,13 @@
 							<span>Install DemiAuth (chat-based authentication)</span>
 						</label>
 						<span class="hint">Requires NanoLimbo server named "login" or "auth"</span>
+					</div>
+					<div class="checkbox-group">
+						<label class="checkbox-label">
+							<input type="checkbox" bind:checked={installDemiDynamic} />
+							<span>Install DemiDynamic (auto start/stop servers)</span>
+						</label>
+						<span class="hint">Requires API key configuration after creation</span>
 					</div>
 					<div class="checkbox-group">
 						<label class="checkbox-label">

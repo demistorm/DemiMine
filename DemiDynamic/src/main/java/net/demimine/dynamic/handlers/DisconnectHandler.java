@@ -42,7 +42,7 @@ public class DisconnectHandler {
                 apiClient.reportPlayerLeave(player.getUniqueId().toString(), serverName);
 
                 ApiClient.ServerStatus status = apiClient.getServerStatus(serverName);
-                if (status != null && status.auto_shutdown_minutes > 0 && autoStopManager.isServerEmpty(serverName)) {
+                if (status != null && status.auto_shutdown_minutes > 0 && autoStopManager.isServerEmpty(serverName) && !config.configVar.excludedServers.contains(serverName)) {
                     autoStopManager.scheduleStopTimer(serverName);
                 }
             }

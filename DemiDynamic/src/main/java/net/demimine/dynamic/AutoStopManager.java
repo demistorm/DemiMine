@@ -81,7 +81,7 @@ public class AutoStopManager {
         ScheduledFuture<?> task = stopTimers.remove(serverName);
         if (task != null) {
             task.cancel(false);
-            logger.debug("Canceled stop timer for " + serverName);
+            logger.info("Canceled stop timer for " + serverName);
         }
     }
 

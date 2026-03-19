@@ -120,11 +120,12 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateProxyRequest struct {
-	Name             string `json:"name"`
-	HostPort         int    `json:"host_port"`
-	RAMMB            int    `json:"ram_mb"`
-	InstallDemiAuth  bool   `json:"install_demiauth"`
-	InstallLuckPerms bool   `json:"install_luckperms"`
+	Name               string `json:"name"`
+	HostPort           int    `json:"host_port"`
+	RAMMB              int    `json:"ram_mb"`
+	InstallDemiAuth    bool   `json:"install_demiauth"`
+	InstallDemiDynamic bool   `json:"install_demidynamic"`
+	InstallLuckPerms   bool   `json:"install_luckperms"`
 }
 
 func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -283,6 +284,36 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 		if err := configureDemiAuth(proxyPath, req.Name); err != nil {
 			fmt.Printf("Failed to configure DemiAuth for proxy %d: %v\n", id, err)
+		}
+	}
+
+	// Install DemiDynamic if requested
+	if req.InstallDemiDynamic {
+		pluginsDir := filepath.Join(h.cfg.ServersDir, req.Name, "plugins")
+		if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+			fmt.Printf("Failed to create plugins directory for proxy %d: %v\n", id, err)
+		}
+
+		demidynamicJar := filepath.Join(pluginsDir, "DemiDynamic-1.0.2.jar")
+		demidynamicResource := "/app/resources/DemiDynamic-1.0.2.jar"
+
+		srcFile, err := os.Open(demidynamicResource)
+		if err != nil {
+			fmt.Printf("Failed to open DemiDynamic resource for proxy %d: %v\n", id, err)
+		} else {
+			defer srcFile.Close()
+			destFile, err := os.Create(demidynamicJar)
+			if err != nil {
+				fmt.Printf("Failed to create DemiDynamic file for proxy %d: %v\n", id, err)
+			} else {
+				_, err := io.Copy(destFile, srcFile)
+				destFile.Close()
+				if err != nil {
+					fmt.Printf("Failed to copy DemiDynamic for proxy %d: %v\n", id, err)
+				} else {
+					fmt.Printf("Installed DemiDynamic for proxy %d\n", id)
+				}
+			}
 		}
 	}
 

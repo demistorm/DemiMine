@@ -82,6 +82,10 @@ public class ServerPreConnectHandler {
         return player.hasPermission(config.configVar.authPermission);
     }
 
+    private boolean isExcluded(String serverName) {
+        return config.configVar.excludedServers.contains(serverName);
+    }
+
     private void handleHubQueuePlayer(ServerPreConnectEvent event, Player player, String serverName, String currentServerName) {
         if (serverName.equals(currentServerName)) {
             event.setResult(ServerPreConnectEvent.ServerResult.allowed(event.getOriginalServer()));
@@ -91,6 +95,13 @@ public class ServerPreConnectHandler {
         if (isServerRunning(serverName)) {
             event.setResult(ServerPreConnectEvent.ServerResult.allowed(event.getOriginalServer()));
             apiClient.reportPlayerJoin(player.getUniqueId().toString(), player.getUsername(), serverName);
+            return;
+        }
+
+        if (isExcluded(serverName)) {
+            MiniMessage mm = MiniMessage.miniMessage();
+            player.sendMessage(mm.deserialize("<red>This server is currently offline and not automatically started."));
+            event.setResult(ServerPreConnectEvent.ServerResult.denied());
             return;
         }
 
@@ -109,6 +120,13 @@ public class ServerPreConnectHandler {
         if (isServerRunning(serverName)) {
             event.setResult(ServerPreConnectEvent.ServerResult.allowed(event.getOriginalServer()));
             apiClient.reportPlayerJoin(player.getUniqueId().toString(), player.getUsername(), serverName);
+            return;
+        }
+
+        if (isExcluded(serverName)) {
+            MiniMessage mm = MiniMessage.miniMessage();
+            player.sendMessage(mm.deserialize("<red>This server is currently offline and not automatically started."));
+            event.setResult(ServerPreConnectEvent.ServerResult.denied());
             return;
         }
 

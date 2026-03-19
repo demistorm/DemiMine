@@ -43,7 +43,7 @@ public class ServerConnectedHandler {
                 apiClient.reportPlayerLeave(player.getUniqueId().toString(), previousServerName);
 
                 ApiClient.ServerStatus status = apiClient.getServerStatus(previousServerName);
-                if (status != null && status.auto_shutdown_minutes > 0 && autoStopManager.isServerEmpty(previousServerName)) {
+                if (status != null && status.auto_shutdown_minutes > 0 && autoStopManager.isServerEmpty(previousServerName) && !config.configVar.excludedServers.contains(previousServerName)) {
                     autoStopManager.scheduleStopTimer(previousServerName);
                 }
             }

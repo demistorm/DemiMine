@@ -13,6 +13,8 @@ COPY manager/ ./
 
 # Copy DemiAuth plugin for Velocity proxies
 COPY DemiAuth/build/libs/DemiAuth-1.0.0.jar manager/resources/
+# Copy DemiDynamic plugin for Velocity proxies
+COPY DemiDynamic/build/libs/DemiDynamic-1.0.2.jar manager/resources/
 
 # Build backend
 RUN CGO_ENABLED=0 GOOS=linux go build -o /demimine ./cmd/server

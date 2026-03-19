@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.List;
 
 public class Config {
     public static ConfigVar configVar;
@@ -50,6 +52,7 @@ public class Config {
         configVar.startTimeoutSeconds = fileConfig.getOrElse("start_timeout_seconds", 120);
         configVar.autoStopTimeoutMinutes = fileConfig.getOrElse("auto_stop_timeout_minutes", 15);
         configVar.messageIntervalSeconds = fileConfig.getOrElse("message_interval_seconds", 5);
+        configVar.excludedServers = fileConfig.getOrElse("excluded_servers", Collections.emptyList());
 
         if (fileConfig.contains("messages")) {
             configVar.messages = new Messages();
@@ -77,13 +80,17 @@ public class Config {
                "start_timeout_seconds = 120\n" +
                "auto_stop_timeout_minutes = 15\n" +
                "message_interval_seconds = 5\n\n" +
-                "[messages]\n" +
-                "starting = \"<yellow>Server is starting...\"\n" +
-                "loading = \"<yellow>Loading server...\"\n" +
-                "teleporting = \"<green>Teleporting in 5 seconds!\"\n" +
-                "countdown = \"<yellow>Teleporting in <seconds>...\"\n" +
-                "cancel_queue = \"<red>Canceled queue for <server>!\"\n" +
-                "cancel_disconnect = \"<red>Player canceled the queue!\"\n\n" +
+                "# Servers to exclude from auto start/stop (e.g., login, queue servers)\n" +
+                "# These servers will still track player joins/leaves but won't be started/stopped\n" +
+                "# Example: excluded_servers = [\"login\", \"queue\"]\n" +
+                "excluded_servers = []\n\n" +
+                 "[messages]\n" +
+                 "starting = \"<yellow>Server is starting...\"\n" +
+                 "loading = \"<yellow>Loading server...\"\n" +
+                 "teleporting = \"<green>Teleporting in 5 seconds!\"\n" +
+                 "countdown = \"<yellow>Teleporting in <seconds>...\"\n" +
+                 "cancel_queue = \"<red>Canceled queue for <server>!\"\n" +
+                 "cancel_disconnect = \"<red>Player canceled the queue!\"\n\n" +
                "configVersion = 1\n";
     }
 
@@ -98,6 +105,7 @@ public class Config {
         public int startTimeoutSeconds;
         public int autoStopTimeoutMinutes;
         public int messageIntervalSeconds;
+        public List<String> excludedServers;
         public Messages messages;
     }
 
