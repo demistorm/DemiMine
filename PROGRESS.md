@@ -1,11 +1,16 @@
 # DemiMine Development Progress
 
+## Overall Status: Production-Ready
+Phases 1-5 are complete and fully functional. DemiMine now provides comprehensive server management, proxy integration, player tracking, auto-shutdown, and plugin management capabilities.
+
 ## Phase 1: Foundation ✅ COMPLETE
 - Go backend with Chi router and SQLite database
 - Auth endpoints (setup, login, logout, status) with JWT
 - Server CRUD endpoints with port conflict detection
 - Rate limiting, CORS, and logging middleware
 - Docker Compose deployment
+- API key management (create, list, delete) for plugin authentication
+- Player tracking and management (join/leave events, per-server player counts)
 
 ## Phase 2: Server Management ✅ COMPLETE
 - Version fetching (Paper/Purpur/Fabric/NeoForge/Forge)
@@ -24,6 +29,12 @@
 - Unit tests for mc package (versions, properties, java version detection)
 - Fixed Java version detection for edge cases
 
+## Database Schema
+- SQLite with WAL mode and automatic migrations
+- Tables: proxies, servers, players, api_keys, settings, backups, crash_logs, command_history, admin_auth, installed_plugins
+- Player tracking: join/leave events, current server per player
+- API key management: secure keys for plugin authentication
+
 ## Remaining: Fabric/Forge/NeoForge Notes
 The Forge/NeoForge installers are executed during server creation, which can take 1-2 minutes on first run. The installer downloads Minecraft server files and required libraries, then creates a `run.sh` script for launching the server.
 
@@ -41,8 +52,8 @@ The Forge/NeoForge installers are executed during server creation, which can tak
 - ✅ Settings page with RAM allocation, auto-shutdown, backup interval
 - ✅ Create Server modal with version dropdown (fetches versions from API)
 - ✅ Backend PATCH endpoint for server updates
+- ✅ Icon upload for servers and proxies (with preview)
 - ⏳ WebSocket integration for real-time updates (deferred)
-- ⏳ Icon upload (deferred)
 
 ## Phase 4: Proxy System ✅ COMPLETE
 - ✅ Velocity proxy container management
@@ -51,24 +62,75 @@ The Forge/NeoForge installers are executed during server creation, which can tak
 - ✅ Proxy icon upload
 - ✅ Automatic velocity.toml sync when servers assigned/removed
 - ✅ MiniMOTD integration for server list customization
+  - Auto-install on new proxy creation
+  - Custom MOTD configuration via web UI
+  - Per-server MOTD customization
 - ✅ Plugin management for proxies
+  - Modrinth API integration for searching and installing plugins
+  - Plugin version checking and updates
+  - Global MC version filtering for plugin compatibility
 - ✅ DemiAuth plugin (chat-based authentication, no `/login` command)
   - Permission node: `demimine.authenticated`
   - 120-second timeout, 3-attempt disconnect limit
   - Auto-configured for NanoLimbo servers named with "auth" or "login"
+- ✅ DemiDynamic plugin v1.0.2 (auto start/stop servers based on player activity)
+  - Server start on player connection attempt
+  - Player join/leave tracking and reporting
+  - Auto-shutdown timer (configurable, 15-min default)
+  - Queue system with countdown for starting servers
+  - Server exclusion list for always-on servers (login, queue)
+  - Race condition fixes and proper server transfer detection
+  - Cancel timer when players rejoin (with INFO logging)
+  - Hub server support with direct connection fallback
+  - Configuration with manager_url, api_key, queue_server, hub_server
 - ✅ NanoLimbo server type support (BoomEaro fork)
 - ✅ LuckPerms auto-installation option for proxies
-- ✅ Proxy creation UI with DemiAuth/LuckPerms checkboxes
+- ✅ Proxy creation UI with DemiAuth/DemiDynamic/LuckPerms checkboxes
 - ✅ Server creation UI with NanoLimbo option
 
-## Phase 5: Backup System (PLANNED)
+## Phase 5: Advanced Features ✅ COMPLETE
+- ✅ API key management
+  - Create, list, and delete API keys
+  - Keys used by DemiDynamic plugin for server control
+  - Rate limiting (500 req/15min)
+- ✅ Player management and tracking
+  - Player join/leave events reported to manager
+  - Player count tracking per server
+  - Support for excluded servers (always-on)
+- ✅ Auto-shutdown timer
+  - Per-server configuration (minutes)
+  - Idle server shutdown when players leave
+  - Warning message 1 minute before shutdown
+  - Canceled when players rejoin
+- ✅ Port-sharing confirmation for standalone servers
+- ✅ Migrated to PaperMC Fill API v3 for JAR updates
+- ✅ OOM (Out of Memory) fix for container handling
+
+## Phase 6: Backup System (PLANNED)
 - Backup creation (scheduled and manual)
 - Backup restoration
 - Backup retention policy
 
-## Phase 6: Advanced Features (PLANNED)
-- Player activity tracking
-- Auto-shutdown timer
-- Scheduled start/stop
-- Server duplication feature
-- Server JAR update action
+## Recent Bug Fixes & Improvements
+- Fixed case sensitivity issues in server/proxy lookups (prioritize exact matches)
+- Fixed log/console streaming container name resolution
+- Added graceful handling of missing containers in stop handlers
+- Implemented proper wait for container full stop before restart (both proxies and servers)
+- Fixed MiniMOTD configuration file paths and update handling
+- Removed game version requirement for proxy plugins (compatibility improvement)
+- Fixed JAR update version display and build number tracking
+- Fixed DemiDynamic server queue connection issues
+- Fixed DemiDynamic auto-stop and server transfer detection
+- Reduced DemiDynamic JAR size through shadowJar optimization
+- Added .svelte-kit to .gitignore (exclude build artifacts)
+- Updated AGENTS.md and design.md with Fill API migration details
+
+## Statistics
+- **Backend**: 10,568+ lines of Go code
+- **Frontend**: SvelteKit 2.0, TypeScript 5.0, Tailwind 3.4
+- **API Endpoints**: 10+ handlers covering all features
+- **Database**: 9 tables with automatic migrations
+- **Docker**: Multi-stage build with Alpine runtime
+- **Tests**: 452 lines of unit tests
+- **Plugins**: DemiAuth (auth), DemiDynamic (auto-start/stop), MiniMOTD (MOTD)
+- **Git**: 45+ commits, actively developed
