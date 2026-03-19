@@ -78,6 +78,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 
 	env := []string{
 		"TERM=xterm",
+		"TZ=America/Chicago",
 		fmt.Sprintf("SERVER_TYPE=%s", cfg.ServerType),
 		fmt.Sprintf("MC_VERSION=%s", cfg.Version),
 		fmt.Sprintf("RAM_MB=%d", cfg.RAMMB),

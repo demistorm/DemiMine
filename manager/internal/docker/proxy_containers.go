@@ -56,6 +56,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 
 	env := []string{
 		"TERM=xterm",
+		"TZ=America/Chicago",
 	}
 
 	cmd := []string{"java", fmt.Sprintf("-Xmx%dM", ramMB), "-jar", "velocity.jar"}

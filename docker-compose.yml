@@ -19,6 +19,7 @@ services:
       - ./java:/java
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      - TZ=America/Chicago
       - DEMIMINE_PORT=8080
       - DEMIMINE_DATA_DIR=/data
       - DEMIMINE_SERVERS_DIR=/servers
