@@ -9,7 +9,8 @@
 	let error = '';
 	let success = '';
 
-	let backupTime = '03:00';
+	let backupHour = 3;
+	let backupMinute = 0;
 	let backupIntervalDays = '3';
 	let retentionCount = 2;
 	let backups: Backup[] = [];
@@ -22,7 +23,9 @@
 
 	onMount(async () => {
 		await loadGlobalSettings();
-		backupTime = $globalSettings.backup_time;
+		const [h, m] = $globalSettings.backup_time.split(':').map(Number);
+		backupHour = h;
+		backupMinute = m;
 		backupIntervalDays = $globalSettings.backup_interval_days;
 		retentionCount = $globalSettings.retention_count;
 		await loadBackups();
@@ -37,7 +40,7 @@
     }
   }
 
-	async function saveSettings() {
+ 	async function saveSettings() {
     saving = true;
     error = '';
     success = '';
@@ -45,7 +48,7 @@
     try {
       await saveGlobalSettings({
         proxy_mc_version: $globalSettings.proxy_mc_version,
-        backup_time: backupTime,
+        backup_time: `${String(backupHour).padStart(2, '0')}:${String(backupMinute).padStart(2, '0')}`,
         backup_interval_days: backupIntervalDays,
         retention_count: retentionCount
       });
@@ -153,11 +156,23 @@
     <div class="section">
       <h2>Backups</h2>
 
-      <div class="field">
-        <label for="backupTime">Backup Time (24h format)</label>
-        <input type="time" id="backupTime" bind:value={backupTime} />
-        <span class="hint">Time of day to run scheduled backup</span>
-      </div>
+        <div class="field">
+         <label>Backup Time (24h format)</label>
+         <div class="time-input">
+           <select id="backupHour" bind:value={backupHour} class="time-field">
+             {#each Array.from({length: 24}, (_, i) => i) as h}
+               <option value={h}>{String(h).padStart(2, '0')}</option>
+             {/each}
+           </select>
+           <span class="time-separator">:</span>
+           <select id="backupMinute" bind:value={backupMinute} class="time-field">
+             {#each Array.from({length: 60}, (_, i) => i) as m}
+               <option value={m}>{String(m).padStart(2, '0')}</option>
+             {/each}
+           </select>
+         </div>
+         <span class="hint">Time of day to run scheduled backup (00:00 - 23:59)</span>
+       </div>
 
       <div class="field">
         <label for="backupIntervalDays">Backup Interval (days)</label>
@@ -314,7 +329,8 @@
 
   .field input[type="text"],
   .field input[type="time"],
-  .field input[type="number"] {
+  .field input[type="number"],
+  .field select {
     width: 100%;
     max-width: 400px;
     padding: 0.625rem 0.875rem;
@@ -325,9 +341,27 @@
     font-size: 0.9375rem;
   }
 
-  .field input:focus:not(:disabled) {
+  .field input:focus:not(:disabled),
+  .field select:focus:not(:disabled) {
     outline: none;
     border-color: var(--accent);
+  }
+
+  .time-input {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .time-field {
+    width: 80px !important;
+    text-align: left;
+  }
+
+  .time-separator {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: var(--text-primary);
   }
 
   .hint {
