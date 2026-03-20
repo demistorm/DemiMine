@@ -65,7 +65,7 @@ func (h *BackupsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var response []BackupResponse
+	response := []BackupResponse{}
 	for _, b := range backups {
 		response = append(response, BackupResponse{
 			ID:          b.ID,
@@ -78,7 +78,7 @@ func (h *BackupsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"backups": response})
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *BackupsHandler) Create(w http.ResponseWriter, r *http.Request) {
