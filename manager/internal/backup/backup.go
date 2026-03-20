@@ -296,6 +296,7 @@ func (m *Manager) ShouldRunBackup() bool {
 
 func (m *Manager) ListBackups() ([]models.Backup, error) {
 	var backups []models.Backup
+	var orphanIDs []int64
 
 	rows, err := m.db.Query("SELECT id, created_at, size_bytes, archive_path, status FROM backups ORDER BY created_at DESC")
 	if err != nil {
@@ -308,7 +309,17 @@ func (m *Manager) ListBackups() ([]models.Backup, error) {
 		if err := rows.Scan(&b.ID, &b.CreatedAt, &b.SizeBytes, &b.ArchivePath, &b.Status); err != nil {
 			return nil, err
 		}
+
+		if _, err := os.Stat(b.ArchivePath); os.IsNotExist(err) {
+			orphanIDs = append(orphanIDs, b.ID)
+			continue
+		}
+
 		backups = append(backups, b)
+	}
+
+	for _, id := range orphanIDs {
+		m.db.Exec("DELETE FROM backups WHERE id = ?", id)
 	}
 
 	return backups, nil
