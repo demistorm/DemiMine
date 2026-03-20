@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/demimine/manager/internal/api"
 	"github.com/demimine/manager/internal/api/handlers"
+	"github.com/demimine/manager/internal/backup"
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/db"
 	"github.com/demimine/manager/internal/docker"
@@ -28,9 +30,6 @@ func main() {
 	}
 	if err := os.MkdirAll(cfg.ServersDir, 0755); err != nil {
 		log.Fatalf("Failed to create servers directory: %v", err)
-	}
-	if err := os.MkdirAll(cfg.ProxiesDir, 0755); err != nil {
-		log.Fatalf("Failed to create proxies directory: %v", err)
 	}
 	if err := os.MkdirAll(cfg.BackupsDir, 0755); err != nil {
 		log.Fatalf("Failed to create backups directory: %v", err)
@@ -86,10 +85,15 @@ func main() {
 
 	go eventManager.Start(context.Background())
 
+	backupManager := backup.NewManager(database, cfg.DataDir, cfg.BackupsDir, cfg.ServersDir, cfg.JavaDir)
+	backupScheduler := backup.NewScheduler(backupManager)
+	backupScheduler.Start()
+	defer backupScheduler.Stop()
+
+	router := api.NewRouter(database, cfg, dockerClient, consoleManager, wsHandler.GetHub(), backupManager)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/ws", wsHandler.Handle)
-
-	router := api.NewRouter(database, cfg, dockerClient, consoleManager)
 	mux.Handle("/", router)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
@@ -117,9 +121,45 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	gracefulShutdown(database, dockerClient, ctx)
+
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
 	}
 
 	log.Println("Server stopped")
+}
+
+func gracefulShutdown(database *sql.DB, dockerClient *docker.Client, ctx context.Context) {
+	log.Println("Stopping all servers and proxies gracefully...")
+
+	rows, _ := database.Query("SELECT id, name FROM servers WHERE status = 'running'")
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err == nil {
+			log.Printf("Stopping server: %s", name)
+			containerName := fmt.Sprintf("demimine-%s", name)
+			dockerClient.StopContainer(ctx, containerName, nil)
+			database.Exec("UPDATE servers SET status = 'stopped' WHERE id = ?", id)
+		}
+	}
+
+	proxyRows, _ := database.Query("SELECT id, name FROM proxies WHERE status = 'running'")
+	defer proxyRows.Close()
+
+	for proxyRows.Next() {
+		var id int64
+		var name string
+		if err := proxyRows.Scan(&id, &name); err == nil {
+			log.Printf("Stopping proxy: %s", name)
+			containerName := fmt.Sprintf("demimine-%s", name)
+			dockerClient.StopContainer(ctx, containerName, nil)
+			database.Exec("UPDATE proxies SET status = 'stopped' WHERE id = ?", id)
+		}
+	}
+
+	log.Println("All servers and proxies stopped")
 }

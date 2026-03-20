@@ -14,7 +14,7 @@ services:
     volumes:
       - ./data:/data
       - ./servers:/servers
-      - ./proxies:/proxies
+      # Change ./backups to network drive path (e.g., /mnt/nas/demimine-backups) for offsite backup
       - ./backups:/backups
       - ./java:/java
       - /var/run/docker.sock:/var/run/docker.sock

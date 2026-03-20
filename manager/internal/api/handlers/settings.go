@@ -33,12 +33,28 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if _, ok := settings["proxy_mc_version"]; !ok {
+		settings["proxy_mc_version"] = "1.21.11"
+	}
+	if _, ok := settings["backup_time"]; !ok {
+		settings["backup_time"] = "03:00"
+	}
+	if _, ok := settings["backup_interval_days"]; !ok {
+		settings["backup_interval_days"] = "3"
+	}
+	if _, ok := settings["retention_count"]; !ok {
+		settings["retention_count"] = "2"
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(settings)
 }
 
 type UpdateSettingsRequest struct {
-	ProxyMCVersion string `json:"proxy_mc_version"`
+	ProxyMCVersion     string `json:"proxy_mc_version"`
+	BackupTime         string `json:"backup_time"`
+	BackupIntervalDays string `json:"backup_interval_days"`
+	RetentionCount     int    `json:"retention_count"`
 }
 
 func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +68,15 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	if req.ProxyMCVersion != "" {
 		h.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('proxy_mc_version', ?)", req.ProxyMCVersion)
+	}
+	if req.BackupTime != "" {
+		h.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_time', ?)", req.BackupTime)
+	}
+	if req.BackupIntervalDays != "" {
+		h.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_interval_days', ?)", req.BackupIntervalDays)
+	}
+	if req.RetentionCount > 0 {
+		h.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('retention_count', ?)", req.RetentionCount)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

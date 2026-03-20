@@ -14,7 +14,6 @@ type Config struct {
 	DataDir        string
 	ServersDir     string
 	HostServersDir string
-	ProxiesDir     string
 	BackupsDir     string
 	JavaDir        string
 	NetworkName    string
@@ -43,7 +42,6 @@ func Load() (*Config, error) {
 		v.SetDefault("DATA_DIR", "/data")
 		v.SetDefault("SERVERS_DIR", "/servers")
 		v.SetDefault("HOST_SERVERS_DIR", "/servers")
-		v.SetDefault("PROXIES_DIR", "/proxies")
 		v.SetDefault("BACKUPS_DIR", "/backups")
 		v.SetDefault("JAVA_DIR", "/java")
 		v.SetDefault("NETWORK", "demimine_internal")
@@ -74,7 +72,6 @@ func Load() (*Config, error) {
 			DataDir:        v.GetString("DATA_DIR"),
 			ServersDir:     v.GetString("SERVERS_DIR"),
 			HostServersDir: v.GetString("HOST_SERVERS_DIR"),
-			ProxiesDir:     v.GetString("PROXIES_DIR"),
 			BackupsDir:     v.GetString("BACKUPS_DIR"),
 			JavaDir:        v.GetString("JAVA_DIR"),
 			NetworkName:    v.GetString("NETWORK"),

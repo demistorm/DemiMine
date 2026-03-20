@@ -255,8 +255,17 @@ export interface Server {
 	scheduled_stop: string | null;
 	minimotd_line1: string | null;
 	minimotd_line2: string | null;
+	start_on_boot: number;
 	created_at: string;
 	jar_build: number;
+}
+
+export interface Backup {
+	id: number;
+	created_at: string;
+	size_bytes: number;
+	archive_path: string;
+	status: string;
 }
 
 export interface JarUpdateInfo {
@@ -279,6 +288,7 @@ export interface Proxy {
 	canvas_x: number;
 	canvas_y: number;
 	icon_path: string | null;
+	start_on_boot: number;
 	jar_version: string | null;
 	jar_build: number;
 	created_at: string;
@@ -443,8 +453,57 @@ export const settingsApi = {
 	get: () =>
 		api.get<{ [key: string]: string }>('/api/settings'),
 
-	update: (data: { proxy_mc_version: string }) =>
+	update: (data: { proxy_mc_version?: string; backup_time?: string; backup_interval_days?: string; retention_count?: number }) =>
 		api.put<{ success: boolean }>('/api/settings', data),
+};
+
+export interface Backup {
+	id: number;
+	created_at: string;
+	size_bytes: number;
+	archive_path: string;
+	status: string;
+}
+
+export const backupsApi = {
+	list: () =>
+		api.get<Backup[]>('/api/backups'),
+
+	create: () =>
+		api.post<Backup>('/api/backups'),
+
+	download: async (id: number) => {
+		const url = `${API_BASE}/api/backups/${id}/download`;
+		const token = getToken();
+		const res = await fetch(url, {
+			headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+		});
+		if (!res.ok) throw new Error('Download failed');
+		return res.blob();
+	},
+
+	restore: async (file: File) => {
+		const formData = new FormData();
+		formData.append('backup', file);
+		const url = `${API_BASE}/api/backups/restore`;
+		const token = getToken();
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+			body: formData
+		});
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ error: 'Restore failed' }));
+			throw new ApiError(err);
+		}
+		return res.json();
+	},
+
+	restoreFromId: (id: number) =>
+		api.post<{ status: string; message: string }>(`/api/backups/${id}/restore`),
+
+	delete: (id: number) =>
+		api.delete<{ success: boolean }>(`/api/backups/${id}`)
 };
 
 export const jarUpdateApi = {

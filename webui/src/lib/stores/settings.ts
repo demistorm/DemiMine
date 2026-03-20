@@ -1,31 +1,45 @@
 import { writable, derived } from 'svelte/store';
-import { settingsApi } from '$lib/api';
+import { settingsApi, type Backup } from '$lib/api';
 
-export const globalSettings = writable<{ proxy_mc_version: string }>({
-	proxy_mc_version: '1.21.11'
+export interface GlobalSettings {
+	proxy_mc_version: string;
+	backup_time: string;
+	backup_interval_days: string;
+	retention_count: number;
+}
+
+export const globalSettings = writable<GlobalSettings>({
+	proxy_mc_version: '1.21.11',
+	backup_time: '03:00',
+	backup_interval_days: '3',
+	retention_count: 2
 });
 
 export const proxyMCVersion = derived(globalSettings, ($settings) => $settings.proxy_mc_version);
+
+export const backupStatus = writable<'idle' | 'in_progress' | 'complete' | 'failed'>('idle');
 
 export const loadGlobalSettings = async () => {
 	try {
 		const settings = await settingsApi.get();
 		globalSettings.set({
-			proxy_mc_version: settings.proxy_mc_version || '1.21.11'
+			proxy_mc_version: settings.proxy_mc_version || '1.21.11',
+			backup_time: settings.backup_time || '03:00',
+			backup_interval_days: settings.backup_interval_days || '3',
+			retention_count: settings.retention_count ? parseInt(settings.retention_count) : 2
 		});
 	} catch (err) {
 		console.error('Failed to load global settings:', err);
 	}
 };
 
-export const saveGlobalSettings = async (data: { proxy_mc_version: string }) => {
+export const saveGlobalSettings = async (data: GlobalSettings) => {
 	try {
 		await settingsApi.update(data);
-		globalSettings.set({
-			proxy_mc_version: data.proxy_mc_version
-		});
+		globalSettings.set(data);
 	} catch (err) {
 		console.error('Failed to save global settings:', err);
 		throw err;
 	}
 };
+

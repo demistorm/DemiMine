@@ -11,6 +11,7 @@ type Proxy struct {
 	Status           string    `json:"status"`
 	CanvasX          int       `json:"canvas_x"`
 	CanvasY          int       `json:"canvas_y"`
+	StartOnBoot      int       `json:"start_on_boot"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
@@ -31,6 +32,7 @@ type Server struct {
 	Status              string    `json:"status"`
 	CanvasX             int       `json:"canvas_x"`
 	CanvasY             int       `json:"canvas_y"`
+	StartOnBoot         int       `json:"start_on_boot"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -63,11 +65,11 @@ type JavaVersion struct {
 }
 
 type Backup struct {
-	ID        int64     `json:"id"`
-	ServerID  int64     `json:"server_id"`
-	Path      string    `json:"path"`
-	CreatedAt time.Time `json:"created_at"`
-	SizeBytes int64     `json:"size_bytes"`
+	ID          int64     `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	SizeBytes   int64     `json:"size_bytes"`
+	ArchivePath string    `json:"archive_path"`
+	Status      string    `json:"status"`
 }
 
 type CrashLog struct {
@@ -110,6 +112,7 @@ type ServerResponse struct {
 	PlayerCount         int     `json:"player_count"`
 	CanvasX             int     `json:"canvas_x"`
 	CanvasY             int     `json:"canvas_y"`
+	StartOnBoot         int     `json:"start_on_boot"`
 	IconPath            *string `json:"icon_path"`
 	MinimotdLine1       *string `json:"minimotd_line1"`
 	MinimotdLine2       *string `json:"minimotd_line2"`
@@ -128,6 +131,7 @@ type ProxyResponse struct {
 	ConnectedServers []string `json:"connected_servers"`
 	CanvasX          int      `json:"canvas_x"`
 	CanvasY          int      `json:"canvas_y"`
+	StartOnBoot      int      `json:"start_on_boot"`
 	IconPath         *string  `json:"icon_path"`
 	JarVersion       *string  `json:"jar_version"`
 	JarBuild         int      `json:"jar_build"`

@@ -19,6 +19,7 @@
 	let iconUploading = false;
 	let minimotdLine1 = server.minimotd_line1 || '';
 	let minimotdLine2 = server.minimotd_line2 || '';
+	let startOnBoot = server.start_on_boot === 1;
 
 	let updateInfo: JarUpdateInfo | null = null;
 	let checkingUpdate = false;
@@ -82,7 +83,8 @@
 				name: name !== server.name ? name : undefined,
 				ram_mb: ram !== server.ram_mb ? ram : undefined,
 				auto_shutdown_minutes: autoShutdown !== server.auto_shutdown_minutes ? autoShutdown : undefined,
-				backup_interval_days: backupInterval !== server.backup_interval_days ? backupInterval : undefined
+				backup_interval_days: backupInterval !== server.backup_interval_days ? backupInterval : undefined,
+				start_on_boot: startOnBoot !== (server.start_on_boot === 1) ? startOnBoot ? 1 : 0 : undefined
 			};
 
 			if (minimotdLine1 !== (server.minimotd_line1 || '')) {
@@ -103,7 +105,8 @@
 					auto_shutdown_minutes: autoShutdown,
 					backup_interval_days: backupInterval,
 					minimotd_line1: minimotdLine1,
-					minimotd_line2: minimotdLine2
+					minimotd_line2: minimotdLine2,
+					start_on_boot: startOnBoot ? 1 : 0
 				} : s)
 			);
 			
@@ -385,6 +388,14 @@
 
 	<div class="section">
 		<h2>Automation</h2>
+		
+		<div class="field">
+			<label class="checkbox-label">
+				<input type="checkbox" bind:checked={startOnBoot} />
+				<span>Start on boot</span>
+			</label>
+			<span class="hint">Automatically start this server when the manager starts</span>
+		</div>
 		
 		<div class="field">
 			<label for="shutdown">Auto-shutdown (minutes of inactivity)</label>

@@ -111,11 +111,10 @@ func RunMigrations(db *sql.DB) error {
 
 		`CREATE TABLE IF NOT EXISTS backups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			server_id INTEGER NOT NULL,
-			path TEXT NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			size_bytes INTEGER NOT NULL,
-			FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+			archive_path TEXT NOT NULL,
+			status TEXT DEFAULT 'complete'
 		)`,
 
 		`CREATE TABLE IF NOT EXISTS crash_logs (
@@ -176,6 +175,8 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE servers ADD COLUMN minimotd_line2 TEXT`,
 		`ALTER TABLE servers ADD COLUMN jar_build INTEGER DEFAULT 0`,
 		`ALTER TABLE servers ADD COLUMN jar_hash TEXT`,
+		`ALTER TABLE servers ADD COLUMN start_on_boot INTEGER DEFAULT 0`,
+		`ALTER TABLE proxies ADD COLUMN start_on_boot INTEGER DEFAULT 0`,
 	}
 
 	recreateMigrations := []struct {
@@ -190,22 +191,50 @@ func RunMigrations(db *sql.DB) error {
 			oldTable: "players",
 			newTable: "players_new",
 			createDDL: `CREATE TABLE players_new (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				name TEXT NOT NULL,
-				uuid TEXT NOT NULL UNIQUE,
-				server_id INTEGER NOT NULL,
-				joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-				FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
-			)`,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            uuid TEXT NOT NULL UNIQUE,
+            server_id INTEGER NOT NULL,
+            joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+        )`,
 			copyData: `INSERT INTO players_new (id, name, uuid, server_id, joined_at) 
-			           SELECT id, name, uuid, server_id, joined_at FROM players`,
+                   SELECT id, name, uuid, server_id, joined_at FROM players`,
+		},
+		{
+			name:     "update_backups_table_schema",
+			oldTable: "backups",
+			newTable: "backups_new",
+			createDDL: `CREATE TABLE backups_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            size_bytes INTEGER NOT NULL,
+            archive_path TEXT NOT NULL,
+            status TEXT DEFAULT 'complete'
+        )`,
+			copyData: `INSERT INTO backups_new (id, created_at, size_bytes, archive_path, status) 
+                   SELECT id, created_at, size_bytes, '', 'complete' FROM backups`,
 		},
 	}
 
 	for _, rm := range recreateMigrations {
-		var exists bool
-		db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=? AND sql LIKE '%uuid TEXT NOT NULL UNIQUE%'", rm.oldTable).Scan(&exists)
-		if exists {
+		var shouldMigrate bool
+
+		if rm.name == "add_unique_constraint_to_players_uuid" {
+			var hasUnique bool
+			db.QueryRow("SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name=? AND sql LIKE '%uuid TEXT NOT NULL UNIQUE%'", rm.oldTable).Scan(&hasUnique)
+			if !hasUnique {
+				shouldMigrate = true
+			}
+		} else if rm.name == "update_backups_table_schema" {
+			var hasStatusColumn int
+			db.QueryRow("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name='status'", rm.oldTable).Scan(&hasStatusColumn)
+			if hasStatusColumn == 0 {
+				shouldMigrate = true
+			}
+		}
+
+		if !shouldMigrate {
 			continue
 		}
 
@@ -233,7 +262,7 @@ func RunMigrations(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_servers_proxy ON servers(proxy_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_players_server ON players(server_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_players_uuid ON players(uuid)`,
-		`CREATE INDEX IF NOT EXISTS idx_backups_server ON backups(server_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_backups_status ON backups(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_crash_logs_server ON crash_logs(server_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_command_history_server ON command_history(server_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_installed_plugins_target ON installed_plugins(target_type, target_id)`,

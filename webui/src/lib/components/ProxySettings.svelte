@@ -7,6 +7,7 @@
 
 	let name = proxy.name || '';
 	let ramMB = proxy.ram_mb || 512;
+	let startOnBoot = proxy.start_on_boot === 1;
 	let saving = false;
 	let error = '';
 	let success = '';
@@ -72,7 +73,8 @@
 		try {
 			await api.patch(`/api/proxies/${proxy.id}`, {
 				name: name !== proxy.name ? name : undefined,
-				ram_mb: ramMB !== proxy.ram_mb ? ramMB : undefined
+				ram_mb: ramMB !== proxy.ram_mb ? ramMB : undefined,
+				start_on_boot: startOnBoot !== (proxy.start_on_boot === 1) ? startOnBoot ? 1 : 0 : undefined
 			});
 			
 			success = 'Settings saved successfully';
@@ -80,7 +82,8 @@
 				list.map(p => p.id === proxy.id ? { 
 					...p, 
 					name,
-					ram_mb: ramMB
+					ram_mb: ramMB,
+					start_on_boot: startOnBoot ? 1 : 0
 				} : p)
 			);
 			
@@ -328,6 +331,14 @@
 			<label for="ram">Memory (MB)</label>
 			<input type="number" id="ram" bind:value={ramMB} min="256" step="256" />
 			<span class="hint">Java heap size for the proxy (e.g., 512, 1024, 2048)</span>
+		</div>
+
+		<div class="field">
+			<label class="checkbox-label">
+				<input type="checkbox" bind:checked={startOnBoot} />
+				<span>Start on boot</span>
+			</label>
+			<span class="hint">Automatically start this proxy when the manager starts</span>
 		</div>
 	</div>
 

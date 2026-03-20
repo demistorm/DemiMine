@@ -22,6 +22,7 @@ const (
 	MessageTypeLog          MessageType = "log"
 	MessageTypeResources    MessageType = "resources"
 	MessageTypeCrash        MessageType = "crash"
+	MessageTypeBackupStatus MessageType = "backup_status"
 )
 
 type Message struct {

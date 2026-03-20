@@ -8,15 +8,17 @@ import (
 
 	"github.com/demimine/manager/internal/api/handlers"
 	"github.com/demimine/manager/internal/api/middleware"
+	"github.com/demimine/manager/internal/backup"
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
 	"github.com/demimine/manager/internal/minimotd"
 	"github.com/demimine/manager/internal/plugin"
+	"github.com/demimine/manager/internal/websocket"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 )
 
-func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client, consoleManager *docker.ConsoleManager) *chi.Mux {
+func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, hub *websocket.Hub, backupManager *backup.Manager) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimw.RequestID)
@@ -43,6 +45,11 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	jarUpdateHandler := handlers.NewJarUpdateHandler(database, cfg)
 	playerHandler := handlers.NewPlayerHandler(database, dockerClient, cfg)
 	apiKeyHandler := handlers.NewAPIKeyHandler(database)
+	backupsHandler := handlers.NewBackupsHandler(database, backupManager, serverHandler, proxyHandler, hub, consoleManager)
+
+	if backupManager != nil {
+		backupManager.SetHandlers(serverHandler, proxyHandler)
+	}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
@@ -93,6 +100,16 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 			r.Get("/", apiKeyHandler.List)
 			r.Post("/", apiKeyHandler.Create)
 			r.Delete("/{id}", apiKeyHandler.Delete)
+		})
+
+		r.Route("/backups", func(r chi.Router) {
+			r.Use(middleware.Auth(database, cfg.JWTSecret))
+			r.Get("/", backupsHandler.List)
+			r.Post("/", backupsHandler.Create)
+			r.Get("/{id}/download", backupsHandler.Download)
+			r.Post("/restore", backupsHandler.RestoreFromUpload)
+			r.Post("/{id}/restore", backupsHandler.RestoreFromDisk)
+			r.Delete("/{id}", backupsHandler.Delete)
 		})
 
 		r.Get("/servers/auto-shutdown", playerHandler.GetAutoShutdownServers)

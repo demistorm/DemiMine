@@ -45,7 +45,7 @@ RUN npm run build
 FROM alpine:3.19
 
 # Install necessary packages
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata zstd
 
 # Copy backend binary
 COPY --from=backend-builder /demimine /usr/local/bin/demimine
