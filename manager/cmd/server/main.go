@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -118,7 +119,7 @@ func main() {
 
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
 	defer cancel()
 
 	gracefulShutdown(database, dockerClient, ctx)
@@ -133,33 +134,60 @@ func main() {
 func gracefulShutdown(database *sql.DB, dockerClient *docker.Client, ctx context.Context) {
 	log.Println("Stopping all servers and proxies gracefully...")
 
-	rows, _ := database.Query("SELECT id, name FROM servers WHERE status = 'running'")
-	defer rows.Close()
+	var wg sync.WaitGroup
 
-	for rows.Next() {
-		var id int64
-		var name string
-		if err := rows.Scan(&id, &name); err == nil {
-			log.Printf("Stopping server: %s", name)
-			containerName := fmt.Sprintf("demimine-%s", name)
-			dockerClient.StopContainer(ctx, containerName, nil)
-			database.Exec("UPDATE servers SET status = 'stopped' WHERE id = ?", id)
+	rows, err := database.Query("SELECT id, name FROM servers WHERE status = 'running'")
+	if err != nil {
+		log.Printf("Error querying running servers: %v", err)
+	} else {
+		defer rows.Close()
+
+		for rows.Next() {
+			var id int64
+			var name string
+			if err := rows.Scan(&id, &name); err == nil {
+				wg.Add(1)
+				go func(serverID int64, serverName string) {
+					defer wg.Done()
+					log.Printf("Stopping server: %s", serverName)
+					if err := dockerClient.StopContainer(ctx, serverName, nil); err != nil {
+						log.Printf("Failed to stop server %s: %v", serverName, err)
+					} else {
+						if _, err := database.Exec("UPDATE servers SET status = 'stopped' WHERE id = ?", serverID); err != nil {
+							log.Printf("Failed to update server %s status: %v", serverName, err)
+						}
+					}
+				}(id, name)
+			}
 		}
 	}
 
-	proxyRows, _ := database.Query("SELECT id, name FROM proxies WHERE status = 'running'")
-	defer proxyRows.Close()
+	proxyRows, err := database.Query("SELECT id, name FROM proxies WHERE status = 'running'")
+	if err != nil {
+		log.Printf("Error querying running proxies: %v", err)
+	} else {
+		defer proxyRows.Close()
 
-	for proxyRows.Next() {
-		var id int64
-		var name string
-		if err := proxyRows.Scan(&id, &name); err == nil {
-			log.Printf("Stopping proxy: %s", name)
-			containerName := fmt.Sprintf("demimine-%s", name)
-			dockerClient.StopContainer(ctx, containerName, nil)
-			database.Exec("UPDATE proxies SET status = 'stopped' WHERE id = ?", id)
+		for proxyRows.Next() {
+			var id int64
+			var name string
+			if err := proxyRows.Scan(&id, &name); err == nil {
+				wg.Add(1)
+				go func(proxyID int64, proxyName string) {
+					defer wg.Done()
+					log.Printf("Stopping proxy: %s", proxyName)
+					if err := dockerClient.StopProxyContainer(ctx, proxyName, nil); err != nil {
+						log.Printf("Failed to stop proxy %s: %v", proxyName, err)
+					} else {
+						if _, err := database.Exec("UPDATE proxies SET status = 'stopped' WHERE id = ?", proxyID); err != nil {
+							log.Printf("Failed to update proxy %s status: %v", proxyName, err)
+						}
+					}
+				}(id, name)
+			}
 		}
 	}
 
+	wg.Wait()
 	log.Println("All servers and proxies stopped")
 }

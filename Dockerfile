@@ -63,4 +63,6 @@ WORKDIR /app
 
 EXPOSE 8080
 
+STOPSIGNAL SIGTERM
+
 CMD ["demimine"]

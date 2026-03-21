@@ -72,14 +72,24 @@ func (em *EventManager) processEvent(event events.Message) {
 	em.logManager.HandleContainerEvent(event)
 	em.consoleManager.HandleContainerEvent(containerName, string(event.Action))
 
-	var serverID int64
-	err := em.db.QueryRow("SELECT id FROM servers WHERE name = ?", event.Actor.Attributes["demimine.server_id"]).Scan(&serverID)
-	if err != nil {
-		log.Printf("Failed to find server ID for container %s: %v", containerName, err)
+	proxyIDAttr, hasProxy := event.Actor.Attributes["demimine.proxy_id"]
+	if hasProxy {
+		var proxyID int64
+		err := em.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyIDAttr).Scan(&proxyID)
+		if err == nil {
+			em.broadcastProxyStatusChange(proxyID, event.Action)
+		}
 		return
 	}
 
-	em.broadcastStatusChange(serverID, event.Action)
+	serverIDAttr, hasServer := event.Actor.Attributes["demimine.server_id"]
+	if hasServer {
+		var serverID int64
+		err := em.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverIDAttr).Scan(&serverID)
+		if err == nil {
+			em.broadcastStatusChange(serverID, event.Action)
+		}
+	}
 }
 
 func (em *EventManager) broadcastStatusChange(serverID int64, action events.Action) {
@@ -111,6 +121,41 @@ func (em *EventManager) broadcastStatusChange(serverID int64, action events.Acti
 	data, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("Failed to marshal status message: %v", err)
+		return
+	}
+
+	em.hub.Broadcast(data)
+}
+
+func (em *EventManager) broadcastProxyStatusChange(proxyID int64, action events.Action) {
+	var status string
+	switch action {
+	case "start":
+		status = "running"
+	case "die", "stop", "kill":
+		status = "stopped"
+	case "pause":
+		status = "paused"
+	case "unpause":
+		status = "running"
+	default:
+		return
+	}
+
+	_, err := em.db.Exec("UPDATE proxies SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", status, proxyID)
+	if err != nil {
+		log.Printf("Failed to update proxy %d status in database: %v", proxyID, err)
+	}
+
+	msg := map[string]interface{}{
+		"type":     "proxy_status",
+		"proxy_id": proxyID,
+		"status":   status,
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Failed to marshal proxy status message: %v", err)
 		return
 	}
 

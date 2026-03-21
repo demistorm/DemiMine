@@ -45,7 +45,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.jar_version, p.jar_build, p.created_at,
+		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.jar_version, p.jar_build, p.created_at, p.start_on_boot,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -65,7 +65,7 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var proxyID int64
 		var name, status string
-		var hostPort, ramMB int
+		var hostPort, ramMB, startOnBoot int
 		var forwardingSecret sql.NullString
 		var canvasX, canvasY int
 		var jarVersion sql.NullString
@@ -74,7 +74,7 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var serverName sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &jarVersion, &jarBuild, &createdAt, &serverName,
+			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &serverName,
 		)
 		if err != nil {
 			continue
@@ -90,6 +90,7 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 				Status:           status,
 				CanvasX:          canvasX,
 				CanvasY:          canvasY,
+				StartOnBoot:      startOnBoot,
 				JarBuild:         jarBuild,
 				CreatedAt:        createdAt,
 				ConnectedServers: []string{},
@@ -126,6 +127,7 @@ type CreateProxyRequest struct {
 	InstallDemiAuth    bool   `json:"install_demiauth"`
 	InstallDemiDynamic bool   `json:"install_demidynamic"`
 	InstallLuckPerms   bool   `json:"install_luckperms"`
+	StartOnBoot        int    `json:"start_on_boot"`
 }
 
 func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -196,9 +198,9 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.db.Exec(`
-		INSERT INTO proxies (name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y)
-		VALUES (?, ?, ?, ?, 'stopped', 4000, 4000)
-	`, req.Name, req.HostPort, ramMB, forwardingSecret)
+		INSERT INTO proxies (name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, start_on_boot)
+		VALUES (?, ?, ?, ?, 'stopped', 4000, 4000, ?)
+	`, req.Name, req.HostPort, ramMB, forwardingSecret, req.StartOnBoot)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -451,10 +453,11 @@ func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateProxyRequest struct {
-	Name    *string `json:"name"`
-	RAMMB   *int    `json:"ram_mb"`
-	CanvasX *int    `json:"canvas_x"`
-	CanvasY *int    `json:"canvas_y"`
+	Name        *string `json:"name"`
+	RAMMB       *int    `json:"ram_mb"`
+	CanvasX     *int    `json:"canvas_x"`
+	CanvasY     *int    `json:"canvas_y"`
+	StartOnBoot *int    `json:"start_on_boot"`
 }
 
 func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -495,6 +498,9 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CanvasY != nil {
 		h.db.Exec("UPDATE proxies SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
+	}
+	if req.StartOnBoot != nil {
+		h.db.Exec("UPDATE proxies SET start_on_boot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.StartOnBoot, id)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1444,5 +1450,76 @@ func updateDemiAuthLoginServer(proxyPath, loginServerName string) error {
 		return fmt.Errorf("failed to write demiauth config: %w", err)
 	}
 
+	return nil
+}
+
+func (h *ProxyHandler) ListAll() ([]models.Proxy, error) {
+	rows, err := h.db.Query(`
+		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, start_on_boot, created_at
+		FROM proxies`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var proxies []models.Proxy
+	for rows.Next() {
+		var p models.Proxy
+		var forwardingSecret sql.NullString
+		if err := rows.Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &p.StartOnBoot, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		if forwardingSecret.Valid {
+			p.ForwardingSecret = forwardingSecret.String
+		}
+		proxies = append(proxies, p)
+	}
+	return proxies, nil
+}
+
+func (h *ProxyHandler) StopByID(id int64) error {
+	var name string
+	err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	timeout := 30
+	containerName := "demimine-" + name
+	if err := h.docker.StopContainer(ctx, containerName, &timeout); err != nil {
+		if !strings.Contains(err.Error(), "No such container") {
+			return err
+		}
+	}
+
+	h.db.Exec("UPDATE proxies SET status = 'stopped' WHERE id = ?", id)
+	return nil
+}
+
+func (h *ProxyHandler) StartByID(id int64) error {
+	var name string
+	var hostPort, ramMB int
+	err := h.db.QueryRow(`
+		SELECT name, host_port, ram_mb FROM proxies WHERE id = ?`, id).
+		Scan(&name, &hostPort, &ramMB)
+	if err != nil {
+		return err
+	}
+
+	cfg := docker.ProxyContainerConfig{
+		Name:        name,
+		HostPort:    hostPort,
+		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName: h.cfg.NetworkName,
+		RAMMB:       ramMB,
+	}
+
+	ctx := context.Background()
+	if err := h.docker.StartProxyContainer(ctx, name, &cfg); err != nil {
+		return err
+	}
+
+	h.db.Exec("UPDATE proxies SET status = 'running' WHERE id = ?", id)
 	return nil
 }

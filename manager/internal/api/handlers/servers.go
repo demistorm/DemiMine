@@ -57,7 +57,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
-		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2
+		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2, s.start_on_boot
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
 		LEFT JOIN (SELECT server_id, COUNT(*) as cnt FROM players GROUP BY server_id) pc ON pc.server_id = s.id
@@ -87,7 +87,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 			&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
-			&minimotdLine1, &minimotdLine2,
+			&minimotdLine1, &minimotdLine2, &s.StartOnBoot,
 		)
 		if err != nil {
 			continue
@@ -130,6 +130,7 @@ type CreateServerRequest struct {
 	ScheduledStop       *string `json:"scheduled_stop"`
 	MinimotdLine1       *string `json:"minimotd_line1"`
 	MinimotdLine2       *string `json:"minimotd_line2"`
+	StartOnBoot         int     `json:"start_on_boot"`
 }
 
 func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -245,9 +246,9 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.db.Exec(`
-		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y, minimotd_line1, minimotd_line2)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?)
-	`, req.Name, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop, minimotdLine1, minimotdLine2)
+		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y, minimotd_line1, minimotd_line2, start_on_boot)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?, ?)
+	`, req.Name, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop, minimotdLine1, minimotdLine2, req.StartOnBoot)
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -536,6 +537,7 @@ type UpdateServerRequest struct {
 	Domain              *string `json:"domain"`
 	MinimotdLine1       *string `json:"minimotd_line1"`
 	MinimotdLine2       *string `json:"minimotd_line2"`
+	StartOnBoot         *int    `json:"start_on_boot"`
 }
 
 func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -594,6 +596,9 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MinimotdLine2 != nil {
 		h.db.Exec("UPDATE servers SET minimotd_line2 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.MinimotdLine2, id)
+	}
+	if req.StartOnBoot != nil {
+		h.db.Exec("UPDATE servers SET start_on_boot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.StartOnBoot, id)
 	}
 
 	var currentName sql.NullString
@@ -1706,4 +1711,101 @@ func isTextFile(content []byte) bool {
 	}
 
 	return nullCount == 0
+}
+
+func (h *ServerHandler) ListAll() ([]models.Server, error) {
+	rows, err := h.db.Query(`
+		SELECT id, name, type, version, proxy_id, host_port, ram_mb, domain,
+		       backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop,
+		       status, canvas_x, canvas_y, start_on_boot, created_at, updated_at
+		FROM servers`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var servers []models.Server
+	for rows.Next() {
+		var s models.Server
+		var scheduledStart, scheduledStop, domain sql.NullString
+		var hostPort sql.NullInt64
+		var proxyID sql.NullInt64
+		if err := rows.Scan(&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &hostPort, &s.RAMMB, &domain,
+			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
+			&s.Status, &s.CanvasX, &s.CanvasY, &s.StartOnBoot, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if proxyID.Valid {
+			s.ProxyID = &proxyID.Int64
+		}
+		if hostPort.Valid {
+			port := int(hostPort.Int64)
+			s.HostPort = &port
+		}
+		if domain.Valid {
+			s.Domain = &domain.String
+		}
+		if scheduledStart.Valid {
+			s.ScheduledStart = &scheduledStart.String
+		}
+		if scheduledStop.Valid {
+			s.ScheduledStop = &scheduledStop.String
+		}
+		servers = append(servers, s)
+	}
+	return servers, nil
+}
+
+func (h *ServerHandler) StopByID(id int64) error {
+	var name string
+	err := h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	timeout := 30
+	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
+		if !strings.Contains(err.Error(), "No such container") {
+			return err
+		}
+	}
+
+	h.db.Exec("UPDATE servers SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+	return nil
+}
+
+func (h *ServerHandler) StartByID(id int64) error {
+	var name, serverType, version string
+	var ramMB int
+	var hostPort sql.NullInt64
+	err := h.db.QueryRow(`
+		SELECT name, type, version, ram_mb, host_port FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort)
+	if err != nil {
+		return err
+	}
+
+	port := 0
+	if hostPort.Valid {
+		port = int(hostPort.Int64)
+	}
+
+	cfg := &docker.ServerContainerConfig{
+		Name:        name,
+		ServerType:  serverType,
+		Version:     version,
+		RAMMB:       ramMB,
+		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName: h.cfg.NetworkName,
+		HostPort:    port,
+	}
+
+	ctx := context.Background()
+	if err := h.docker.StartContainer(ctx, name, cfg); err != nil {
+		return err
+	}
+
+	h.db.Exec("UPDATE servers SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+	return nil
 }
