@@ -8,6 +8,11 @@
 	let name = proxy.name || '';
 	let ramMB = proxy.ram_mb || 512;
 	let startOnBoot = proxy.start_on_boot === 1;
+	let scheduleEnabled = proxy.scheduled_start !== null || proxy.scheduled_stop !== null;
+	let scheduledStartHour = proxy.scheduled_start ? parseInt(proxy.scheduled_start.split(':')[0]) : 9;
+	let scheduledStartMinute = proxy.scheduled_start ? parseInt(proxy.scheduled_start.split(':')[1]) : 0;
+	let scheduledStopHour = proxy.scheduled_stop ? parseInt(proxy.scheduled_stop.split(':')[0]) : 22;
+	let scheduledStopMinute = proxy.scheduled_stop ? parseInt(proxy.scheduled_stop.split(':')[1]) : 0;
 	let saving = false;
 	let error = '';
 	let success = '';
@@ -71,11 +76,23 @@
 		success = '';
 
 		try {
-			await api.patch(`/api/proxies/${proxy.id}`, {
+			const body: Record<string, any> = {
 				name: name !== proxy.name ? name : undefined,
 				ram_mb: ramMB !== proxy.ram_mb ? ramMB : undefined,
 				start_on_boot: startOnBoot !== (proxy.start_on_boot === 1) ? startOnBoot ? 1 : 0 : undefined
-			});
+			};
+
+			if (scheduleEnabled) {
+				const startStr = `${scheduledStartHour.toString().padStart(2, '0')}:${scheduledStartMinute.toString().padStart(2, '0')}`;
+				const stopStr = `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}`;
+				body.scheduled_start = startStr;
+				body.scheduled_stop = stopStr;
+			} else {
+				body.scheduled_start = null;
+				body.scheduled_stop = null;
+			}
+
+			await api.patch(`/api/proxies/${proxy.id}`, body);
 			
 			success = 'Settings saved successfully';
 			proxies.update(list => 
@@ -83,7 +100,9 @@
 					...p, 
 					name,
 					ram_mb: ramMB,
-					start_on_boot: startOnBoot ? 1 : 0
+					start_on_boot: startOnBoot ? 1 : 0,
+					scheduled_start: scheduleEnabled ? `${scheduledStartHour.toString().padStart(2, '0')}:${scheduledStartMinute.toString().padStart(2, '0')}` : null,
+					scheduled_stop: scheduleEnabled ? `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}` : null
 				} : p)
 			);
 			
@@ -340,6 +359,51 @@
 			</label>
 			<span class="hint">Automatically start this proxy when the manager starts</span>
 		</div>
+
+		<div class="field">
+			<label class="checkbox-label">
+				<input type="checkbox" bind:checked={scheduleEnabled} />
+				<span>Enable scheduled start/stop</span>
+			</label>
+			<span class="hint">Automatically start and stop this proxy at specific times</span>
+		</div>
+
+		{#if scheduleEnabled}
+			<div class="field schedule-fields">
+				<label>Start Time</label>
+				<div class="time-input">
+					<select bind:value={scheduledStartHour} class="time-field">
+						{#each Array(24) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+					<span class="time-separator">:</span>
+					<select bind:value={scheduledStartMinute} class="time-field">
+						{#each Array(60) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+
+			<div class="field schedule-fields">
+				<label>Stop Time</label>
+				<div class="time-input">
+					<select bind:value={scheduledStopHour} class="time-field">
+						{#each Array(24) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+					<span class="time-separator">:</span>
+					<select bind:value={scheduledStopMinute} class="time-field">
+						{#each Array(60) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+				</div>
+				<span class="hint">24-hour format (00:00 - 23:59)</span>
+			</div>
+		{/if}
 	</div>
 
 	<div class="section">
@@ -713,6 +777,37 @@
 	.btn.danger:hover:not(:disabled) {
 		background-color: var(--error);
 		color: white;
+	}
+
+	.schedule-fields {
+		margin-left: 1.5rem;
+	}
+
+	.time-input {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		max-width: 200px;
+	}
+
+	.time-field {
+		flex: 1;
+		padding: 0.625rem 0.5rem;
+		background-color: var(--bg-primary);
+		border: 1px solid var(--border);
+		border-radius: 0.375rem;
+		color: var(--text-primary);
+		font-size: 0.9375rem;
+	}
+
+	.time-field:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
+
+	.time-separator {
+		color: var(--text-primary);
+		font-weight: 500;
 	}
 
 	.save-bar {

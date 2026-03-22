@@ -6,8 +6,6 @@
 	export let server: Server;
 
 	let ram = server.ram_mb || 2048;
-	let autoShutdown = server.auto_shutdown_minutes || 15;
-	let backupInterval = server.backup_interval_days || 7;
 	let name = server.name || '';
 	let saving = false;
 	let error = '';
@@ -20,6 +18,11 @@
 	let minimotdLine1 = server.minimotd_line1 || '';
 	let minimotdLine2 = server.minimotd_line2 || '';
 	let startOnBoot = server.start_on_boot === 1;
+	let scheduleEnabled = server.scheduled_start !== null || server.scheduled_stop !== null;
+	let scheduledStartHour = server.scheduled_start ? parseInt(server.scheduled_start.split(':')[0]) : 9;
+	let scheduledStartMinute = server.scheduled_start ? parseInt(server.scheduled_start.split(':')[1]) : 0;
+	let scheduledStopHour = server.scheduled_stop ? parseInt(server.scheduled_stop.split(':')[0]) : 22;
+	let scheduledStopMinute = server.scheduled_stop ? parseInt(server.scheduled_stop.split(':')[1]) : 0;
 
 	let updateInfo: JarUpdateInfo | null = null;
 	let checkingUpdate = false;
@@ -82,8 +85,6 @@
 			const body: Record<string, any> = {
 				name: name !== server.name ? name : undefined,
 				ram_mb: ram !== server.ram_mb ? ram : undefined,
-				auto_shutdown_minutes: autoShutdown !== server.auto_shutdown_minutes ? autoShutdown : undefined,
-				backup_interval_days: backupInterval !== server.backup_interval_days ? backupInterval : undefined,
 				start_on_boot: startOnBoot !== (server.start_on_boot === 1) ? startOnBoot ? 1 : 0 : undefined
 			};
 
@@ -94,6 +95,16 @@
 				body.minimotd_line2 = minimotdLine2;
 			}
 
+			if (scheduleEnabled) {
+				const startStr = `${scheduledStartHour.toString().padStart(2, '0')}:${scheduledStartMinute.toString().padStart(2, '0')}`;
+				const stopStr = `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}`;
+				body.scheduled_start = startStr;
+				body.scheduled_stop = stopStr;
+			} else {
+				body.scheduled_start = null;
+				body.scheduled_stop = null;
+			}
+
 			await api.patch(`/api/servers/${server.id}`, body);
 			
 			success = 'Settings saved successfully';
@@ -102,11 +113,11 @@
 					...s, 
 					name,
 					ram_mb: ram,
-					auto_shutdown_minutes: autoShutdown,
-					backup_interval_days: backupInterval,
 					minimotd_line1: minimotdLine1,
 					minimotd_line2: minimotdLine2,
-					start_on_boot: startOnBoot ? 1 : 0
+					start_on_boot: startOnBoot ? 1 : 0,
+					scheduled_start: scheduleEnabled ? `${scheduledStartHour.toString().padStart(2, '0')}:${scheduledStartMinute.toString().padStart(2, '0')}` : null,
+					scheduled_stop: scheduleEnabled ? `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}` : null
 				} : s)
 			);
 			
@@ -398,16 +409,49 @@
 		</div>
 		
 		<div class="field">
-			<label for="shutdown">Auto-shutdown (minutes of inactivity)</label>
-			<input type="number" id="shutdown" bind:value={autoShutdown} min={0} />
-			<span class="hint">Set to 0 to disable auto-shutdown</span>
+			<label class="checkbox-label">
+				<input type="checkbox" bind:checked={scheduleEnabled} />
+				<span>Enable scheduled start/stop</span>
+			</label>
+			<span class="hint">Automatically start and stop this server at specific times</span>
 		</div>
 
-		<div class="field">
-			<label for="backup">Backup Interval (days)</label>
-			<input type="number" id="backup" bind:value={backupInterval} min={0} />
-			<span class="hint">Set to 0 to disable automatic backups</span>
-		</div>
+		{#if scheduleEnabled}
+			<div class="field schedule-fields">
+				<label>Start Time</label>
+				<div class="time-input">
+					<select bind:value={scheduledStartHour} class="time-field">
+						{#each Array(24) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+					<span class="time-separator">:</span>
+					<select bind:value={scheduledStartMinute} class="time-field">
+						{#each Array(60) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+
+			<div class="field schedule-fields">
+				<label>Stop Time</label>
+				<div class="time-input">
+					<select bind:value={scheduledStopHour} class="time-field">
+						{#each Array(24) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+					<span class="time-separator">:</span>
+					<select bind:value={scheduledStopMinute} class="time-field">
+						{#each Array(60) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+				</div>
+				<span class="hint">24-hour format (00:00 - 23:59)</span>
+			</div>
+		{/if}
 	</div>
 
 	<div class="section">
@@ -805,6 +849,37 @@
 	.info-box.warning {
 		background: rgba(234, 179, 8, 0.1);
 		border-color: rgba(234, 179, 8, 0.3);
+	}
+
+	.schedule-fields {
+		margin-left: 1.5rem;
+	}
+
+	.time-input {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		max-width: 200px;
+	}
+
+	.time-field {
+		flex: 1;
+		padding: 0.625rem 0.5rem;
+		background-color: var(--bg-primary);
+		border: 1px solid var(--border);
+		border-radius: 0.375rem;
+		color: var(--text-primary);
+		font-size: 0.9375rem;
+	}
+
+	.time-field:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
+
+	.time-separator {
+		color: var(--text-primary);
+		font-weight: 500;
 	}
 
 </style>

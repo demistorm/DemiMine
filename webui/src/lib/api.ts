@@ -289,6 +289,8 @@ export interface Proxy {
 	canvas_y: number;
 	icon_path: string | null;
 	start_on_boot: number;
+	scheduled_start: string | null;
+	scheduled_stop: string | null;
 	jar_version: string | null;
 	jar_build: number;
 	created_at: string;

@@ -45,7 +45,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.jar_version, p.jar_build, p.created_at, p.start_on_boot,
+		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -71,10 +71,12 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var jarVersion sql.NullString
 		var jarBuild int
 		var createdAt string
+		var scheduledStart sql.NullString
+		var scheduledStop sql.NullString
 		var serverName sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &serverName,
+			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &serverName,
 		)
 		if err != nil {
 			continue
@@ -101,6 +103,12 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 			if jarVersion.Valid {
 				proxy.JarVersion = &jarVersion.String
+			}
+			if scheduledStart.Valid {
+				proxy.ScheduledStart = &scheduledStart.String
+			}
+			if scheduledStop.Valid {
+				proxy.ScheduledStop = &scheduledStop.String
 			}
 			proxyMap[proxyID] = proxy
 			proxyOrder = append(proxyOrder, proxyID)
@@ -351,11 +359,13 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var p models.ProxyResponse
 	var forwardingSecret sql.NullString
 	var jarVersion sql.NullString
+	var scheduledStart sql.NullString
+	var scheduledStop sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, jar_version, jar_build, created_at
+		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &jarVersion, &p.JarBuild, &p.CreatedAt)
+	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -377,6 +387,14 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	if jarVersion.Valid {
 		p.JarVersion = &jarVersion.String
+	}
+
+	if scheduledStart.Valid {
+		p.ScheduledStart = &scheduledStart.String
+	}
+
+	if scheduledStop.Valid {
+		p.ScheduledStop = &scheduledStop.String
 	}
 
 	serverRows, err := h.db.Query("SELECT name FROM servers WHERE proxy_id = ?", p.ID)
@@ -453,11 +471,13 @@ func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateProxyRequest struct {
-	Name        *string `json:"name"`
-	RAMMB       *int    `json:"ram_mb"`
-	CanvasX     *int    `json:"canvas_x"`
-	CanvasY     *int    `json:"canvas_y"`
-	StartOnBoot *int    `json:"start_on_boot"`
+	Name           *string `json:"name"`
+	RAMMB          *int    `json:"ram_mb"`
+	CanvasX        *int    `json:"canvas_x"`
+	CanvasY        *int    `json:"canvas_y"`
+	StartOnBoot    *int    `json:"start_on_boot"`
+	ScheduledStart *string `json:"scheduled_start"`
+	ScheduledStop  *string `json:"scheduled_stop"`
 }
 
 func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -501,6 +521,12 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.StartOnBoot != nil {
 		h.db.Exec("UPDATE proxies SET start_on_boot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.StartOnBoot, id)
+	}
+	if req.ScheduledStart != nil {
+		h.db.Exec("UPDATE proxies SET scheduled_start = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStart, id)
+	}
+	if req.ScheduledStop != nil {
+		h.db.Exec("UPDATE proxies SET scheduled_stop = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStop, id)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
