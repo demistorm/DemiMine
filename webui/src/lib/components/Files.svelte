@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api';
 	import { getAceMode } from '$lib/utils/ace-utils';
+	import { formatDate } from '$lib/utils';
+	import { globalSettings } from '$lib/stores/settings';
 	import AceEditor from '$lib/components/AceEditor.svelte';
 
 	export let id: number;
@@ -268,11 +270,6 @@
 		return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 	}
 
-	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
-		return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-	}
-
 	$: pathSegments = currentPath.split('/').filter(Boolean);
 </script>
 
@@ -363,7 +360,7 @@
 							{file.name}
 						</span>
 						<span class="col-size">{file.is_dir ? '-' : formatSize(file.size)}</span>
-						<span class="col-modified">{formatDate(file.modified)}</span>
+						<span class="col-modified">{formatDate(file.modified, $globalSettings.server_timezone)}</span>
 						<span class="col-actions">
 							{#if !file.is_dir}
 								<button class="action-btn" on:click={() => downloadFile(file)} title="Download">⬇</button>

@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { loadGlobalSettings, globalSettings, saveGlobalSettings, type GlobalSettings } from '$lib/stores/settings';
 	import { backupsApi, type Backup } from '$lib/api';
-	import { formatBytes } from '$lib/utils';
+	import { formatBytes, formatDate } from '$lib/utils';
 
 	let loading = true;
 	let saving = false;
@@ -199,7 +199,7 @@
             <div class="backup-item">
               <div class="backup-info">
                 <span class="backup-name">{backup.archive_path.split('/').pop()}</span>
-                <span class="backup-meta">{formatBytes(backup.size_bytes)} • {new Date(backup.created_at).toLocaleDateString()}</span>
+                <span class="backup-meta">{formatBytes(backup.size_bytes)} • {formatDate(backup.created_at, $globalSettings.server_timezone)}</span>
               </div>
               <div class="backup-actions">
                 <button class="btn small" on:click={() => downloadBackup(backup)}>Download</button>

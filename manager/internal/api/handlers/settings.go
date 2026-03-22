@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"os"
 )
 
 type SettingsHandler struct {
@@ -44,6 +45,14 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := settings["retention_count"]; !ok {
 		settings["retention_count"] = "2"
+	}
+
+	if _, ok := settings["server_timezone"]; !ok {
+		tz := os.Getenv("TZ")
+		if tz == "" {
+			tz = "UTC"
+		}
+		settings["server_timezone"] = tz
 	}
 
 	w.Header().Set("Content-Type", "application/json")
