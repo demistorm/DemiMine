@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -63,6 +64,8 @@ func main() {
 	log.Println("Docker client initialized successfully")
 
 	dockerClient.SyncServerStatus(context.Background(), database)
+
+	startOnBoot(database, dockerClient, cfg)
 
 	consoleManager := docker.NewConsoleManager(dockerClient, database)
 
@@ -190,4 +193,109 @@ func gracefulShutdown(database *sql.DB, dockerClient *docker.Client, ctx context
 
 	wg.Wait()
 	log.Println("All servers and proxies stopped")
+}
+
+func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Config) {
+	log.Println("Starting servers and proxies with start_on_boot enabled...")
+
+	var wg sync.WaitGroup
+
+	proxyRows, err := database.Query(
+		"SELECT id, name, host_port, COALESCE(ram_mb, 512) FROM proxies WHERE start_on_boot = 1")
+	if err != nil {
+		log.Printf("Error querying start_on_boot proxies: %v", err)
+	} else {
+		type proxyInfo struct {
+			id       int64
+			name     string
+			hostPort int
+			ramMB    int
+		}
+		var proxies []proxyInfo
+		for proxyRows.Next() {
+			var p proxyInfo
+			if err := proxyRows.Scan(&p.id, &p.name, &p.hostPort, &p.ramMB); err != nil {
+				log.Printf("Failed to scan proxy row: %v", err)
+				continue
+			}
+			proxies = append(proxies, p)
+		}
+		proxyRows.Close()
+
+		for _, p := range proxies {
+			wg.Add(1)
+			go func(p proxyInfo) {
+				defer wg.Done()
+				log.Printf("Starting proxy: %s", p.name)
+				proxyCfg := &docker.ProxyContainerConfig{
+					Name:        p.name,
+					HostPort:    p.hostPort,
+					ProxyPath:   filepath.Join(cfg.HostServersDir, p.name),
+					NetworkName: cfg.NetworkName,
+					RAMMB:       p.ramMB,
+				}
+				if err := dockerClient.StartProxyContainer(context.Background(), p.name, proxyCfg); err != nil {
+					log.Printf("Failed to start proxy %s: %v", p.name, err)
+				} else {
+					database.Exec("UPDATE proxies SET status = 'running' WHERE id = ?", p.id)
+				}
+			}(p)
+		}
+	}
+
+	wg.Wait()
+
+	serverRows, err := database.Query(
+		"SELECT id, name, type, version, ram_mb, host_port FROM servers WHERE start_on_boot = 1")
+	if err != nil {
+		log.Printf("Error querying start_on_boot servers: %v", err)
+	} else {
+		type serverInfo struct {
+			id         int64
+			name       string
+			serverType string
+			version    string
+			ramMB      int
+			hostPort   sql.NullInt64
+		}
+		var servers []serverInfo
+		for serverRows.Next() {
+			var s serverInfo
+			if err := serverRows.Scan(&s.id, &s.name, &s.serverType, &s.version, &s.ramMB, &s.hostPort); err != nil {
+				log.Printf("Failed to scan server row: %v", err)
+				continue
+			}
+			servers = append(servers, s)
+		}
+		serverRows.Close()
+
+		for _, s := range servers {
+			wg.Add(1)
+			go func(s serverInfo) {
+				defer wg.Done()
+				log.Printf("Starting server: %s", s.name)
+				port := 0
+				if s.hostPort.Valid {
+					port = int(s.hostPort.Int64)
+				}
+				serverCfg := &docker.ServerContainerConfig{
+					Name:        s.name,
+					ServerType:  s.serverType,
+					Version:     s.version,
+					RAMMB:       s.ramMB,
+					ServerPath:  filepath.Join(cfg.HostServersDir, s.name),
+					NetworkName: cfg.NetworkName,
+					HostPort:    port,
+				}
+				if err := dockerClient.StartContainer(context.Background(), s.name, serverCfg); err != nil {
+					log.Printf("Failed to start server %s: %v", s.name, err)
+				} else {
+					database.Exec("UPDATE servers SET status = 'running' WHERE id = ?", s.id)
+				}
+			}(s)
+		}
+	}
+
+	wg.Wait()
+	log.Println("All start_on_boot servers and proxies started")
 }
