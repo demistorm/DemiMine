@@ -12,7 +12,8 @@ export function formatDate(dateStr: string, timezone: string): string {
 	const timePart = date.toLocaleTimeString('en-US', {
 		timeZone: timezone,
 		hour: '2-digit',
-		minute: '2-digit'
+		minute: '2-digit',
+		hour12: false
 	});
 	return `${datePart} ${timePart}`;
 }
