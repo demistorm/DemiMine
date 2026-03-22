@@ -13,12 +13,13 @@ import (
 	"github.com/demimine/manager/internal/docker"
 	"github.com/demimine/manager/internal/minimotd"
 	"github.com/demimine/manager/internal/plugin"
+	"github.com/demimine/manager/internal/scheduler"
 	"github.com/demimine/manager/internal/websocket"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 )
 
-func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, hub *websocket.Hub, backupManager *backup.Manager) *chi.Mux {
+func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, hub *websocket.Hub, backupManager *backup.Manager, scheduler *scheduler.Scheduler) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimw.RequestID)
@@ -49,6 +50,10 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 
 	if backupManager != nil {
 		backupManager.SetHandlers(serverHandler, proxyHandler)
+	}
+
+	if scheduler != nil {
+		scheduler.SetHandlers(serverHandler, proxyHandler)
 	}
 
 	r.Route("/api", func(r chi.Router) {

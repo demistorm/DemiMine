@@ -19,6 +19,7 @@ import (
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/db"
 	"github.com/demimine/manager/internal/docker"
+	"github.com/demimine/manager/internal/scheduler"
 )
 
 func main() {
@@ -94,7 +95,10 @@ func main() {
 	backupScheduler.Start()
 	defer backupScheduler.Stop()
 
-	router := api.NewRouter(database, cfg, dockerClient, consoleManager, wsHandler.GetHub(), backupManager)
+	taskScheduler := scheduler.NewScheduler(database)
+	router := api.NewRouter(database, cfg, dockerClient, consoleManager, wsHandler.GetHub(), backupManager, taskScheduler)
+	taskScheduler.Start()
+	defer taskScheduler.Stop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/ws", wsHandler.Handle)

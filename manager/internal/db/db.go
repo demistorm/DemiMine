@@ -25,8 +25,8 @@ func Connect(databaseURL string) (*sql.DB, error) {
 			return
 		}
 
-		db.SetMaxOpenConns(1)
-		db.SetMaxIdleConns(1)
+		db.SetMaxOpenConns(5)
+		db.SetMaxIdleConns(2)
 		db.SetConnMaxLifetime(0)
 
 		if err = db.Ping(); err != nil {
