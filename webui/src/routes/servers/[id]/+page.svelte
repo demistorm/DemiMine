@@ -8,7 +8,6 @@
 	import Console from '$lib/components/Console.svelte';
 	import Files from '$lib/components/Files.svelte';
 	import Settings from '$lib/components/Settings.svelte';
-	import Backups from '$lib/components/Backups.svelte';
 	import PluginBrowser from '$lib/components/PluginBrowser.svelte';
 	import ProfileButton from '$lib/components/ProfileButton.svelte';
 
@@ -173,9 +172,6 @@
 				Plugins
 			</button>
 		{/if}
-		<button class="tab" class:active={activeTab === 'backups'} on:click={() => setTab('backups')}>
-			Backups
-		</button>
 		<button class="tab" class:active={activeTab === 'settings'} on:click={() => setTab('settings')}>
 			Settings
 		</button>
@@ -197,9 +193,6 @@
 						gameVersion={server.version}
 						loaders={getLoadersForServer()}
 					/>
-				</div>
-				<div class:hidden={activeTab !== 'backups'}>
-					<Backups serverId={serverId} />
 				</div>
 				<div class:hidden={activeTab !== 'settings'}>
 					<Settings {server} on:deleted={goBack} />

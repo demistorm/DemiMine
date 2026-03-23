@@ -1,6 +1,6 @@
 data/
-servers/
-proxies/
+./servers/
+./proxies/
 backups/
 /java/
 *.db
