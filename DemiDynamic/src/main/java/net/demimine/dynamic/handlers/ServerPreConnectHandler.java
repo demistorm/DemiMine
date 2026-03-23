@@ -150,26 +150,36 @@ public class ServerPreConnectHandler {
     }
 
     private void startServerAndQueue(Player player, String serverName, String currentServerName, boolean inHub) {
-        boolean started = apiClient.startServer(serverName);
-        if (started) {
-            waitForServerReady(player, serverName, currentServerName, inHub);
-        } else {
-            List<ApiClient.AutoShutdownServer> autoStopServers = apiClient.getAutoShutdownServers();
-            if (autoStopServers != null && !autoStopServers.isEmpty()) {
-                ApiClient.AutoShutdownServer serverToStop = autoStopServers.get(0);
-                logger.info("RAM full, stopping " + serverToStop.name + " to free resources");
-                
-                if (apiClient.stopServer(String.valueOf(serverToStop.id))) {
-                    if (apiClient.startServer(serverName)) {
-                        waitForServerReady(player, serverName, currentServerName, inHub);
-                        return;
-                    }
+        ApiClient.CanStartResponse canStart = apiClient.canStartServer(serverName);
+
+        if (!canStart.can_start) {
+            List<String> toStop = autoStopManager.getServersWithPendingStopTimers();
+            if (!toStop.isEmpty()) {
+                logger.info("Insufficient RAM, stopping " + toStop.size() + " idle servers");
+
+                for (String server : toStop) {
+                    logger.info("Stopping idle server: " + server);
+                    apiClient.stopServerByName(server);
                 }
+
+                for (String server : toStop) {
+                    logger.info("Waiting for container removal: " + server);
+                    apiClient.waitForContainerRemoval(server);
+                }
+
+                canStart = apiClient.canStartServer(serverName);
             }
-            
-            MiniMessage mm = MiniMessage.miniMessage();
-            player.sendMessage(mm.deserialize("<red>Failed to start server. Please try again later."));
-            queueManager.removeFromQueue(player);
+        }
+
+        if (canStart.can_start) {
+            boolean started = apiClient.startServer(serverName);
+            if (started) {
+                waitForServerReady(player, serverName, currentServerName, inHub);
+            } else {
+                sendResourceExceededMessage(player, currentServerName, inHub);
+            }
+        } else {
+            sendResourceExceededMessage(player, currentServerName, inHub);
         }
     }
 
@@ -241,5 +251,17 @@ public class ServerPreConnectHandler {
     private void sendStartingMessage(Player player) {
         MiniMessage mm = MiniMessage.miniMessage();
         player.sendMessage(mm.deserialize(config.configVar.messages.starting));
+    }
+
+    private void sendResourceExceededMessage(Player player, String currentServerName, boolean inHub) {
+        MiniMessage mm = MiniMessage.miniMessage();
+        String message = config.configVar.messages.resourceExceeded;
+
+        if (inHub) {
+            player.sendMessage(mm.deserialize(message));
+        } else {
+            player.disconnect(mm.deserialize(message));
+        }
+        queueManager.removeFromQueue(player);
     }
 }

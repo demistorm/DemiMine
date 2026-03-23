@@ -45,7 +45,7 @@ func Load() (*Config, error) {
 		v.SetDefault("BACKUPS_DIR", "/backups")
 		v.SetDefault("JAVA_DIR", "/java")
 		v.SetDefault("NETWORK", "demimine_internal")
-		v.SetDefault("MAX_RAM_MB", 0)
+		v.SetDefault("MAX_RAM_MB", 16384)
 		v.SetDefault("JWT_SECRET", "")
 		v.SetDefault("SESSION_KEY", "")
 		v.SetDefault("DATABASE_URL", "")

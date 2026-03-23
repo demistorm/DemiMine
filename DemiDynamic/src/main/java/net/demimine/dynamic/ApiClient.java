@@ -36,6 +36,14 @@ public class ApiClient {
         public int player_count;
     }
 
+    public static class CanStartResponse {
+        public boolean can_start;
+        public long current_usage_mb;
+        public long projected_usage_mb;
+        public int max_mb;
+        public String reason;
+    }
+
     public ApiClient(Config config, Logger logger) {
         this.config = config;
         this.logger = logger;
@@ -225,5 +233,52 @@ public class ApiClient {
             Thread.currentThread().interrupt();
         }
         return null;
+    }
+
+    public CanStartResponse canStartServer(String serverName) {
+        String url = config.configVar.managerUrl + "/api/servers/" + serverName + "/can-start";
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .POST(BodyPublishers.ofString(""))
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .timeout(Duration.ofSeconds(30))
+            .build();
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                String body = response.body();
+                return gson.fromJson(body, CanStartResponse.class);
+            }
+        } catch (IOException | InterruptedException e) {
+            logger.warn("Error checking if server can start: " + serverName, e);
+            Thread.currentThread().interrupt();
+        }
+        return null;
+    }
+
+    public boolean waitForContainerRemoval(String serverName) {
+        String url = config.configVar.managerUrl + "/api/servers/" + serverName + "/wait-for-removal";
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .POST(BodyPublishers.ofString(""))
+            .header("Authorization", "Bearer " + config.configVar.apiKey)
+            .timeout(Duration.ofSeconds(65))
+            .build();
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                logger.info("Container removal completed for: " + serverName);
+                return true;
+            } else {
+                logger.error("Failed to wait for container removal " + serverName + ": " + response.statusCode());
+                return false;
+            }
+        } catch (IOException | InterruptedException e) {
+            logger.error("Error waiting for container removal " + serverName, e);
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

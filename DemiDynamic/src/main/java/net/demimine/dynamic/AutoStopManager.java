@@ -89,6 +89,11 @@ public class AutoStopManager {
         return stopTimers.containsKey(serverName);
     }
 
+    public List<String> getServersWithPendingStopTimers() {
+        List<String> servers = new ArrayList<>(stopTimers.keySet());
+        return servers;
+    }
+
     public void cancelStopTimerForStart(String serverName, ApiClient apiClient) {
         ScheduledFuture<?> task = stopTimers.remove(serverName);
         if (task != null) {

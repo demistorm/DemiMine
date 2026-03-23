@@ -49,6 +49,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	playerHandler := handlers.NewPlayerHandler(database, dockerClient, cfg)
 	apiKeyHandler := handlers.NewAPIKeyHandler(database)
 	backupsHandler := handlers.NewBackupsHandler(database, backupManager, serverHandler, proxyHandler, hub, consoleManager)
+	resourceHandler := handlers.NewResourceHandler(database, dockerClient, cfg)
 	sparkHandler := spark.NewHandler(sparkService)
 	sparkHandler.SetDB(database)
 
@@ -125,6 +126,10 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 		r.Get("/servers/{name}/status", playerHandler.GetServerStatus)
 		r.Post("/servers/{name}/start-by-name", playerHandler.StartServerByName)
 		r.Post("/servers/{name}/stop-by-name", playerHandler.StopServerByName)
+		r.Post("/servers/{name}/can-start", resourceHandler.CanStartServer)
+		r.Post("/servers/{name}/wait-for-removal", resourceHandler.WaitForContainerRemoval)
+
+		r.Get("/system/resources", resourceHandler.GetSystemResources)
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(database, cfg.JWTSecret))

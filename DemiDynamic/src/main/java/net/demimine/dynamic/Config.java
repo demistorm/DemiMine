@@ -61,7 +61,8 @@ public class Config {
             configVar.messages.teleporting = fileConfig.getOrElse("messages.teleporting", "<green>Teleporting in 5 seconds!");
             configVar.messages.countdown = fileConfig.getOrElse("messages.countdown", "<yellow>Teleporting in <seconds>...");
             configVar.messages.cancelQueue = fileConfig.getOrElse("messages.cancel_queue", "<red>Canceled queue for <server>!");
-            configVar.messages.cancelDisconnect = fileConfig.getOrElse("messages.cancel_disconnect", "<red>Player canceled the queue!");
+            configVar.messages.cancelDisconnect = fileConfig.getOrElse("messages.cancel_disconnect", "<red>Player canceled queue!");
+            configVar.messages.resourceExceeded = fileConfig.getOrElse("messages.resource_exceeded", "<red>Server resources will exceed maximum allocation! Please join a running server or try again later!");
         } else {
             configVar.messages = new Messages();
         }
@@ -80,18 +81,19 @@ public class Config {
                "start_timeout_seconds = 120\n" +
                "auto_stop_timeout_minutes = 15\n" +
                "message_interval_seconds = 5\n\n" +
-                "# Servers to exclude from auto start/stop (e.g., login, queue servers)\n" +
-                "# These servers will still track player joins/leaves but won't be started/stopped\n" +
-                "# Example: excluded_servers = [\"login\", \"queue\"]\n" +
-                "excluded_servers = []\n\n" +
-                 "[messages]\n" +
-                 "starting = \"<yellow>Server is starting...\"\n" +
-                 "loading = \"<yellow>Loading server...\"\n" +
-                 "teleporting = \"<green>Teleporting in 5 seconds!\"\n" +
-                 "countdown = \"<yellow>Teleporting in <seconds>...\"\n" +
-                 "cancel_queue = \"<red>Canceled queue for <server>!\"\n" +
-                 "cancel_disconnect = \"<red>Player canceled the queue!\"\n\n" +
-               "configVersion = 1\n";
+                 "# Servers to exclude from auto start/stop (e.g., login, queue servers)\n" +
+                 "# These servers will still track player joins/leaves but won't be started/stopped\n" +
+                 "# Example: excluded_servers = [\"login\", \"queue\"]\n" +
+                 "excluded_servers = []\n\n" +
+                  "[messages]\n" +
+                  "starting = \"<yellow>Server is starting...\"\n" +
+                  "loading = \"<yellow>Loading server...\"\n" +
+                  "teleporting = \"<green>Teleporting in 5 seconds!\"\n" +
+                  "countdown = \"<yellow>Teleporting in <seconds>...\"\n" +
+                  "cancel_queue = \"<red>Canceled queue for <server>!\"\n" +
+                  "cancel_disconnect = \"<red>Player canceled queue!\"\n" +
+                  "resource_exceeded = \"<red>Server resources will exceed maximum allocation! Please join a running server or try again later!\"\n\n" +
+                "configVersion = 1\n";
     }
 
     public static class ConfigVar {
@@ -116,5 +118,6 @@ public class Config {
         public String countdown;
         public String cancelQueue;
         public String cancelDisconnect;
+        public String resourceExceeded;
     }
 }
