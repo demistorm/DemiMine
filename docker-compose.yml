@@ -1,4 +1,9 @@
-version: "3.8"
+# Directory Configuration:
+# - Volumes use relative paths (./) by default, resolved relative to this compose file
+# - To change where data is stored, edit the left side of each volume mapping:
+#   Example: ./data:/data  →  /mnt/nas/demimine-data:/data
+# - If you change ./servers, also update DEMIMINE_HOST_SERVERS_DIR below
+# - The right side (/data, /servers, etc.) must stay the same, these are fixed container paths
 
 networks:
   demimine_internal:
@@ -10,26 +15,22 @@ services:
     container_name: demimine-manager
     restart: unless-stopped
     stop_grace_period: 60s
+    # Change 8025 to desired host port if needed
     ports:
-      - "${WEBUI_PORT:-8080}:8080"
+      - "8025:8080"
     volumes:
       - ./data:/data
       - ./servers:/servers
-      # Change ./backups to network drive path (e.g., /mnt/nas/demimine-backups) for offsite backup
       - ./backups:/backups
       - ./java:/java
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - TZ=America/Chicago
-      - DEMIMINE_PORT=8080
-      - DEMIMINE_DATA_DIR=/data
-      - DEMIMINE_SERVERS_DIR=/servers
-      - DEMIMINE_HOST_SERVERS_DIR=/home/strasburg/Documents/Projects/DemiMine/servers
-      - DEMIMINE_PROXIES_DIR=/proxies
-      - DEMIMINE_BACKUPS_DIR=/backups
-      - DEMIMINE_JAVA_DIR=/java
-      - DEMIMINE_MAX_RAM_MB=3472
+      # HOST_SERVERS_DIR must be an absolute path ($PWD resolves to this directory)
+      # If you move ./servers elsewhere, update this path to match
+      - DEMIMINE_HOST_SERVERS_DIR=$PWD/servers
       - DEMIMINE_NETWORK=demimine_demimine_internal
+      - DEMIMINE_MAX_RAM_MB=5144
       - RCON_PASSWORD=demimine_secure_yesllama_991
     labels:
       - "demimine.managed=false"
