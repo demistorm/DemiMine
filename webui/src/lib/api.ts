@@ -521,3 +521,19 @@ export const jarUpdateApi = {
 	updateProxy: (id: number) =>
 		api.post<{ status: string; message: string }>(`/api/proxies/${id}/jar-update`),
 };
+
+export interface SystemResources {
+	used_mb: number;
+	max_mb: number;
+	available_mb: number;
+	containers: Array<{
+		name: string;
+		type: string;
+		usage_mb: number;
+	}>;
+}
+
+export const resourcesApi = {
+	get: () =>
+		api.get<SystemResources>('/api/system/resources'),
+};

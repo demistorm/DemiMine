@@ -1,11 +1,41 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import '../app.css';
 	import { page } from '$app/stores';
 	import { token } from '$lib/stores/auth';
+	import { resourcesApi, type SystemResources } from '$lib/api';
+
+	let usedMB = 0;
+	let maxMB = 0;
+	let pollingInterval: number;
+
+	async function fetchResources() {
+		try {
+			const resources = await resourcesApi.get();
+			usedMB = resources.used_mb;
+			maxMB = resources.max_mb;
+		} catch (e) {
+			console.error('Failed to fetch resources:', e);
+		}
+	}
+
+	onMount(() => {
+		fetchResources();
+		pollingInterval = setInterval(fetchResources, 2000) as unknown as number;
+	});
+
+	onDestroy(() => {
+		if (pollingInterval) {
+			clearInterval(pollingInterval);
+		}
+	});
 
 	function handleLogout() {
 		token.set(null);
 	}
+
+	$: percentage = maxMB > 0 ? (usedMB / maxMB) * 100 : 0;
+	$: barColor = percentage > 95 ? 'var(--error)' : percentage > 80 ? 'var(--warning)' : 'var(--accent)';
 </script>
 
 {#if $page.url.pathname !== '/login'}
@@ -15,7 +45,14 @@
 				<strong>DemiMine</strong>
 			</a>
 		</div>
-		
+
+		<div class="ram-indicator">
+			<div class="ram-bar-container">
+				<div class="ram-bar-fill" style="width: {percentage}%; background-color: {barColor};"></div>
+			</div>
+			<span class="ram-text">{usedMB} MB / {maxMB} MB</span>
+		</div>
+
 		<div class="nav-links">
 			<a href="/settings" class="nav-link" class:active={$page.url.pathname === '/settings'}>
 				Settings
@@ -84,5 +121,34 @@
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
+	}
+
+	.ram-indicator {
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+	}
+
+	.ram-bar-container {
+		width: 100px;
+		height: 6px;
+		background-color: var(--bg-tertiary);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.ram-bar-fill {
+		height: 100%;
+		transition: width 0.3s ease, background-color 0.3s ease;
+	}
+
+	.ram-text {
+		min-width: 100px;
+		text-align: right;
 	}
 </style>

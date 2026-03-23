@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -326,6 +327,97 @@ func (c *Client) SyncServerStatus(ctx context.Context, database *sql.DB) {
 				log.Printf("Failed to update server %d status: %v", s.id, err)
 			} else {
 				log.Printf("Synced server %d (%s): running -> stopped (container gone)", s.id, s.name)
+			}
+		}
+	}
+}
+
+func (c *Client) GetContainerMemoryUsage(ctx context.Context, containerName string) (int64, error) {
+	containerName = strings.TrimPrefix(containerName, "/")
+
+	if !strings.HasPrefix(containerName, "demimine-") {
+		containerName = "demimine-" + SanitizeName(containerName)
+	}
+
+	stats, err := c.cli.ContainerStats(ctx, containerName, false)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get container stats: %w", err)
+	}
+	defer stats.Body.Close()
+
+	var statsData map[string]interface{}
+	if err := json.NewDecoder(stats.Body).Decode(&statsData); err != nil {
+		return 0, fmt.Errorf("failed to decode container stats: %w", err)
+	}
+
+	memoryStats, ok := statsData["memory_stats"].(map[string]interface{})
+	if !ok {
+		return 0, fmt.Errorf("memory_stats not found in container stats")
+	}
+
+	usage, ok := memoryStats["usage"].(float64)
+	if !ok {
+		return 0, fmt.Errorf("usage not found in memory_stats")
+	}
+
+	usageMB := int64(usage) / 1024 / 1024
+	return usageMB, nil
+}
+
+func (c *Client) GetTotalDemimineMemoryUsage(ctx context.Context) (int64, error) {
+	containers, err := c.ListManagedContainers(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	var totalUsage int64
+	for _, ctr := range containers {
+		stats, err := c.cli.ContainerStats(ctx, ctr.ID, false)
+		if err != nil {
+			continue
+		}
+
+		var statsData map[string]interface{}
+		if err := json.NewDecoder(stats.Body).Decode(&statsData); err != nil {
+			stats.Body.Close()
+			continue
+		}
+		stats.Body.Close()
+
+		memoryStats, ok := statsData["memory_stats"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		usage, ok := memoryStats["usage"].(float64)
+		if !ok {
+			continue
+		}
+
+		totalUsage += int64(usage) / 1024 / 1024
+	}
+
+	return totalUsage, nil
+}
+
+func (c *Client) WaitForContainerRemoval(ctx context.Context, containerName string, timeout time.Duration) error {
+	containerName = "demimine-" + SanitizeName(containerName)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for container %s to be removed", containerName)
+		case <-ticker.C:
+			_, err := c.cli.ContainerInspect(ctx, containerName)
+			if err != nil {
+				if strings.Contains(err.Error(), "No such container") {
+					return nil
+				}
 			}
 		}
 	}
