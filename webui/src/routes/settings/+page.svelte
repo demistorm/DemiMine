@@ -136,7 +136,8 @@
   <title>Settings - DemiMine</title>
 </svelte:head>
 
-<main class="settings-container">
+ <main class="settings-wrapper">
+  <div class="settings-container">
   {#if error}
     <div class="alert error">{error}<button on:click={() => error = ''}>×</button></div>
   {/if}
@@ -147,10 +148,12 @@
   {#if loading}
     <div class="loading">Loading...</div>
   {:else}
-    <div class="section">
+    <div class="section api-keys-section">
       <h2>API Keys</h2>
       <p class="hint">Generate and manage API keys for external integrations like the DemiDynamic plugin.</p>
-      <a href="/api-keys" class="btn primary">Manage API Keys</a>
+      <div class="button-wrapper">
+        <a href="/api-keys" class="btn primary">Manage API Keys</a>
+      </div>
     </div>
 
     <div class="section">
@@ -158,19 +161,19 @@
 
         <div class="field">
          <label>Backup Time (24h format)</label>
-         <div class="time-input">
-           <select id="backupHour" bind:value={backupHour} class="time-field">
-             {#each Array.from({length: 24}, (_, i) => i) as h}
-               <option value={h}>{String(h).padStart(2, '0')}</option>
-             {/each}
-           </select>
-           <span class="time-separator">:</span>
-           <select id="backupMinute" bind:value={backupMinute} class="time-field">
-             {#each Array.from({length: 60}, (_, i) => i) as m}
-               <option value={m}>{String(m).padStart(2, '0')}</option>
-             {/each}
-           </select>
-         </div>
+          <div class="time-input">
+            <select id="backupHour" bind:value={backupHour} class="time-field">
+              {#each Array.from({length: 24}, (_, i) => i) as h}
+                <option value={h}>{String(h).padStart(2, '0')}</option>
+              {/each}
+            </select>
+            <span class="time-separator">:</span>
+            <select id="backupMinute" bind:value={backupMinute} class="time-field">
+              {#each Array.from({length: 60}, (_, i) => i) as m}
+                <option value={m}>{String(m).padStart(2, '0')}</option>
+              {/each}
+            </select>
+          </div>
          <span class="hint">Time of day to run scheduled backup (00:00 - 23:59)</span>
        </div>
 
@@ -241,13 +244,20 @@
       </button>
     </div>
   {/if}
+  </div>
 </main>
 
 <style>
+  .settings-wrapper {
+    height: calc(100vh - 56px);
+    margin-top: 80px;
+    overflow-y: auto;
+  }
+
   .settings-container {
     max-width: 800px;
-    margin: 80px auto;
-    padding-bottom: 140px;
+    margin: 0 auto;
+    padding-bottom: 100px;
   }
 
   .loading {
@@ -295,6 +305,15 @@
   .section.danger {
     border-color: var(--error);
     background: rgba(239, 68, 68, 0.05);
+  }
+
+  .section.api-keys-section {
+    min-height: 150px;
+  }
+
+  .button-wrapper {
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
   }
 
   .section h2 {
