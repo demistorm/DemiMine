@@ -10,3 +10,5 @@ manager/server
 .env
 node_modules/
 webui/.svelte-kit/
+DemiDynamic/.gradle/
+DemiDynamic/build/

@@ -1,1 +1,0 @@
-{"id":"demidynamic","name":"DemiDynamic","version":"1.0.0","authors":["DemiMine Team"],"dependencies":[{"id":"luckperms","optional":true}],"main":"net.demimine.dynamic.DemiDynamic"}
