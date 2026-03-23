@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -57,6 +58,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 	env := []string{
 		"TERM=xterm",
 		"TZ=America/Chicago",
+		fmt.Sprintf("RCON_PASSWORD=%s", os.Getenv("RCON_PASSWORD")),
 	}
 
 	cmd := []string{"java", fmt.Sprintf("-Xmx%dM", ramMB), "-jar", "velocity.jar"}
@@ -68,7 +70,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 		Cmd:          cmd,
 		Env:          env,
 		WorkingDir:   "/proxy",
-		ExposedPorts: nat.PortSet{nat.Port(proxyPort + "/tcp"): {}},
+		ExposedPorts: nat.PortSet{nat.Port(proxyPort + "/tcp"): {}, "39521/tcp": {}},
 		Labels: map[string]string{
 			"demimine.managed":  "true",
 			"demimine.proxy_id": cfg.Name,

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,25 +23,28 @@ type LogStream struct {
 }
 
 type LogManager struct {
-	docker       *Client
-	db           *sql.DB
-	hub          *websocket.Hub
-	streams      map[int64]*LogStream
-	proxyStreams map[int64]*LogStream
-	mu           sync.RWMutex
-	serverIDs    map[string]int64
-	proxyIDs     map[string]int64
+	docker              *Client
+	db                  *sql.DB
+	hub                 *websocket.Hub
+	streams             map[int64]*LogStream
+	proxyStreams        map[int64]*LogStream
+	mu                  sync.RWMutex
+	serverIDs           map[string]int64
+	proxyIDs            map[string]int64
+	pendingProfilerURLs map[string]chan string
+	urlMu               sync.RWMutex
 }
 
 func NewLogManager(dockerClient *Client, db *sql.DB, hub *websocket.Hub) *LogManager {
 	return &LogManager{
-		docker:       dockerClient,
-		db:           db,
-		hub:          hub,
-		streams:      make(map[int64]*LogStream),
-		proxyStreams: make(map[int64]*LogStream),
-		serverIDs:    make(map[string]int64),
-		proxyIDs:     make(map[string]int64),
+		docker:              dockerClient,
+		db:                  db,
+		hub:                 hub,
+		streams:             make(map[int64]*LogStream),
+		proxyStreams:        make(map[int64]*LogStream),
+		serverIDs:           make(map[string]int64),
+		proxyIDs:            make(map[string]int64),
+		pendingProfilerURLs: make(map[string]chan string),
 	}
 }
 
@@ -492,5 +497,123 @@ func (lm *LogManager) BroadcastLog(serverID int64, logLine string) error {
 
 	lm.hub.Broadcast(data)
 
+	if mspt := lm.extractMSPT(logLine); mspt > 50 {
+		lm.broadcastTickSpike(serverID, mspt)
+	}
+
+	if url := lm.extractProfilerURL(logLine); url != "" {
+		lm.broadcastProfilerURL(serverID, url)
+	}
+
 	return nil
+}
+
+func (lm *LogManager) extractMSPT(logLine string) float64 {
+	msptRegex := regexp.MustCompile(`\[.*?Spark.*?\].*?(\d+\.?\d*)\s*ms`)
+	matches := msptRegex.FindStringSubmatch(logLine)
+	if len(matches) >= 2 {
+		val, err := strconv.ParseFloat(matches[1], 64)
+		if err == nil {
+			return val
+		}
+	}
+
+	msptRegex2 := regexp.MustCompile(`(\d+\.?\d*)\s*mspt|mspt:\s*(\d+\.?\d*)`)
+	matches2 := msptRegex2.FindStringSubmatch(strings.ToLower(logLine))
+	if len(matches2) >= 2 {
+		if matches2[1] != "" {
+			val, err := strconv.ParseFloat(matches2[1], 64)
+			if err == nil {
+				return val
+			}
+		}
+		if matches2[2] != "" {
+			val, err := strconv.ParseFloat(matches2[2], 64)
+			if err == nil {
+				return val
+			}
+		}
+	}
+
+	return 0
+}
+
+func (lm *LogManager) broadcastTickSpike(serverID int64, mspt float64) {
+	msg := map[string]interface{}{
+		"type":      "tick_spike",
+		"server_id": serverID,
+		"mspt":      mspt,
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Failed to marshal tick spike message: %v", err)
+		return
+	}
+
+	lm.hub.Broadcast(data)
+}
+
+func (lm *LogManager) extractProfilerURL(logLine string) string {
+	urlRegex := regexp.MustCompile(`https://spark\.lucko\.me/[A-Za-z0-9-]+`)
+	matches := urlRegex.FindString(logLine)
+	return matches
+}
+
+func (lm *LogManager) broadcastProfilerURL(serverID int64, url string) {
+	lm.urlMu.RLock()
+	containerName := lm.getContainerNameByServerID(serverID)
+	lm.urlMu.RUnlock()
+
+	if containerName == "" {
+		return
+	}
+
+	lm.urlMu.RLock()
+	urlChan, exists := lm.pendingProfilerURLs[containerName]
+	lm.urlMu.RUnlock()
+
+	if exists && urlChan != nil {
+		select {
+		case urlChan <- url:
+			log.Printf("[Spark] Profiler URL captured for %s: %s", containerName, url)
+		default:
+			log.Printf("[Spark] Profiler URL channel closed for %s", containerName)
+		}
+	}
+}
+
+func (lm *LogManager) getContainerNameByServerID(serverID int64) string {
+	lm.mu.RLock()
+	defer lm.mu.RUnlock()
+
+	for containerName, id := range lm.serverIDs {
+		if id == serverID {
+			return containerName
+		}
+	}
+	return ""
+}
+
+func (lm *LogManager) WaitForProfilerURL(containerName string) <-chan string {
+	lm.urlMu.Lock()
+	defer lm.urlMu.Unlock()
+
+	if _, exists := lm.pendingProfilerURLs[containerName]; exists {
+		delete(lm.pendingProfilerURLs, containerName)
+	}
+
+	urlChan := make(chan string, 1)
+	lm.pendingProfilerURLs[containerName] = urlChan
+	return urlChan
+}
+
+func (lm *LogManager) CancelProfilerURLWait(containerName string) {
+	lm.urlMu.Lock()
+	defer lm.urlMu.Unlock()
+
+	if urlChan, exists := lm.pendingProfilerURLs[containerName]; exists {
+		close(urlChan)
+		delete(lm.pendingProfilerURLs, containerName)
+	}
 }

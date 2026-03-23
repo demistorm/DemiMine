@@ -28,13 +28,14 @@ type InstalledPlugin struct {
 }
 
 type InstallOptions struct {
-	TargetType  string
-	TargetID    int64
-	ProjectID   string
-	VersionID   string
-	GameVersion string
-	Loaders     []string
-	PluginsDir  string
+	TargetType   string
+	TargetID     int64
+	ProjectID    string
+	VersionID    string
+	GameVersion  string
+	Loaders      []string
+	ServerName   string
+	TargetSubdir string
 }
 
 type Manager struct {
@@ -137,9 +138,14 @@ func (m *Manager) Install(opts InstallOptions) (*InstalledPlugin, error) {
 		return nil, fmt.Errorf("no file found in version")
 	}
 
-	targetPath := filepath.Join(m.serversDir, opts.PluginsDir, "plugins")
+	subdir := opts.TargetSubdir
+	if subdir == "" {
+		subdir = "plugins"
+	}
+
+	targetPath := filepath.Join(m.serversDir, opts.ServerName, subdir)
 	if err := os.MkdirAll(targetPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create plugins directory: %w", err)
+		return nil, fmt.Errorf("failed to create target directory: %w", err)
 	}
 
 	destPath := filepath.Join(targetPath, file.Filename)

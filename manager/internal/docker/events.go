@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/demimine/manager/internal/spark"
 	"github.com/demimine/manager/internal/websocket"
 	"github.com/docker/docker/api/types/events"
 )
@@ -16,16 +17,18 @@ type EventManager struct {
 	hub            *websocket.Hub
 	logManager     *LogManager
 	consoleManager *ConsoleManager
+	sparkService   *spark.Service
 	eventChan      chan events.Message
 }
 
-func NewEventManager(dockerClient *Client, db *sql.DB, hub *websocket.Hub, logManager *LogManager, consoleManager *ConsoleManager) *EventManager {
+func NewEventManager(dockerClient *Client, db *sql.DB, hub *websocket.Hub, logManager *LogManager, consoleManager *ConsoleManager, sparkService *spark.Service) *EventManager {
 	return &EventManager{
 		docker:         dockerClient,
 		db:             db,
 		hub:            hub,
 		logManager:     logManager,
 		consoleManager: consoleManager,
+		sparkService:   sparkService,
 		eventChan:      make(chan events.Message, 100),
 	}
 }
@@ -78,6 +81,11 @@ func (em *EventManager) processEvent(event events.Message) {
 		err := em.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyIDAttr).Scan(&proxyID)
 		if err == nil {
 			em.broadcastProxyStatusChange(proxyID, event.Action)
+			if event.Action == "start" {
+				em.sparkService.StartMonitoring(containerName, proxyID, "proxy")
+			} else if event.Action == "die" || event.Action == "stop" || event.Action == "kill" {
+				em.sparkService.StopMonitoring(containerName)
+			}
 		}
 		return
 	}
@@ -88,6 +96,11 @@ func (em *EventManager) processEvent(event events.Message) {
 		err := em.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverIDAttr).Scan(&serverID)
 		if err == nil {
 			em.broadcastStatusChange(serverID, event.Action)
+			if event.Action == "start" {
+				em.sparkService.StartMonitoring(containerName, serverID, "server")
+			} else if event.Action == "die" || event.Action == "stop" || event.Action == "kill" {
+				em.sparkService.StopMonitoring(containerName)
+			}
 		}
 	}
 }

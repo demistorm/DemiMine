@@ -14,12 +14,13 @@ import (
 	"github.com/demimine/manager/internal/minimotd"
 	"github.com/demimine/manager/internal/plugin"
 	"github.com/demimine/manager/internal/scheduler"
+	"github.com/demimine/manager/internal/spark"
 	"github.com/demimine/manager/internal/websocket"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 )
 
-func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, hub *websocket.Hub, backupManager *backup.Manager, scheduler *scheduler.Scheduler) *chi.Mux {
+func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, hub *websocket.Hub, backupManager *backup.Manager, scheduler *scheduler.Scheduler, sparkService *spark.Service) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimw.RequestID)
@@ -33,10 +34,11 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 
 	pluginMgr := plugin.NewManager(database, cfg.ServersDir)
 	minimotdMgr := minimotd.NewManager(cfg.ServersDir)
+	sparkInstaller := spark.NewInstaller(pluginMgr, cfg.ServersDir)
 
 	authHandler := handlers.NewAuthHandler(database, cfg.JWTSecret)
-	serverHandler := handlers.NewServerHandler(database, dockerClient, consoleManager, cfg, minimotdMgr)
-	proxyHandler := handlers.NewProxyHandler(database, dockerClient, consoleManager, cfg, pluginMgr)
+	serverHandler := handlers.NewServerHandler(database, dockerClient, consoleManager, cfg, minimotdMgr, sparkInstaller)
+	proxyHandler := handlers.NewProxyHandler(database, dockerClient, consoleManager, cfg, pluginMgr, sparkInstaller)
 	versionsHandler := handlers.NewVersionsHandler()
 	javaHandler := handlers.NewJavaHandler()
 	fileUploadHandler := handlers.NewFileUploadHandler(database, cfg)
@@ -47,6 +49,8 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	playerHandler := handlers.NewPlayerHandler(database, dockerClient, cfg)
 	apiKeyHandler := handlers.NewAPIKeyHandler(database)
 	backupsHandler := handlers.NewBackupsHandler(database, backupManager, serverHandler, proxyHandler, hub, consoleManager)
+	sparkHandler := spark.NewHandler(sparkService)
+	sparkHandler.SetDB(database)
 
 	if backupManager != nil {
 		backupManager.SetHandlers(serverHandler, proxyHandler)
@@ -154,6 +158,10 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 					r.Get("/jar-update", jarUpdateHandler.CheckServerJarUpdate)
 					r.Post("/jar-update", jarUpdateHandler.UpdateServerJar)
 					r.Get("/players", playerHandler.GetServerPlayers)
+
+					r.Get("/spark/stats", sparkHandler.GetServerStats)
+					r.Post("/spark/profile/start", sparkHandler.StartServerProfiler)
+					r.Post("/spark/profile/stop", sparkHandler.StopServerProfiler)
 				})
 
 				r.Post("/{id}/icon", serverHandler.UploadIcon)
@@ -186,6 +194,10 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 
 					r.Get("/jar-update", jarUpdateHandler.CheckProxyJarUpdate)
 					r.Post("/jar-update", jarUpdateHandler.UpdateProxyJar)
+
+					r.Get("/spark/stats", sparkHandler.GetProxyStats)
+					r.Post("/spark/profile/start", sparkHandler.StartProxyProfiler)
+					r.Post("/spark/profile/stop", sparkHandler.StopProxyProfiler)
 				})
 
 				r.Post("/{id}/icon", proxyHandler.UploadIcon)

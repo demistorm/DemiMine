@@ -23,21 +23,27 @@ const (
 	MessageTypeResources    MessageType = "resources"
 	MessageTypeCrash        MessageType = "crash"
 	MessageTypeBackupStatus MessageType = "backup_status"
+	MessageTypeTickSpike    MessageType = "tick_spike"
+	MessageTypeSparkError   MessageType = "spark_error"
 )
 
 type Message struct {
-	Type       MessageType `json:"type"`
-	Channel    *string     `json:"channel,omitempty"`
-	ServerID   *int64      `json:"server_id,omitempty"`
-	ProxyID    *int64      `json:"proxy_id,omitempty"`
-	Command    *string     `json:"command,omitempty"`
-	Status     *string     `json:"status,omitempty"`
-	PlayerName *string     `json:"player_name,omitempty"`
-	PlayerUUID *string     `json:"player_uuid,omitempty"`
-	LogLine    *string     `json:"log_line,omitempty"`
-	CPUPercent *float64    `json:"cpu_percent,omitempty"`
-	MemoryMB   *int64      `json:"memory_mb,omitempty"`
-	CrashLogID *int64      `json:"crash_log_id,omitempty"`
+	Type        MessageType `json:"type"`
+	Channel     *string     `json:"channel,omitempty"`
+	ServerID    *int64      `json:"server_id,omitempty"`
+	ProxyID     *int64      `json:"proxy_id,omitempty"`
+	Command     *string     `json:"command,omitempty"`
+	Status      *string     `json:"status,omitempty"`
+	PlayerName  *string     `json:"player_name,omitempty"`
+	PlayerUUID  *string     `json:"player_uuid,omitempty"`
+	LogLine     *string     `json:"log_line,omitempty"`
+	CPUPercent  *float64    `json:"cpu_percent,omitempty"`
+	MemoryMB    *int64      `json:"memory_mb,omitempty"`
+	CrashLogID  *int64      `json:"crash_log_id,omitempty"`
+	TPS         *float64    `json:"tps,omitempty"`
+	MSPT        *float64    `json:"mspt,omitempty"`
+	MaxMemoryMB *int64      `json:"max_memory_mb,omitempty"`
+	Error       *string     `json:"error,omitempty"`
 }
 
 type Client struct {

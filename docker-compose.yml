@@ -30,6 +30,7 @@ services:
       - DEMIMINE_JAVA_DIR=/java
       - DEMIMINE_MAX_RAM_MB=0
       - DEMIMINE_NETWORK=demimine_demimine_internal
+      - RCON_PASSWORD=demimine_secure_yesllama_991
     labels:
       - "demimine.managed=false"
     networks:

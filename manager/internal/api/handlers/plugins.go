@@ -90,11 +90,11 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 
 	var loaders []string
 	var gameVersion string
-	var pluginsDir string
+	var serverName string
 
 	if targetType == "server" {
 		var serverType string
-		err := h.db.QueryRow("SELECT type, version, name FROM servers WHERE id = ?", targetID).Scan(&serverType, &gameVersion, &pluginsDir)
+		err := h.db.QueryRow("SELECT type, version, name FROM servers WHERE id = ?", targetID).Scan(&serverType, &gameVersion, &serverName)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
@@ -104,9 +104,9 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 		loaders = modrinth.GetLoaderForServerType(serverType)
 	} else {
 		gameVersion = req.GameVersion
-		pluginsDir = "pluginsDir"
+		serverName = "pluginsDir"
 		loaders = []string{"velocity"}
-		err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", targetID).Scan(&pluginsDir)
+		err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", targetID).Scan(&serverName)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
@@ -123,13 +123,14 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 	}
 
 	installed, err := h.pluginManager.Install(plugin.InstallOptions{
-		TargetType:  targetType,
-		TargetID:    targetID,
-		ProjectID:   req.ProjectID,
-		VersionID:   req.VersionID,
-		GameVersion: gameVersion,
-		Loaders:     loaders,
-		PluginsDir:  pluginsDir,
+		TargetType:   targetType,
+		TargetID:     targetID,
+		ProjectID:    req.ProjectID,
+		VersionID:    req.VersionID,
+		GameVersion:  gameVersion,
+		Loaders:      loaders,
+		ServerName:   serverName,
+		TargetSubdir: "plugins",
 	})
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -139,7 +140,7 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if installed != nil {
-		deps, _ := h.getDependenciesRecursive(req.ProjectID, gameVersion, loaders, pluginsDir, targetType, targetID)
+		deps, _ := h.getDependenciesRecursive(req.ProjectID, gameVersion, loaders, serverName, targetType, targetID)
 		if len(deps) > 0 {
 			installed.Dependencies = deps
 		}
@@ -149,7 +150,7 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(installed)
 }
 
-func (h *PluginHandler) getDependenciesRecursive(projectID, gameVersion string, loaders []string, pluginsDir string, targetType string, targetID int64) ([]plugin.InstalledPlugin, error) {
+func (h *PluginHandler) getDependenciesRecursive(projectID, gameVersion string, loaders []string, serverName string, targetType string, targetID int64) ([]plugin.InstalledPlugin, error) {
 	deps, err := h.pluginManager.GetDependencies(projectID, gameVersion, loaders)
 	if err != nil {
 		return nil, nil
@@ -168,18 +169,19 @@ func (h *PluginHandler) getDependenciesRecursive(projectID, gameVersion string, 
 			continue
 		}
 		depPlugin, err := h.pluginManager.Install(plugin.InstallOptions{
-			TargetType:  targetType,
-			TargetID:    targetID,
-			ProjectID:   dep.ProjectID,
-			GameVersion: gameVersion,
-			Loaders:     loaders,
-			PluginsDir:  pluginsDir,
+			TargetType:   targetType,
+			TargetID:     targetID,
+			ProjectID:    dep.ProjectID,
+			GameVersion:  gameVersion,
+			Loaders:      loaders,
+			ServerName:   serverName,
+			TargetSubdir: "plugins",
 		})
 		if err != nil {
 			continue
 		}
 		installedDeps = append(installedDeps, *depPlugin)
-		transitiveDeps, _ := h.getDependenciesRecursive(dep.ProjectID, gameVersion, loaders, pluginsDir, targetType, targetID)
+		transitiveDeps, _ := h.getDependenciesRecursive(dep.ProjectID, gameVersion, loaders, serverName, targetType, targetID)
 		if len(transitiveDeps) > 0 {
 			installedDeps = append(installedDeps, transitiveDeps...)
 		}

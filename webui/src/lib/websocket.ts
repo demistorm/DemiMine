@@ -1,6 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-type MessageType = 'subscribe' | 'unsubscribe' | 'command' | 'proxy_command' | 'server_status' | 'player_join' | 'player_leave' | 'log' | 'resources' | 'crash' | 'backup_status';
+type MessageType = 'subscribe' | 'unsubscribe' | 'command' | 'proxy_command' | 'server_status' | 'player_join' | 'player_leave' | 'log' | 'resources' | 'crash' | 'backup_status' | 'tick_spike' | 'spark_error';
 
 interface Message {
 	type: MessageType;
@@ -15,6 +15,10 @@ interface Message {
 	cpu_percent?: number;
 	memory_mb?: number;
 	crash_log_id?: number;
+	tps?: number;
+	mspt?: number;
+	max_memory_mb?: number;
+	error?: string;
 }
 
 type MessageHandler = (message: Message) => void;

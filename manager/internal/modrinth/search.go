@@ -107,6 +107,12 @@ func GetLoaderForServerType(serverType string) []string {
 		return []string{"paper", "spigot", "bukkit"}
 	case "purpur":
 		return []string{"purpur", "paper", "spigot", "bukkit"}
+	case "fabric":
+		return []string{"fabric"}
+	case "neoforge":
+		return []string{"neoforge"}
+	case "forge":
+		return []string{"forge"}
 	case "velocity":
 		return []string{"velocity"}
 	default:

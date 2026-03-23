@@ -9,6 +9,7 @@ import (
 	"image"
 	_ "image/png"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/demimine/manager/internal/mc"
 	"github.com/demimine/manager/internal/models"
 	"github.com/demimine/manager/internal/plugin"
+	"github.com/demimine/manager/internal/spark"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -31,15 +33,17 @@ type ProxyHandler struct {
 	consoleManager *docker.ConsoleManager
 	cfg            *config.Config
 	pluginManager  *plugin.Manager
+	sparkInstaller *spark.Installer
 }
 
-func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, pluginManager *plugin.Manager) *ProxyHandler {
+func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, pluginManager *plugin.Manager, sparkInstaller *spark.Installer) *ProxyHandler {
 	return &ProxyHandler{
 		db:             db,
 		docker:         dockerClient,
 		consoleManager: consoleManager,
 		cfg:            cfg,
 		pluginManager:  pluginManager,
+		sparkInstaller: sparkInstaller,
 	}
 }
 
@@ -256,11 +260,12 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-install MiniMOTD for MOTD support (non-blocking)
 	_, _ = h.pluginManager.Install(plugin.InstallOptions{
-		TargetType: "proxy",
-		TargetID:   id,
-		ProjectID:  "minimotd",
-		Loaders:    []string{"velocity"},
-		PluginsDir: req.Name,
+		TargetType:   "proxy",
+		TargetID:     id,
+		ProjectID:    "minimotd",
+		Loaders:      []string{"velocity"},
+		ServerName:   req.Name,
+		TargetSubdir: "plugins",
 	})
 
 	// Install DemiAuth if requested
@@ -330,14 +335,21 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Install LuckPerms if requested (via Modrinth API for correct Velocity version)
 	if req.InstallLuckPerms {
 		_, err := h.pluginManager.Install(plugin.InstallOptions{
-			TargetType: "proxy",
-			TargetID:   id,
-			ProjectID:  "Vebnzrzj",
-			Loaders:    []string{"velocity"},
-			PluginsDir: req.Name,
+			TargetType:   "proxy",
+			TargetID:     id,
+			ProjectID:    "Vebnzrzj",
+			Loaders:      []string{"velocity"},
+			ServerName:   req.Name,
+			TargetSubdir: "plugins",
 		})
 		if err != nil {
 			fmt.Printf("Failed to install LuckPerms for proxy %d: %v\n", id, err)
+		}
+	}
+
+	if h.sparkInstaller != nil {
+		if err := h.sparkInstaller.InstallSparkForProxy(req.Name, id); err != nil {
+			log.Printf("Failed to install Spark for proxy %s: %v", req.Name, err)
 		}
 	}
 

@@ -82,6 +82,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 		fmt.Sprintf("SERVER_TYPE=%s", cfg.ServerType),
 		fmt.Sprintf("MC_VERSION=%s", cfg.Version),
 		fmt.Sprintf("RAM_MB=%d", cfg.RAMMB),
+		fmt.Sprintf("RCON_PASSWORD=%s", os.Getenv("RCON_PASSWORD")),
 	}
 
 	cmd := []string{"sh", "/server/start.sh"}
@@ -92,7 +93,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 		Cmd:          cmd,
 		Env:          env,
 		WorkingDir:   "/server",
-		ExposedPorts: nat.PortSet{"25565/tcp": {}},
+		ExposedPorts: nat.PortSet{"25565/tcp": {}, "39521/tcp": {}},
 		Labels: map[string]string{
 			"demimine.managed":   "true",
 			"demimine.server_id": cfg.Name,

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/demimine/manager/internal/mc"
 	"github.com/demimine/manager/internal/minimotd"
 	"github.com/demimine/manager/internal/models"
+	"github.com/demimine/manager/internal/spark"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -30,9 +32,10 @@ type ServerHandler struct {
 	consoleManager *docker.ConsoleManager
 	cfg            *config.Config
 	minimotdMgr    *minimotd.Manager
+	sparkInstaller *spark.Installer
 }
 
-func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, minimotdMgr *minimotd.Manager) *ServerHandler {
+func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, minimotdMgr *minimotd.Manager, sparkInstaller *spark.Installer) *ServerHandler {
 	if dockerClient == nil {
 		panic("dockerClient is nil in NewServerHandler")
 	}
@@ -42,6 +45,7 @@ func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *d
 		consoleManager: consoleManager,
 		cfg:            cfg,
 		minimotdMgr:    minimotdMgr,
+		sparkInstaller: sparkInstaller,
 	}
 }
 
@@ -306,6 +310,12 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create eula.txt"})
 		return
+	}
+
+	if h.sparkInstaller != nil {
+		if err := h.sparkInstaller.InstallSparkForServer(req.Type, req.Version, req.Name, id); err != nil {
+			log.Printf("Failed to install Spark for server %s: %v", req.Name, err)
+		}
 	}
 
 	if req.ProxyID != nil {

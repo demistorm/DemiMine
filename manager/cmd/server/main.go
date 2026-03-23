@@ -19,7 +19,9 @@ import (
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/db"
 	"github.com/demimine/manager/internal/docker"
+	"github.com/demimine/manager/internal/rcon"
 	"github.com/demimine/manager/internal/scheduler"
+	"github.com/demimine/manager/internal/spark"
 )
 
 func main() {
@@ -74,7 +76,9 @@ func main() {
 	go wsHandler.Run()
 
 	logManager := docker.NewLogManager(dockerClient, database, wsHandler.GetHub())
-	eventManager := docker.NewEventManager(dockerClient, database, wsHandler.GetHub(), logManager, consoleManager)
+	rconPool := rcon.NewPool(os.Getenv("RCON_PASSWORD"))
+	sparkService := spark.NewService(rconPool, wsHandler.GetHub(), logManager)
+	eventManager := docker.NewEventManager(dockerClient, database, wsHandler.GetHub(), logManager, consoleManager, sparkService)
 
 	if err := logManager.StartStreamingForRunningContainers(context.Background(), database); err != nil {
 		log.Printf("Failed to start log streaming for running containers: %v", err)
@@ -96,7 +100,7 @@ func main() {
 	defer backupScheduler.Stop()
 
 	taskScheduler := scheduler.NewScheduler(database)
-	router := api.NewRouter(database, cfg, dockerClient, consoleManager, wsHandler.GetHub(), backupManager, taskScheduler)
+	router := api.NewRouter(database, cfg, dockerClient, consoleManager, wsHandler.GetHub(), backupManager, taskScheduler, sparkService)
 	taskScheduler.Start()
 	defer taskScheduler.Stop()
 
