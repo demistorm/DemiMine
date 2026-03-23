@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 )
 
 type Handler struct {
@@ -34,7 +35,7 @@ func (h *Handler) getServerContainerName(serverID string) (string, error) {
 		return "", fmt.Errorf("server not found: %w", err)
 	}
 
-	return "demimine-" + name, nil
+	return "demimine-" + sanitizeName(name), nil
 }
 
 func (h *Handler) getProxyContainerName(proxyID string) (string, error) {
@@ -48,7 +49,22 @@ func (h *Handler) getProxyContainerName(proxyID string) (string, error) {
 		return "", fmt.Errorf("proxy not found: %w", err)
 	}
 
-	return "demimine-proxy-" + name, nil
+	return "demimine-proxy-" + sanitizeName(name), nil
+}
+
+func sanitizeName(name string) string {
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, " ", "-")
+	name = strings.ReplaceAll(name, "_", "-")
+
+	var result strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			result.WriteRune(r)
+		}
+	}
+
+	return strings.Trim(result.String(), "-")
 }
 
 type ProfileStartResponse struct {
@@ -60,64 +76,6 @@ type ProfileStopResponse struct {
 	Success bool   `json:"success"`
 	URL     string `json:"url,omitempty"`
 	Message string `json:"message"`
-}
-
-type StatsResponse struct {
-	Success bool   `json:"success"`
-	Stats   *Stats `json:"stats,omitempty"`
-	Message string `json:"message,omitempty"`
-}
-
-func (h *Handler) GetServerStats(w http.ResponseWriter, r *http.Request) {
-	serverID := r.PathValue("id")
-	if serverID == "" {
-		h.sendError(w, "server ID required", http.StatusBadRequest)
-		return
-	}
-
-	containerName, err := h.getServerContainerName(serverID)
-	if err != nil {
-		h.sendError(w, "failed to get server", http.StatusNotFound)
-		return
-	}
-
-	stats, err := h.service.collectStats(containerName)
-	if err != nil {
-		h.sendError(w, "failed to collect stats", http.StatusInternalServerError)
-		log.Printf("[Spark API] GetServerStats failed for %s: %v", containerName, err)
-		return
-	}
-
-	h.sendJSON(w, StatsResponse{
-		Success: true,
-		Stats:   stats,
-	})
-}
-
-func (h *Handler) GetProxyStats(w http.ResponseWriter, r *http.Request) {
-	proxyID := r.PathValue("id")
-	if proxyID == "" {
-		h.sendError(w, "proxy ID required", http.StatusBadRequest)
-		return
-	}
-
-	containerName, err := h.getProxyContainerName(proxyID)
-	if err != nil {
-		h.sendError(w, "failed to get proxy", http.StatusNotFound)
-		return
-	}
-
-	stats, err := h.service.collectStats(containerName)
-	if err != nil {
-		h.sendError(w, "failed to collect stats", http.StatusInternalServerError)
-		log.Printf("[Spark API] GetProxyStats failed for %s: %v", containerName, err)
-		return
-	}
-
-	h.sendJSON(w, StatsResponse{
-		Success: true,
-		Stats:   stats,
-	})
 }
 
 func (h *Handler) StartServerProfiler(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +117,7 @@ func (h *Handler) StopServerProfiler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, err := h.service.StopProfiler(containerName)
+	url, err := h.service.StopProfiler(containerName, serverID)
 	if err != nil {
 		h.sendError(w, "failed to stop profiler: "+err.Error(), http.StatusInternalServerError)
 		log.Printf("[Spark API] StopServerProfiler failed for %s: %v", containerName, err)
@@ -220,7 +178,7 @@ func (h *Handler) StopProxyProfiler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, err := h.service.StopProfiler(containerName)
+	url, err := h.service.StopProfiler(containerName, proxyID)
 	if err != nil {
 		h.sendError(w, "failed to stop profiler: "+err.Error(), http.StatusInternalServerError)
 		log.Printf("[Spark API] StopProxyProfiler failed for %s: %v", containerName, err)

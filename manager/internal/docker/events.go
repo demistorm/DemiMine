@@ -81,11 +81,6 @@ func (em *EventManager) processEvent(event events.Message) {
 		err := em.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyIDAttr).Scan(&proxyID)
 		if err == nil {
 			em.broadcastProxyStatusChange(proxyID, event.Action)
-			if event.Action == "start" {
-				em.sparkService.StartMonitoring(containerName, proxyID, "proxy")
-			} else if event.Action == "die" || event.Action == "stop" || event.Action == "kill" {
-				em.sparkService.StopMonitoring(containerName)
-			}
 		}
 		return
 	}
@@ -96,11 +91,6 @@ func (em *EventManager) processEvent(event events.Message) {
 		err := em.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverIDAttr).Scan(&serverID)
 		if err == nil {
 			em.broadcastStatusChange(serverID, event.Action)
-			if event.Action == "start" {
-				em.sparkService.StartMonitoring(containerName, serverID, "server")
-			} else if event.Action == "die" || event.Action == "stop" || event.Action == "kill" {
-				em.sparkService.StopMonitoring(containerName)
-			}
 		}
 	}
 }

@@ -3,7 +3,6 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { servers, loadServers, updateServerStatus } from '$lib/stores/servers';
-	import { getServerStats, updateServerStats, setServerError, clearServerError, getServerError } from '$lib/stores/spark';
 	import { ws } from '$lib/websocket';
 	import { api } from '$lib/api';
 	import Console from '$lib/components/Console.svelte';
@@ -11,7 +10,6 @@
 	import Settings from '$lib/components/Settings.svelte';
 	import Backups from '$lib/components/Backups.svelte';
 	import PluginBrowser from '$lib/components/PluginBrowser.svelte';
-	import SparkStats from '$lib/components/SparkStats.svelte';
 	import ProfileButton from '$lib/components/ProfileButton.svelte';
 
 	let activeTab = 'console';
@@ -20,8 +18,6 @@
 	let wsChannel = `server:${serverId}`;
 
 	$: server = $servers?.find(s => s.id === serverId);
-	$: stats = getServerStats(serverId);
-	$: sparkError = getServerError(serverId);
 
 	onMount(async () => {
 		if (!$servers || $servers.length === 0) {
@@ -31,9 +27,6 @@
 		try {
 			await ws.connect();
 			ws.subscribe(wsChannel);
-			ws.on('resources', handleResources);
-			ws.on('tick_spike', handleTickSpike);
-			ws.on('spark_error', handleSparkError);
 		} catch (err) {
 			console.error('Failed to connect to WebSocket:', err);
 		}
@@ -41,34 +34,7 @@
 
 	onDestroy(() => {
 		ws.unsubscribe(wsChannel);
-		ws.off('resources', handleResources);
-		ws.off('tick_spike', handleTickSpike);
-		ws.off('spark_error', handleSparkError);
 	});
-
-	function handleResources(message: any) {
-		if (message.server_id === serverId) {
-			clearServerError(serverId);
-			updateServerStats(serverId, {
-				tps: message.tps,
-				memoryUsed: message.memory_mb,
-				memoryMax: message.max_memory_mb,
-				cpu: message.cpu_percent
-			});
-		}
-	}
-
-	function handleTickSpike(message: any) {
-		if (message.server_id === serverId) {
-			console.log('Tick spike detected:', message.mspt);
-		}
-	}
-
-	function handleSparkError(message: any) {
-		if (message.server_id === serverId) {
-			setServerError(serverId, message.error);
-		}
-	}
 
 	onMount(() => {
 		if (!$servers || $servers.length === 0) {
@@ -175,11 +141,8 @@
 				{getStatusText(server.status)}
 			</span>
 		{/if}
-	</div>
-	<div class="actions">
-		{#if server && stats}
-			<SparkStats {stats} error={sparkError} />
-		{/if}
+		</div>
+		<div class="actions">
 		{#if server}
 			<ProfileButton targetId={serverId} targetType="server" isRunning={server.status === 'running'} />
 			{#if server.status === 'running'}

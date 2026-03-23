@@ -3,14 +3,12 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { proxies, loadProxies, updateProxyStatus } from '$lib/stores/servers';
-	import { getProxyStats, updateProxyStats, setProxyError, clearProxyError, getProxyError } from '$lib/stores/spark';
 	import { ws } from '$lib/websocket';
 	import { api } from '$lib/api';
 	import Console from '$lib/components/Console.svelte';
 	import Files from '$lib/components/Files.svelte';
 	import ProxySettings from '$lib/components/ProxySettings.svelte';
 	import PluginBrowser from '$lib/components/PluginBrowser.svelte';
-	import SparkStats from '$lib/components/SparkStats.svelte';
 	import ProfileButton from '$lib/components/ProfileButton.svelte';
 
 	let activeTab = 'console';
@@ -19,8 +17,6 @@
 	let wsChannel = `proxy:${proxyId}`;
 
 	$: proxy = $proxies?.find(p => p.id === proxyId);
-	$: stats = getProxyStats(proxyId);
-	$: sparkError = getProxyError(proxyId);
 	
 	onMount(async () => {
 		if (!$proxies || $proxies.length === 0) {
@@ -30,8 +26,6 @@
 		try {
 			await ws.connect();
 			ws.subscribe(wsChannel);
-			ws.on('resources', handleResources);
-			ws.on('spark_error', handleSparkError);
 		} catch (err) {
 			console.error('Failed to connect to WebSocket:', err);
 		}
@@ -39,26 +33,7 @@
 
 	onDestroy(() => {
 		ws.unsubscribe(wsChannel);
-		ws.off('resources', handleResources);
-		ws.off('spark_error', handleSparkError);
 	});
-
-	function handleResources(message: any) {
-		if (message.proxy_id === proxyId) {
-			clearProxyError(proxyId);
-			updateProxyStats(proxyId, {
-				memoryUsed: message.memory_mb,
-				memoryMax: message.max_memory_mb,
-				cpu: message.cpu_percent
-			});
-		}
-	}
-
-	function handleSparkError(message: any) {
-		if (message.proxy_id === proxyId) {
-			setProxyError(proxyId, message.error);
-		}
-	}
 
 	onMount(() => {
 		if (!$proxies || $proxies.length === 0) {
@@ -150,11 +125,8 @@
 				{getStatusText(proxy.status)}
 			</span>
 		{/if}
-	</div>
-	<div class="actions">
-		{#if proxy && stats}
-			<SparkStats {stats} isProxy={true} error={sparkError} />
-		{/if}
+		</div>
+		<div class="actions">
 		{#if proxy}
 			<ProfileButton targetId={proxyId} targetType="proxy" isRunning={proxy.status === 'running'} />
 			{#if proxy.status === 'running'}

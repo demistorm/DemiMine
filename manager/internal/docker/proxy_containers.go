@@ -28,7 +28,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 		return "", fmt.Errorf("docker client is nil")
 	}
 
-	containerName := "demimine-proxy-" + sanitizeName(cfg.Name)
+	containerName := "demimine-proxy-" + SanitizeName(cfg.Name)
 
 	existing, err := c.cli.ContainerInspect(ctx, containerName)
 	if err != nil {
@@ -111,7 +111,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 }
 
 func (c *Client) StartProxyContainer(ctx context.Context, name string, cfg *ProxyContainerConfig) error {
-	containerName := "demimine-proxy-" + sanitizeName(name)
+	containerName := "demimine-proxy-" + SanitizeName(name)
 
 	exists, err := c.ContainerExists(ctx, "proxy-"+name)
 	if err != nil {
@@ -136,12 +136,12 @@ func (c *Client) StopProxyContainer(ctx context.Context, name string, timeout *i
 		t := 30
 		timeout = &t
 	}
-	containerName := "demimine-proxy-" + sanitizeName(name)
+	containerName := "demimine-proxy-" + SanitizeName(name)
 	return c.cli.ContainerStop(ctx, containerName, container.StopOptions{Timeout: timeout})
 }
 
 func (c *Client) GetProxyContainerStatus(ctx context.Context, name string) (string, error) {
-	containerName := "demimine-proxy-" + sanitizeName(name)
+	containerName := "demimine-proxy-" + SanitizeName(name)
 	ctr, err := c.cli.ContainerInspect(ctx, containerName)
 	if err != nil {
 		return "stopped", nil
@@ -163,7 +163,7 @@ func (c *Client) GetProxyContainerStatus(ctx context.Context, name string) (stri
 }
 
 func (c *Client) GetProxyContainerLogs(ctx context.Context, name string, tail int) ([]string, error) {
-	containerName := "demimine-proxy-" + sanitizeName(name)
+	containerName := "demimine-proxy-" + SanitizeName(name)
 
 	options := container.LogsOptions{
 		ShowStdout: true,
@@ -194,7 +194,7 @@ func (c *Client) GetProxyContainerLogs(ctx context.Context, name string, tail in
 }
 
 func (c *Client) ProxyContainerExists(ctx context.Context, name string) (bool, error) {
-	name = "demimine-proxy-" + sanitizeName(name)
+	name = "demimine-proxy-" + SanitizeName(name)
 	_, err := c.cli.ContainerInspect(ctx, name)
 	if err != nil {
 		return false, nil
@@ -203,7 +203,7 @@ func (c *Client) ProxyContainerExists(ctx context.Context, name string) (bool, e
 }
 
 func (c *Client) GetProxyContainerID(ctx context.Context, name string) (string, error) {
-	name = "demimine-proxy-" + sanitizeName(name)
+	name = "demimine-proxy-" + SanitizeName(name)
 	ctr, err := c.cli.ContainerInspect(ctx, name)
 	if err != nil {
 		return "", err

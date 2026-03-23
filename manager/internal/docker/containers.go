@@ -39,7 +39,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 		return "", fmt.Errorf("docker client is nil")
 	}
 
-	containerName := "demimine-" + sanitizeName(cfg.Name)
+	containerName := "demimine-" + SanitizeName(cfg.Name)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -138,7 +138,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 }
 
 func (c *Client) StartContainer(ctx context.Context, name string, cfg *ServerContainerConfig) error {
-	containerName := "demimine-" + sanitizeName(name)
+	containerName := "demimine-" + SanitizeName(name)
 
 	exists, err := c.ContainerExists(ctx, name)
 	if err != nil {
@@ -163,7 +163,7 @@ func (c *Client) StopContainer(ctx context.Context, name string, timeout *int) e
 		t := 30
 		timeout = &t
 	}
-	containerName := "demimine-" + sanitizeName(name)
+	containerName := "demimine-" + SanitizeName(name)
 	return c.cli.ContainerStop(ctx, containerName, container.StopOptions{Timeout: timeout})
 }
 
@@ -172,7 +172,7 @@ func (c *Client) RemoveContainer(ctx context.Context, containerID string) error 
 }
 
 func (c *Client) GetContainerStatus(ctx context.Context, containerName string) (string, error) {
-	containerName = "demimine-" + sanitizeName(containerName)
+	containerName = "demimine-" + SanitizeName(containerName)
 	ctr, err := c.cli.ContainerInspect(ctx, containerName)
 	if err != nil {
 		return "stopped", nil
@@ -194,7 +194,7 @@ func (c *Client) GetContainerStatus(ctx context.Context, containerName string) (
 }
 
 func (c *Client) GetContainerLogs(ctx context.Context, containerName string, tail int) ([]string, error) {
-	containerName = "demimine-" + sanitizeName(containerName)
+	containerName = "demimine-" + SanitizeName(containerName)
 
 	options := container.LogsOptions{
 		ShowStdout: true,
@@ -237,7 +237,7 @@ func (c *Client) ListManagedContainers(ctx context.Context) ([]types.Container, 
 }
 
 func (c *Client) ContainerExists(ctx context.Context, name string) (bool, error) {
-	name = "demimine-" + sanitizeName(name)
+	name = "demimine-" + SanitizeName(name)
 	_, err := c.cli.ContainerInspect(ctx, name)
 	if err != nil {
 		return false, nil
@@ -246,7 +246,7 @@ func (c *Client) ContainerExists(ctx context.Context, name string) (bool, error)
 }
 
 func (c *Client) GetContainerID(ctx context.Context, name string) (string, error) {
-	name = "demimine-" + sanitizeName(name)
+	name = "demimine-" + SanitizeName(name)
 	ctr, err := c.cli.ContainerInspect(ctx, name)
 	if err != nil {
 		return "", err
@@ -254,7 +254,7 @@ func (c *Client) GetContainerID(ctx context.Context, name string) (string, error
 	return ctr.ID, nil
 }
 
-func sanitizeName(name string) string {
+func SanitizeName(name string) string {
 	name = strings.ToLower(name)
 	name = strings.ReplaceAll(name, " ", "-")
 	name = strings.ReplaceAll(name, "_", "-")

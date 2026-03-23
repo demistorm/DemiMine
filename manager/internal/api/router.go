@@ -159,7 +159,6 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 					r.Post("/jar-update", jarUpdateHandler.UpdateServerJar)
 					r.Get("/players", playerHandler.GetServerPlayers)
 
-					r.Get("/spark/stats", sparkHandler.GetServerStats)
 					r.Post("/spark/profile/start", sparkHandler.StartServerProfiler)
 					r.Post("/spark/profile/stop", sparkHandler.StopServerProfiler)
 				})
@@ -195,7 +194,6 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 					r.Get("/jar-update", jarUpdateHandler.CheckProxyJarUpdate)
 					r.Post("/jar-update", jarUpdateHandler.UpdateProxyJar)
 
-					r.Get("/spark/stats", sparkHandler.GetProxyStats)
 					r.Post("/spark/profile/start", sparkHandler.StartProxyProfiler)
 					r.Post("/spark/profile/stop", sparkHandler.StopProxyProfiler)
 				})

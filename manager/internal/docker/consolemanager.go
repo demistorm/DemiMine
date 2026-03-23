@@ -58,7 +58,7 @@ func (cm *ConsoleManager) StartConsoleStreaming(ctx context.Context, serverID in
 		return fmt.Errorf("console already exists for server %d", serverID)
 	}
 
-	containerName := "demimine-" + sanitizeName(name)
+	containerName := "demimine-" + SanitizeName(name)
 	containerName = strings.TrimPrefix(containerName, "/")
 	cm.serverIDs[containerName] = serverID
 
@@ -265,7 +265,7 @@ func (cm *ConsoleManager) StartProxyConsoleStreaming(ctx context.Context, proxyI
 		return fmt.Errorf("console already exists for proxy %d", proxyID)
 	}
 
-	containerName := "demimine-proxy-" + sanitizeName(name)
+	containerName := "demimine-proxy-" + SanitizeName(name)
 	containerName = strings.TrimPrefix(containerName, "/")
 	cm.proxyIDs[containerName] = proxyID
 

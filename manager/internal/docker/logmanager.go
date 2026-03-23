@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"log"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/demimine/manager/internal/spark"
 	"github.com/demimine/manager/internal/websocket"
 	"github.com/docker/docker/api/types/events"
 )
@@ -31,7 +31,7 @@ type LogManager struct {
 	mu                  sync.RWMutex
 	serverIDs           map[string]int64
 	proxyIDs            map[string]int64
-	pendingProfilerURLs map[string]chan string
+	pendingProfilerURLs map[int64]chan string
 	urlMu               sync.RWMutex
 }
 
@@ -44,7 +44,7 @@ func NewLogManager(dockerClient *Client, db *sql.DB, hub *websocket.Hub) *LogMan
 		proxyStreams:        make(map[int64]*LogStream),
 		serverIDs:           make(map[string]int64),
 		proxyIDs:            make(map[string]int64),
-		pendingProfilerURLs: make(map[string]chan string),
+		pendingProfilerURLs: make(map[int64]chan string),
 	}
 }
 
@@ -65,7 +65,7 @@ func (lm *LogManager) StartContainerStreaming(ctx context.Context, serverID int6
 		return fmt.Errorf("stream already exists for server %d", serverID)
 	}
 
-	var containerName = "demimine-" + sanitizeName(name)
+	var containerName = "demimine-" + SanitizeName(name)
 	lm.serverIDs[containerName] = serverID
 
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -226,7 +226,7 @@ func (lm *LogManager) StartStreamingForRunningContainers(ctx context.Context, db
 
 	for _, s := range servers {
 		log.Printf("Starting log streaming for running server %d (%s)", s.ID, s.Name)
-		if err := lm.StartContainerStreamingByContainer(ctx, s.ID, s.Name, "demimine-"+sanitizeName(s.Name)); err != nil {
+		if err := lm.StartContainerStreamingByContainer(ctx, s.ID, s.Name, "demimine-"+SanitizeName(s.Name)); err != nil {
 			log.Printf("Failed to start log streaming for server %d: %v", s.ID, err)
 		}
 	}
@@ -321,7 +321,7 @@ func (lm *LogManager) StartProxyLogStreaming(ctx context.Context, proxyID int64,
 		return fmt.Errorf("stream already exists for proxy %d", proxyID)
 	}
 
-	containerName := "demimine-proxy-" + sanitizeName(name)
+	containerName := "demimine-proxy-" + SanitizeName(name)
 	containerName = strings.TrimPrefix(containerName, "/")
 	lm.proxyIDs[containerName] = proxyID
 
@@ -497,10 +497,6 @@ func (lm *LogManager) BroadcastLog(serverID int64, logLine string) error {
 
 	lm.hub.Broadcast(data)
 
-	if mspt := lm.extractMSPT(logLine); mspt > 50 {
-		lm.broadcastTickSpike(serverID, mspt)
-	}
-
 	if url := lm.extractProfilerURL(logLine); url != "" {
 		lm.broadcastProfilerURL(serverID, url)
 	}
@@ -508,77 +504,26 @@ func (lm *LogManager) BroadcastLog(serverID int64, logLine string) error {
 	return nil
 }
 
-func (lm *LogManager) extractMSPT(logLine string) float64 {
-	msptRegex := regexp.MustCompile(`\[.*?Spark.*?\].*?(\d+\.?\d*)\s*ms`)
-	matches := msptRegex.FindStringSubmatch(logLine)
-	if len(matches) >= 2 {
-		val, err := strconv.ParseFloat(matches[1], 64)
-		if err == nil {
-			return val
-		}
-	}
-
-	msptRegex2 := regexp.MustCompile(`(\d+\.?\d*)\s*mspt|mspt:\s*(\d+\.?\d*)`)
-	matches2 := msptRegex2.FindStringSubmatch(strings.ToLower(logLine))
-	if len(matches2) >= 2 {
-		if matches2[1] != "" {
-			val, err := strconv.ParseFloat(matches2[1], 64)
-			if err == nil {
-				return val
-			}
-		}
-		if matches2[2] != "" {
-			val, err := strconv.ParseFloat(matches2[2], 64)
-			if err == nil {
-				return val
-			}
-		}
-	}
-
-	return 0
-}
-
-func (lm *LogManager) broadcastTickSpike(serverID int64, mspt float64) {
-	msg := map[string]interface{}{
-		"type":      "tick_spike",
-		"server_id": serverID,
-		"mspt":      mspt,
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Failed to marshal tick spike message: %v", err)
-		return
-	}
-
-	lm.hub.Broadcast(data)
-}
-
 func (lm *LogManager) extractProfilerURL(logLine string) string {
-	urlRegex := regexp.MustCompile(`https://spark\.lucko\.me/[A-Za-z0-9-]+`)
-	matches := urlRegex.FindString(logLine)
-	return matches
+	// Strip ANSI codes - Fabric/Forge/NeoForge may have colored output
+	cleanLine := spark.StripColorCodes(logLine)
+
+	// Match only spark report URLs (alphanumeric hash, not docs URLs)
+	urlRegex := regexp.MustCompile(`https://spark\.lucko\.me/[A-Za-z0-9]{8,}`)
+	return urlRegex.FindString(cleanLine)
 }
 
 func (lm *LogManager) broadcastProfilerURL(serverID int64, url string) {
 	lm.urlMu.RLock()
-	containerName := lm.getContainerNameByServerID(serverID)
-	lm.urlMu.RUnlock()
-
-	if containerName == "" {
-		return
-	}
-
-	lm.urlMu.RLock()
-	urlChan, exists := lm.pendingProfilerURLs[containerName]
+	urlChan, exists := lm.pendingProfilerURLs[serverID]
 	lm.urlMu.RUnlock()
 
 	if exists && urlChan != nil {
 		select {
 		case urlChan <- url:
-			log.Printf("[Spark] Profiler URL captured for %s: %s", containerName, url)
+			log.Printf("[Spark] Profiler URL captured for server %d: %s", serverID, url)
 		default:
-			log.Printf("[Spark] Profiler URL channel closed for %s", containerName)
+			log.Printf("[Spark] Profiler URL channel closed for server %d", serverID)
 		}
 	}
 }
@@ -595,25 +540,25 @@ func (lm *LogManager) getContainerNameByServerID(serverID int64) string {
 	return ""
 }
 
-func (lm *LogManager) WaitForProfilerURL(containerName string) <-chan string {
+func (lm *LogManager) WaitForProfilerURL(serverID int64) <-chan string {
 	lm.urlMu.Lock()
 	defer lm.urlMu.Unlock()
 
-	if _, exists := lm.pendingProfilerURLs[containerName]; exists {
-		delete(lm.pendingProfilerURLs, containerName)
+	if _, exists := lm.pendingProfilerURLs[serverID]; exists {
+		delete(lm.pendingProfilerURLs, serverID)
 	}
 
 	urlChan := make(chan string, 1)
-	lm.pendingProfilerURLs[containerName] = urlChan
+	lm.pendingProfilerURLs[serverID] = urlChan
 	return urlChan
 }
 
-func (lm *LogManager) CancelProfilerURLWait(containerName string) {
+func (lm *LogManager) CancelProfilerURLWait(serverID int64) {
 	lm.urlMu.Lock()
 	defer lm.urlMu.Unlock()
 
-	if urlChan, exists := lm.pendingProfilerURLs[containerName]; exists {
+	if urlChan, exists := lm.pendingProfilerURLs[serverID]; exists {
 		close(urlChan)
-		delete(lm.pendingProfilerURLs, containerName)
+		delete(lm.pendingProfilerURLs, serverID)
 	}
 }

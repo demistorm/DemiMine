@@ -318,6 +318,12 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if strings.ToLower(req.Type) == "fabric" {
+		if err := mc.InstallFabricAPI(serverPath, req.Version); err != nil {
+			log.Printf("Failed to install Fabric API for server %s: %v", req.Name, err)
+		}
+	}
+
 	if req.ProxyID != nil {
 		var forwardingSecret string
 		var proxyName string

@@ -94,6 +94,27 @@ func ConfigureFabricProxy(serverPath, mcVersion, forwardingSecret string) error 
 	return nil
 }
 
+func InstallFabricAPI(serverPath, mcVersion string) error {
+	modsDir := filepath.Join(serverPath, "mods")
+	if err := os.MkdirAll(modsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create mods directory: %w", err)
+	}
+
+	fabricAPIFilename, err := GetModrinthModFilename("fabric-api", mcVersion, "fabric")
+	if err != nil {
+		return fmt.Errorf("failed to get Fabric API filename: %w", err)
+	}
+
+	fabricAPIModPath := filepath.Join(modsDir, fabricAPIFilename)
+	if _, err := os.Stat(fabricAPIModPath); os.IsNotExist(err) {
+		if err := DownloadModrinthMod("fabric-api", mcVersion, "fabric", fabricAPIModPath); err != nil {
+			return fmt.Errorf("failed to download Fabric API: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func RevertFabricProxyConfig(serverPath string) error {
 	configPath := filepath.Join(serverPath, "config", "FabricProxy-Lite.toml")
 	if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
