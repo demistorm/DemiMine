@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
+	"github.com/docker/docker/api/types"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -108,33 +110,57 @@ func (h *ResourceHandler) GetSystemResources(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var containerResources []ContainerResource
-	var totalUsage int64
+	type containerResult struct {
+		name    string
+		ct      ContainerResource
+		usageMB int64
+	}
+
+	resultChan := make(chan containerResult, len(containers))
+	var wg sync.WaitGroup
 
 	for _, ctr := range containers {
-		containerName := ctr.Names[0]
+		wg.Add(1)
+		go func(c types.Container) {
+			defer wg.Done()
+			containerName := c.Names[0]
 
-		stats, err := h.docker.GetContainerMemoryUsage(ctx, containerName)
-		if err != nil {
-			continue
-		}
+			stats, err := h.docker.GetContainerMemoryUsage(ctx, containerName)
+			if err != nil {
+				return
+			}
 
-		var containerType string
-		if ctr.Labels["demimine.type"] == "server" {
-			containerType = "server"
-		} else if ctr.Labels["demimine.type"] == "proxy" {
-			containerType = "proxy"
-		} else {
-			containerType = "manager"
-		}
+			var containerType string
+			if c.Labels["demimine.type"] == "server" {
+				containerType = "server"
+			} else if c.Labels["demimine.type"] == "proxy" {
+				containerType = "proxy"
+			} else {
+				containerType = "manager"
+			}
 
-		containerResources = append(containerResources, ContainerResource{
-			Name:    containerName,
-			Type:    containerType,
-			UsageMB: stats,
-		})
+			resultChan <- containerResult{
+				name: containerName,
+				ct: ContainerResource{
+					Name:    containerName,
+					Type:    containerType,
+					UsageMB: stats,
+				},
+				usageMB: stats,
+			}
+		}(ctr)
+	}
 
-		totalUsage += stats
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	var containerResources []ContainerResource
+	var totalUsage int64
+	for result := range resultChan {
+		containerResources = append(containerResources, result.ct)
+		totalUsage += result.usageMB
 	}
 
 	maxMB := h.cfg.MaxRAMMB
