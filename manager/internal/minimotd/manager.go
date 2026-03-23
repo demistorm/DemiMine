@@ -60,6 +60,16 @@ func (m *Manager) getPluginSettingsPath(proxyName string) string {
 	return filepath.Join(minimotdPath, pluginSettingsFile)
 }
 
+func (m *Manager) getMainConfigPath(proxyName string) string {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+	return filepath.Join(minimotdPath, mainConfigFile)
+}
+
+func (m *Manager) GetMainConfigIconPath(proxyName string) string {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+	return filepath.Join(minimotdPath, iconsDir, proxyName+".png")
+}
+
 func (m *Manager) CreateExtraConfig(proxyName, serverName, line1, line2 string, hasIcon bool) error {
 	minimotdPath := m.getMinimotdPluginsPath(proxyName)
 	extraConfigDir := filepath.Join(minimotdPath, extraConfigsDir)
@@ -311,4 +321,120 @@ player-count-settings {
     servers=[]
 }
 `, serverName, iconSetting, line1, line2)
+}
+
+func (m *Manager) CreateMainConfig(proxyName, line1, line2 string, hasIcon bool) error {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+
+	if err := os.MkdirAll(minimotdPath, 0755); err != nil {
+		return fmt.Errorf("failed to create minimotd directory: %w", err)
+	}
+
+	configPath := m.getMainConfigPath(proxyName)
+	config := m.generateMainConfig(proxyName, line1, line2, hasIcon)
+
+	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
+		return fmt.Errorf("failed to write main config: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) CopyMainConfigIcon(proxyName string, iconData []byte) error {
+	minimotdPath := m.getMinimotdPluginsPath(proxyName)
+	iconsPath := filepath.Join(minimotdPath, iconsDir)
+
+	if err := os.MkdirAll(iconsPath, 0755); err != nil {
+		return fmt.Errorf("failed to create icons directory: %w", err)
+	}
+
+	iconPath := m.GetMainConfigIconPath(proxyName)
+
+	if err := os.WriteFile(iconPath, iconData, 0644); err != nil {
+		return fmt.Errorf("failed to write main config icon: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Manager) generateMainConfig(proxyName, line1, line2 string, hasIcon bool) string {
+	iconSetting := "        icon=random"
+	if hasIcon {
+		iconSetting = fmt.Sprintf("        icon=%s", proxyName)
+	}
+
+	defaultLine1 := "<rainbow>Welcome to the Server"
+	defaultLine2 := "MiniMessage <gradient:blue:red>Gradients"
+
+	if line1 != "" {
+		defaultLine1 = line1
+	}
+	if line2 != "" {
+		defaultLine2 = line2
+	}
+
+	return fmt.Sprintf(`# MiniMOTD Main Configuration
+
+# The list of MOTDs to display
+# 
+#  - Supported placeholders: <online_players>, <max_players>
+#  - Putting more than one will cause one to be randomly chosen each refresh
+motds=[
+    {
+        line1="%s"
+        line2="%s"
+        # Set the icon to use with this MOTD
+        #   Either use 'random' to randomly choose an icon, or use the name
+        #   of a file in the icons folder (excluding the '.png' extension)
+        #     ex: icon="myIconFile"
+%s    }
+]
+# Enable MOTD-related features
+motd-enabled=true
+# Enable server list icon related features
+icon-enabled=true
+player-count-settings {
+    # Enable modification of the max player count
+    max-players-enabled=true
+    # Changes the Max Players value
+    max-players=69
+    # Setting this to true will disable the hover text showing online player usernames
+    disable-player-list-hover=false
+    # Setting this to true will disable the player list hover (same as 'disable-player-list-hover'),
+    # but will also cause the player count to appear as '???'
+    hide-player-count=false
+    # Settings for the fake player count feature
+    fake-players {
+        # Enable fake player count feature
+        fake-players-enabled=false
+        # Modes: add, constant, minimum, random, percent
+        # 
+        #  - add: This many fake players will be added
+        #      ex: fake-players="3"
+        #  - constant: A constant value for the player count
+        #      ex: fake-players="=42"
+        #  - minimum: The minimum bound of the player count
+        #      ex: fake-players="7+"
+        #  - random: A random number of fake players in this range will be added
+        #      ex: fake-players="3:6"
+        #  - percent: The player count will be inflated by this much, rounding up
+        #      ex: fake-players="25%"
+        fake-players="25%%"
+    }
+    # Changes the Max Players to be X more than the online players
+    # ex: x=3 -> 16/19 players online.
+    just-x-more-settings {
+        # Enable this feature
+        just-x-more-enabled=false
+        x-value=3
+    }
+    # Should the displayed online player count be allowed to exceed the displayed maximum player count?
+    # If false, the online player count will be capped at the maximum player count
+    allow-exceeding-maximum=false
+    # The list of server names that affect player counts/listing.
+    # Only applicable when running the plugin on a proxy (Velocity or Waterfall/Bungeecord).
+    # When set to an empty list, the default count & list as determined by the proxy will be used.
+    servers=[]
+}
+`, defaultLine1, defaultLine2, iconSetting)
 }

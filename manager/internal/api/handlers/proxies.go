@@ -21,6 +21,7 @@ import (
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
 	"github.com/demimine/manager/internal/mc"
+	"github.com/demimine/manager/internal/minimotd"
 	"github.com/demimine/manager/internal/models"
 	"github.com/demimine/manager/internal/plugin"
 	"github.com/demimine/manager/internal/spark"
@@ -33,23 +34,25 @@ type ProxyHandler struct {
 	consoleManager *docker.ConsoleManager
 	cfg            *config.Config
 	pluginManager  *plugin.Manager
+	minimotdMgr    *minimotd.Manager
 	sparkInstaller *spark.Installer
 }
 
-func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, pluginManager *plugin.Manager, sparkInstaller *spark.Installer) *ProxyHandler {
+func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, pluginManager *plugin.Manager, minimotdMgr *minimotd.Manager, sparkInstaller *spark.Installer) *ProxyHandler {
 	return &ProxyHandler{
 		db:             db,
 		docker:         dockerClient,
 		consoleManager: consoleManager,
 		cfg:            cfg,
 		pluginManager:  pluginManager,
+		minimotdMgr:    minimotdMgr,
 		sparkInstaller: sparkInstaller,
 	}
 }
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop,
+		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.motd_line1, p.motd_line2, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -72,6 +75,8 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var hostPort, ramMB, startOnBoot int
 		var forwardingSecret sql.NullString
 		var canvasX, canvasY int
+		var motdLine1 sql.NullString
+		var motdLine2 sql.NullString
 		var jarVersion sql.NullString
 		var jarBuild int
 		var createdAt string
@@ -80,7 +85,7 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var serverName sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &serverName,
+			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &motdLine1, &motdLine2, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &serverName,
 		)
 		if err != nil {
 			continue
@@ -107,6 +112,12 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 			if jarVersion.Valid {
 				proxy.JarVersion = &jarVersion.String
+			}
+			if motdLine1.Valid {
+				proxy.MotdLine1 = &motdLine1.String
+			}
+			if motdLine2.Valid {
+				proxy.MotdLine2 = &motdLine2.String
 			}
 			if scheduledStart.Valid {
 				proxy.ScheduledStart = &scheduledStart.String
@@ -139,6 +150,8 @@ type CreateProxyRequest struct {
 	InstallDemiAuth    bool   `json:"install_demiauth"`
 	InstallDemiDynamic bool   `json:"install_demidynamic"`
 	InstallLuckPerms   bool   `json:"install_luckperms"`
+	MotdLine1          string `json:"motd_line1"`
+	MotdLine2          string `json:"motd_line2"`
 	StartOnBoot        int    `json:"start_on_boot"`
 }
 
@@ -210,9 +223,9 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.db.Exec(`
-		INSERT INTO proxies (name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, start_on_boot)
-		VALUES (?, ?, ?, ?, 'stopped', 4000, 4000, ?)
-	`, req.Name, req.HostPort, ramMB, forwardingSecret, req.StartOnBoot)
+		INSERT INTO proxies (name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, start_on_boot)
+		VALUES (?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?, ?)
+	`, req.Name, req.HostPort, ramMB, forwardingSecret, req.MotdLine1, req.MotdLine2, req.StartOnBoot)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -353,6 +366,26 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.MotdLine1 != "" || req.MotdLine2 != "" {
+		iconPath := filepath.Join(h.cfg.ServersDir, req.Name, "icon.png")
+		hasIcon := false
+		if _, err := os.Stat(iconPath); err == nil {
+			hasIcon = true
+			if err := h.minimotdMgr.CopyMainConfigIcon(req.Name, nil); err != nil {
+				fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
+			} else {
+				if iconData, err := os.ReadFile(iconPath); err == nil {
+					if err := h.minimotdMgr.CopyMainConfigIcon(req.Name, iconData); err != nil {
+						fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
+					}
+				}
+			}
+		}
+		if err := h.minimotdMgr.CreateMainConfig(req.Name, req.MotdLine1, req.MotdLine2, hasIcon); err != nil {
+			fmt.Printf("Failed to create MiniMOTD main config for proxy %d: %v\n", id, err)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]int64{"id": id})
@@ -373,11 +406,13 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var jarVersion sql.NullString
 	var scheduledStart sql.NullString
 	var scheduledStop sql.NullString
+	var motdLine1 sql.NullString
+	var motdLine2 sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop
+		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop)
+	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &motdLine1, &motdLine2, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -399,6 +434,14 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	if jarVersion.Valid {
 		p.JarVersion = &jarVersion.String
+	}
+
+	if motdLine1.Valid {
+		p.MotdLine1 = &motdLine1.String
+	}
+
+	if motdLine2.Valid {
+		p.MotdLine2 = &motdLine2.String
 	}
 
 	if scheduledStart.Valid {
@@ -487,6 +530,8 @@ type UpdateProxyRequest struct {
 	RAMMB          *int    `json:"ram_mb"`
 	CanvasX        *int    `json:"canvas_x"`
 	CanvasY        *int    `json:"canvas_y"`
+	MotdLine1      *string `json:"motd_line1"`
+	MotdLine2      *string `json:"motd_line2"`
 	StartOnBoot    *int    `json:"start_on_boot"`
 	ScheduledStart *string `json:"scheduled_start"`
 	ScheduledStop  *string `json:"scheduled_stop"`
@@ -539,6 +584,51 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledStop != nil {
 		h.db.Exec("UPDATE proxies SET scheduled_stop = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStop, id)
+	}
+
+	if req.MotdLine1 != nil || req.MotdLine2 != nil {
+		var name string
+		var currentLine1 sql.NullString
+		var currentLine2 sql.NullString
+		h.db.QueryRow("SELECT name, motd_line1, motd_line2 FROM proxies WHERE id = ?", id).Scan(&name, &currentLine1, &currentLine2)
+
+		newLine1 := ""
+		newLine2 := ""
+		if req.MotdLine1 != nil {
+			newLine1 = *req.MotdLine1
+		} else if currentLine1.Valid {
+			newLine1 = currentLine1.String
+		}
+		if req.MotdLine2 != nil {
+			newLine2 = *req.MotdLine2
+		} else if currentLine2.Valid {
+			newLine2 = currentLine2.String
+		}
+
+		if req.MotdLine1 != nil {
+			h.db.Exec("UPDATE proxies SET motd_line1 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", newLine1, id)
+		}
+		if req.MotdLine2 != nil {
+			h.db.Exec("UPDATE proxies SET motd_line2 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", newLine2, id)
+		}
+
+		proxyIconPath := filepath.Join(h.cfg.ServersDir, name, "icon.png")
+		hasIcon := false
+		if _, err := os.Stat(proxyIconPath); err == nil {
+			hasIcon = true
+			if err := h.minimotdMgr.CopyMainConfigIcon(name, nil); err != nil {
+				fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
+			} else {
+				if iconData, err := os.ReadFile(proxyIconPath); err == nil {
+					if err := h.minimotdMgr.CopyMainConfigIcon(name, iconData); err != nil {
+						fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
+					}
+				}
+			}
+		}
+		if err := h.minimotdMgr.CreateMainConfig(name, newLine1, newLine2, hasIcon); err != nil {
+			fmt.Printf("Failed to update MiniMOTD main config for proxy %d: %v\n", id, err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -729,7 +819,8 @@ func (h *ProxyHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string][]string{"logs": logs})
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write([]byte(strings.Join(logs, "\n")))
 }
 
 func (h *ProxyHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
@@ -1222,7 +1313,9 @@ func (h *ProxyHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var motdLine1 sql.NullString
+	var motdLine2 sql.NullString
+	err = h.db.QueryRow("SELECT name, motd_line1, motd_line2 FROM proxies WHERE id = ?", id).Scan(&name, &motdLine1, &motdLine2)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1278,6 +1371,15 @@ func (h *ProxyHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if motdLine1.Valid || motdLine2.Valid {
+		if err := h.minimotdMgr.CopyMainConfigIcon(name, content); err != nil {
+			fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
+		}
+		if err := h.minimotdMgr.CreateMainConfig(name, motdLine1.String, motdLine2.String, true); err != nil {
+			fmt.Printf("Failed to update MiniMOTD main config for proxy %d: %v\n", id, err)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
@@ -1328,7 +1430,9 @@ func (h *ProxyHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var motdLine1 sql.NullString
+	var motdLine2 sql.NullString
+	err = h.db.QueryRow("SELECT name, motd_line1, motd_line2 FROM proxies WHERE id = ?", id).Scan(&name, &motdLine1, &motdLine2)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1351,6 +1455,14 @@ func (h *ProxyHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete icon"})
 		return
+	}
+
+	if motdLine1.Valid || motdLine2.Valid {
+		minimotdIconPath := h.minimotdMgr.GetMainConfigIconPath(name)
+		os.Remove(minimotdIconPath)
+		if err := h.minimotdMgr.CreateMainConfig(name, motdLine1.String, motdLine2.String, false); err != nil {
+			fmt.Printf("Failed to update MiniMOTD main config for proxy %d: %v\n", id, err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -11,6 +11,8 @@ type Proxy struct {
 	Status           string    `json:"status"`
 	CanvasX          int       `json:"canvas_x"`
 	CanvasY          int       `json:"canvas_y"`
+	MotdLine1        *string   `json:"motd_line1"`
+	MotdLine2        *string   `json:"motd_line2"`
 	StartOnBoot      int       `json:"start_on_boot"`
 	ScheduledStart   *string   `json:"scheduled_start"`
 	ScheduledStop    *string   `json:"scheduled_stop"`
@@ -133,6 +135,8 @@ type ProxyResponse struct {
 	ConnectedServers []string `json:"connected_servers"`
 	CanvasX          int      `json:"canvas_x"`
 	CanvasY          int      `json:"canvas_y"`
+	MotdLine1        *string  `json:"motd_line1"`
+	MotdLine2        *string  `json:"motd_line2"`
 	StartOnBoot      int      `json:"start_on_boot"`
 	ScheduledStart   *string  `json:"scheduled_start"`
 	ScheduledStop    *string  `json:"scheduled_stop"`

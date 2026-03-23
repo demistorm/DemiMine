@@ -60,6 +60,8 @@ func RunMigrations(db *sql.DB) error {
 			status TEXT DEFAULT 'stopped',
 			canvas_x INTEGER DEFAULT 0,
 			canvas_y INTEGER DEFAULT 0,
+			motd_line1 TEXT,
+			motd_line2 TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -174,6 +176,8 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE proxies ADD COLUMN start_on_boot INTEGER DEFAULT 0`,
 		`ALTER TABLE proxies ADD COLUMN scheduled_start TEXT`,
 		`ALTER TABLE proxies ADD COLUMN scheduled_stop TEXT`,
+		`ALTER TABLE proxies ADD COLUMN motd_line1 TEXT`,
+		`ALTER TABLE proxies ADD COLUMN motd_line2 TEXT`,
 		`ALTER TABLE servers ADD COLUMN minimotd_line1 TEXT`,
 		`ALTER TABLE servers ADD COLUMN minimotd_line2 TEXT`,
 		`ALTER TABLE servers ADD COLUMN jar_build INTEGER DEFAULT 0`,

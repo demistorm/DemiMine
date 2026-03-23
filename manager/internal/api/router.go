@@ -38,7 +38,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 
 	authHandler := handlers.NewAuthHandler(database, cfg.JWTSecret)
 	serverHandler := handlers.NewServerHandler(database, dockerClient, consoleManager, cfg, minimotdMgr, sparkInstaller)
-	proxyHandler := handlers.NewProxyHandler(database, dockerClient, consoleManager, cfg, pluginMgr, sparkInstaller)
+	proxyHandler := handlers.NewProxyHandler(database, dockerClient, consoleManager, cfg, pluginMgr, minimotdMgr, sparkInstaller)
 	versionsHandler := handlers.NewVersionsHandler()
 	javaHandler := handlers.NewJavaHandler()
 	fileUploadHandler := handlers.NewFileUploadHandler(database, cfg)

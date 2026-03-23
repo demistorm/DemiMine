@@ -287,6 +287,8 @@ export interface Proxy {
 	connected_servers: string[];
 	canvas_x: number;
 	canvas_y: number;
+	motd_line1: string | null;
+	motd_line2: string | null;
 	icon_path: string | null;
 	start_on_boot: number;
 	scheduled_start: string | null;
