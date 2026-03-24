@@ -50,6 +50,8 @@
 
         currentX = Math.round(newX / 100) * 100;
         currentY = Math.round(newY / 100) * 100;
+
+        dispatch('dragging', { id: server.id, x: currentX, y: currentY, type: 'server' });
     }
 
 	function handleMouseUp(e: MouseEvent) {

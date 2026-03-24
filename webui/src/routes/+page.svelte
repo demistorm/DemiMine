@@ -2,11 +2,13 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { servers, proxies, loadServers, loadProxies, updateServerPosition, updateServerStatus, deleteServerFromStore, updateProxyPosition, deleteProxyFromStore } from '$lib/stores/servers';
+	import { dragPositions } from '$lib/stores/dragPositions';
 	import { api, type Server, type Proxy } from '$lib/api';
 	import ServerTile from '$lib/components/ServerTile.svelte';
 	import ProxyTile from '$lib/components/ProxyTile.svelte';
 	import CreateServer from '$lib/components/CreateServer.svelte';
 	import CreateProxy from '$lib/components/CreateProxy.svelte';
+	import { generateManhattanPath, pointsToPolylineString } from '$lib/utils/manhattanPath';
 
 	let canvasOffset = { x: 0, y: 0 };
 	let zoom = 1;
@@ -83,10 +85,12 @@
 
     async function handleServerMove(server: Server, newX: number, newY: number) {
         await updateServerPosition(server.id, newX, newY);
+        dragPositions.clearPosition(server.id);
     }
 
     async function handleProxyMove(proxy: Proxy, newX: number, newY: number) {
         await updateProxyPosition(proxy.id, newX, newY);
+        dragPositions.clearPosition(proxy.id);
     }
 
     async function handleServerStart(server: Server) {
@@ -216,6 +220,32 @@
     function getCanvasTransform() {
         return `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${zoom})`;
     }
+
+	$: connections = computeConnections(proxyList, serverList, $dragPositions);
+
+    function computeConnections(proxies: Proxy[], servers: Server[], livePos: typeof $dragPositions) {
+        return proxies.flatMap(proxy =>
+            servers
+                .filter(s => s.proxy_id === proxy.id)
+                .map(server => {
+                    const pPos = livePos[proxy.id] ?? { x: proxy.canvas_x ?? 0, y: proxy.canvas_y ?? 0 };
+                    const sPos = livePos[server.id] ?? { x: server.canvas_x ?? 0, y: server.canvas_y ?? 0 };
+                    return {
+                        points: generateManhattanPath(pPos.x + 60, pPos.y + 60, sPos.x + 60, sPos.y + 60)
+                    };
+                })
+        );
+    }
+
+    function handleDragging(e: CustomEvent) {
+        const { id, x, y, type } = e.detail;
+        dragPositions.updatePosition(id, x, y, type);
+    }
+
+    function clearDragging(e: CustomEvent) {
+        const { id } = e.detail;
+        dragPositions.clearPosition(id);
+    }
 </script>
 
 <svelte:window on:click={handleGlobalClick} on:keydown={handleGlobalKeydown} />
@@ -235,39 +265,35 @@
         <div class="grid-background"></div>
         
         <svg class="connection-lines">
-            {#each proxyList as proxy}
-                {#each serverList as server}
-                    {#if server.proxy_id === proxy.id}
-                        <line 
-                            x1={proxy.canvas_x + 60}
-                            y1={proxy.canvas_y + 60}
-                            x2={server.canvas_x + 60}
-                            y2={server.canvas_y + 60}
-                            stroke="#63b3ed"
-                            stroke-width="2"
-                        />
-                    {/if}
-                {/each}
+            {#each connections as conn}
+                <polyline
+                    points={pointsToPolylineString(conn.points)}
+                    fill="none"
+                    stroke="#63b3ed"
+                    stroke-width="2"
+                />
             {/each}
         </svg>
 
         {#each proxyList as proxy}
-            <ProxyTile 
+            <ProxyTile
                 {proxy}
                 {canvasOffset}
                 {zoom}
                 on:click={() => handleProxyClick(proxy)}
+                on:dragging={handleDragging}
                 on:move={(e) => handleProxyMove(proxy, e.detail.x, e.detail.y)}
                 on:contextmenu={(e) => handleProxyContextMenu(proxy, e.detail.x, e.detail.y)}
             />
         {/each}
 
         {#each serverList as server}
-            <ServerTile 
+            <ServerTile
                 {server}
                 {canvasOffset}
                 {zoom}
                 on:click={() => handleServerClick(server)}
+                on:dragging={handleDragging}
                 on:move={(e) => handleServerMove(server, e.detail.x, e.detail.y)}
                 on:contextmenu={(e) => handleServerContextMenu(server, e.detail.x, e.detail.y)}
             />

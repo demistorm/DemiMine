@@ -47,6 +47,8 @@
 		const newY = (e.clientY - canvasOffset.y) / zoom - dragStart.y;
 		currentX = Math.round(newX / 100) * 100;
 		currentY = Math.round(newY / 100) * 100;
+
+		dispatch('dragging', { id: proxy.id, x: currentX, y: currentY, type: 'proxy' });
 	}
 
 	function handleMouseUp(e: MouseEvent) {
