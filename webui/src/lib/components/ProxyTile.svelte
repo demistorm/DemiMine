@@ -123,9 +123,6 @@
 		<div class="server-count">
 			{proxy.connected_servers?.length || 0} server{proxy.connected_servers?.length !== 1 ? 's' : ''}
 		</div>
-		<div class="player-count">
-			{proxy.player_count || 0} player{proxy.player_count !== 1 ? 's' : ''}
-		</div>
 	</div>
 </div>
 
@@ -234,10 +231,5 @@
 		color: var(--text-secondary);
 		font-size: 0.75rem;
 		margin-top: 0.25rem;
-	}
-
-	.player-count {
-		color: var(--text-secondary);
-		font-size: 0.875rem;
 	}
 </style>
