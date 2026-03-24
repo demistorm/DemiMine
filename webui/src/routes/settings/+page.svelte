@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { loadGlobalSettings, globalSettings, saveGlobalSettings, type GlobalSettings } from '$lib/stores/settings';
-	import { backupsApi, type Backup } from '$lib/api';
+	import { loadGlobalSettings, globalSettings, saveGlobalSettings, backgroundTextureUrl, loadBackgroundTexture, type GlobalSettings } from '$lib/stores/settings';
+	import { settingsApi, backupsApi, type Backup } from '$lib/api';
 	import { formatBytes, formatDate } from '$lib/utils';
 
 	let loading = true;
@@ -19,10 +19,18 @@
 	let restoreFileName = '';
 	let restoring = false;
 
+	let textureFile: File | null = null;
+	let textureFileName = '';
+	let textureUploading = false;
+	let textureRemoving = false;
+	let textureDropZone = false;
+
 	$: globalSettings;
+	$: backgroundTextureUrl;
 
 	onMount(async () => {
 		await loadGlobalSettings();
+		await loadBackgroundTexture();
 		const [h, m] = $globalSettings.backup_time.split(':').map(Number);
 		backupHour = h;
 		backupMinute = m;
@@ -50,7 +58,8 @@
         proxy_mc_version: $globalSettings.proxy_mc_version,
         backup_time: `${String(backupHour).padStart(2, '0')}:${String(backupMinute).padStart(2, '0')}`,
         backup_interval_days: backupIntervalDays,
-        retention_count: retentionCount
+        retention_count: retentionCount,
+        background_texture_scale: $globalSettings.background_texture_scale
       });
       success = 'Settings saved successfully';
       setTimeout(() => success = '', 3000);
@@ -115,7 +124,7 @@
 
   async function restoreBackup() {
     if (!restoreFile) return;
-    
+
     if (!confirm('This will replace ALL servers, proxies, and settings. This cannot be undone. Continue?')) {
       return;
     }
@@ -124,11 +133,91 @@
     try {
       await backupsApi.restore(restoreFile);
       success = 'Restore initiated. The manager will restart.';
+      setTimeout(() => window.location.reload(), 2000);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to restore backup';
     } finally {
       restoring = false;
     }
+  }
+
+  function handleTextureFile(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (file) {
+      if (file.type !== 'image/png' && file.type !== 'image/x-png') {
+        error = 'Only PNG files are allowed';
+        setTimeout(() => error = '', 3000);
+        return;
+      }
+      textureFile = file;
+      textureFileName = file.name;
+    }
+  }
+
+  async function uploadTexture() {
+    if (!textureFile) return;
+
+    textureUploading = true;
+    error = '';
+    success = '';
+
+    try {
+      await settingsApi.uploadBackgroundTexture(textureFile);
+      await loadBackgroundTexture();
+      success = 'Texture uploaded successfully';
+      setTimeout(() => success = '', 3000);
+      textureFile = null;
+      textureFileName = '';
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to upload texture';
+    } finally {
+      textureUploading = false;
+    }
+  }
+
+  async function removeTexture() {
+    if (!confirm('Are you sure you want to remove the background texture?')) return;
+
+    textureRemoving = true;
+    error = '';
+    success = '';
+
+    try {
+      await settingsApi.deleteBackgroundTexture();
+      backgroundTextureUrl.set(null);
+      success = 'Texture removed successfully';
+      setTimeout(() => success = '', 3000);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to remove texture';
+    } finally {
+      textureRemoving = false;
+    }
+  }
+
+  function handleTextureDrop(e: DragEvent) {
+    e.preventDefault();
+    textureDropZone = false;
+    const file = e.dataTransfer?.files[0];
+    if (file) {
+      if (file.type !== 'image/png' && file.type !== 'image/x-png') {
+        error = 'Only PNG files are allowed';
+        setTimeout(() => error = '', 3000);
+        return;
+      }
+      textureFile = file;
+      textureFileName = file.name;
+    }
+  }
+
+  function handleTextureDragOver(e: DragEvent) {
+    e.preventDefault();
+    textureDropZone = true;
+  }
+
+  function handleTextureDragLeave(e: DragEvent) {
+    e.preventDefault();
+    textureDropZone = false;
   }
 </script>
 
@@ -153,6 +242,50 @@
       <p class="hint">Generate and manage API keys for external integrations like the DemiDynamic plugin.</p>
       <div class="button-wrapper">
         <a href="/api-keys" class="btn primary">Manage API Keys</a>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Appearance</h2>
+      <p class="hint">Customize the background texture for the main canvas with a 16x16 pixel art PNG.</p>
+
+      <div class="field">
+        <label>Background Texture Scale</label>
+        <input type="range" min="1" max="12" step="1" bind:value={$globalSettings.background_texture_scale} />
+        <span class="hint">Scale factor: {$globalSettings.background_texture_scale}x (1x = 16px, 4x = 64px)</span>
+      </div>
+
+      <div class="texture-preview">
+        {#if $backgroundTextureUrl}
+          <div class="texture-preview-inner">
+            <img src={$backgroundTextureUrl} alt="Background texture" />
+            <button class="btn small danger" on:click={removeTexture} disabled={textureRemoving}>
+              {textureRemoving ? 'Removing...' : 'Remove'}
+            </button>
+          </div>
+        {:else}
+          <div class="drop-zone {textureDropZone ? 'drag-over' : ''}"
+               on:drop={handleTextureDrop}
+               on:dragover={handleTextureDragOver}
+               on:dragleave={handleTextureDragLeave}>
+            <div class="drop-zone-content">
+              <p>Drop a 16x16 PNG texture here, or click to browse</p>
+              <input type="file" id="textureFile" accept="image/png" on:change={handleTextureFile} />
+              <label for="textureFile" class="browse-btn">Browse</label>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="field" style="margin-top: 1rem;">
+        {#if textureFileName}
+          <span class="selected-file">Selected: {textureFileName}</span>
+        {/if}
+        {#if textureFile && !$backgroundTextureUrl}
+          <button class="btn" on:click={uploadTexture} disabled={textureUploading}>
+            {textureUploading ? 'Uploading...' : 'Upload Texture'}
+          </button>
+        {/if}
       </div>
     </div>
 
@@ -523,5 +656,79 @@
   .btn.small {
     padding: 0.375rem 0.75rem;
     font-size: 0.8125rem;
+  }
+
+  .texture-preview {
+    margin-top: 1rem;
+  }
+
+  .texture-preview-inner {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border-radius: 0.375rem;
+  }
+
+  .texture-preview-inner img {
+    width: 64px;
+    height: 64px;
+    image-rendering: pixelated;
+    border: 2px solid var(--border);
+    border-radius: 0.25rem;
+    background: var(--bg-primary);
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 0.5rem;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.2s;
+    background: var(--bg-primary);
+  }
+
+  .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(59, 130, 246, 0.1);
+  }
+
+  .drop-zone-content p {
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+  }
+
+  .drop-zone-content input[type="file"] {
+    display: none;
+  }
+
+  .browse-btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+  }
+
+  .browse-btn:hover {
+    background: var(--bg-secondary);
+  }
+
+  .selected-file {
+    display: inline-block;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-right: 1rem;
+  }
+
+  .field input[type="range"] {
+    width: 100%;
+    max-width: 400px;
+    padding: 0;
   }
 </style>

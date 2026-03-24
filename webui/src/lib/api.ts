@@ -457,8 +457,44 @@ export const settingsApi = {
 	get: () =>
 		api.get<{ [key: string]: string }>('/api/settings'),
 
-	update: (data: { proxy_mc_version?: string; backup_time?: string; backup_interval_days?: string; retention_count?: number }) =>
+	update: (data: { proxy_mc_version?: string; backup_time?: string; backup_interval_days?: string; retention_count?: number; background_texture_scale?: number }) =>
 		api.put<{ success: boolean }>('/api/settings', data),
+
+	getBackgroundTexture: async () => {
+		const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+		const headers: HeadersInit = {};
+		if (token) headers['Authorization'] = `Bearer ${token}`;
+
+		const response = await fetch('/api/settings/background-texture', { headers });
+		if (!response.ok) throw new Error('Failed to load background texture');
+		const blob = await response.blob();
+		return URL.createObjectURL(blob);
+	},
+
+	uploadBackgroundTexture: async (file: File) => {
+		const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+		const formData = new FormData();
+		formData.append('texture', file);
+
+		const headers: HeadersInit = {};
+		if (token) headers['Authorization'] = `Bearer ${token}`;
+
+		const response = await fetch('/api/settings/background-texture', {
+			method: 'POST',
+			headers,
+			body: formData
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+			throw new ApiError(errorData as ApiErrorData);
+		}
+
+		return response.json() as Promise<{ success: boolean }>;
+	},
+
+	deleteBackgroundTexture: () =>
+		api.delete<{ success: boolean }>('/api/settings/background-texture')
 };
 
 export interface Backup {

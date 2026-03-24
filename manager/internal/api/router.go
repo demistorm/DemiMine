@@ -98,6 +98,9 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 			r.Use(middleware.Auth(database, cfg.JWTSecret))
 			r.Get("/", settingsHandler.Get)
 			r.Put("/", settingsHandler.Update)
+			r.Post("/background-texture", settingsHandler.UploadBackgroundTexture)
+			r.Get("/background-texture", settingsHandler.ServeBackgroundTexture)
+			r.Delete("/background-texture", settingsHandler.DeleteBackgroundTexture)
 		})
 
 		r.Route("/players", func(r chi.Router) {

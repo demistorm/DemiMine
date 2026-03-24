@@ -7,6 +7,7 @@ export interface GlobalSettings {
 	backup_interval_days: string;
 	retention_count: number;
 	server_timezone: string;
+	background_texture_scale: number;
 }
 
 export const globalSettings = writable<GlobalSettings>({
@@ -14,8 +15,11 @@ export const globalSettings = writable<GlobalSettings>({
 	backup_time: '03:00',
 	backup_interval_days: '3',
 	retention_count: 2,
-	server_timezone: 'UTC'
+	server_timezone: 'UTC',
+	background_texture_scale: 4
 });
+
+export const backgroundTextureUrl = writable<string | null>(null);
 
 export const proxyMCVersion = derived(globalSettings, ($settings) => $settings.proxy_mc_version);
 
@@ -29,7 +33,8 @@ export const loadGlobalSettings = async () => {
 			backup_time: settings.backup_time || '03:00',
 			backup_interval_days: settings.backup_interval_days || '3',
 			retention_count: settings.retention_count ? parseInt(settings.retention_count) : 2,
-			server_timezone: settings.server_timezone || 'UTC'
+			server_timezone: settings.server_timezone || 'UTC',
+			background_texture_scale: settings.background_texture_scale ? parseInt(settings.background_texture_scale) : 4
 		});
 	} catch (err) {
 		console.error('Failed to load global settings:', err);
@@ -43,6 +48,15 @@ export const saveGlobalSettings = async (data: GlobalSettings) => {
 	} catch (err) {
 		console.error('Failed to save global settings:', err);
 		throw err;
+	}
+};
+
+export const loadBackgroundTexture = async () => {
+	try {
+		const url = await settingsApi.getBackgroundTexture();
+		backgroundTextureUrl.set(url);
+	} catch (err) {
+		backgroundTextureUrl.set(null);
 	}
 };
 

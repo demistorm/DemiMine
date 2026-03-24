@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { servers, proxies, loadServers, loadProxies, updateServerPosition, updateServerStatus, deleteServerFromStore, updateProxyPosition, deleteProxyFromStore } from '$lib/stores/servers';
 	import { dragPositions } from '$lib/stores/dragPositions';
+	import { backgroundTextureUrl, globalSettings, loadBackgroundTexture, loadGlobalSettings } from '$lib/stores/settings';
 	import { api, type Server, type Proxy } from '$lib/api';
 	import ServerTile from '$lib/components/ServerTile.svelte';
 	import ProxyTile from '$lib/components/ProxyTile.svelte';
@@ -21,13 +22,23 @@
 	let contextMenuPos = { x: 0, y: 0 };
 	let deleteStep = 0;
 	let ignoreNextClick = false;
+	let scaledBackgroundTextureUrl: string | null = null;
 
 	$: serverList = $servers || [];
 	$: proxyList = $proxies || [];
+	$: globalSettings, backgroundTextureUrl;
+
+	$: if ($backgroundTextureUrl && $globalSettings.background_texture_scale) {
+		scaleTexture($backgroundTextureUrl, $globalSettings.background_texture_scale);
+	} else {
+		scaledBackgroundTextureUrl = null;
+	}
 
 	onMount(() => {
+		loadGlobalSettings();
 		loadServers();
 		loadProxies();
+		loadBackgroundTexture();
 		const navbarHeight = 56;
 		const canvasSize = 8000;
 		canvasOffset = {
@@ -35,6 +46,25 @@
 			y: (window.innerHeight - navbarHeight) / 2 - (canvasSize / 2) * zoom
 		};
 	});
+
+	function scaleTexture(url: string, scale: number) {
+		const img = new Image();
+		img.onload = () => {
+			const canvas = document.createElement('canvas');
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return;
+
+			const scaledSize = 16 * scale;
+			canvas.width = scaledSize;
+			canvas.height = scaledSize;
+
+			ctx.imageSmoothingEnabled = false;
+			ctx.drawImage(img, 0, 0, scaledSize, scaledSize);
+
+			scaledBackgroundTextureUrl = canvas.toDataURL('image/png');
+		};
+		img.src = url;
+	}
 
 	function handleWheel(e: WheelEvent) {
 		e.preventDefault();
@@ -269,7 +299,7 @@
     on:mouseleave={handleMouseUp}
 >
     <div class="canvas" style="transform: translate({canvasOffset.x}px, {canvasOffset.y}px) scale({zoom})">
-        <div class="grid-background"></div>
+        <div class="grid-background" style="background-image: {scaledBackgroundTextureUrl ? `url(${scaledBackgroundTextureUrl})` : 'none'};"></div>
         
         <svg class="connection-lines">
             {#each connections as conn}
@@ -408,10 +438,10 @@
         left: 0;
         width: 8000px;
         height: 8000px;
-        background-image: 
-            linear-gradient(rgba(74, 85, 104, 0.2) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(74, 85, 104, 0.2) 1px, transparent 1px);
-        background-size: 100px 100px;
+        background-image: none;
+        background-size: auto;
+        background-repeat: repeat;
+        image-rendering: pixelated;
         pointer-events: none;
     }
 
