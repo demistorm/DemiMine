@@ -5,6 +5,7 @@
 	export let proxy: Proxy;
 	export let canvasOffset = { x: 0, y: 0 };
 	export let zoom = 1;
+	export let pixelScale = 4;
 	export let textureUrl: string | null = null;
 
 	const dispatch = createEventDispatcher();
@@ -93,10 +94,10 @@
 </script>
 
 <div
-	class="proxy-tile"
-	style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%); {textureUrl ? `background-image: url('${textureUrl}');` : ''}"
-	on:mousedown={handleMouseDown}
-	on:contextmenu={handleContextMenu}
+    class="proxy-tile"
+    style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%); --scale: {pixelScale}px; {textureUrl ? `background-image: url('${textureUrl}');` : ''}"
+    on:mousedown={handleMouseDown}
+    on:contextmenu={handleContextMenu}
 >
 	<div class="proxy-icon">
 		{#if proxy.icon_path}
@@ -137,14 +138,37 @@
 		border-radius: 0;
 		cursor: pointer;
 		user-select: none;
-		transition: transform 0.1s, box-shadow 0.1s;
+		transition: transform 0.2s, box-shadow 0.2s;
 		border: 6px solid var(--border);
 		image-rendering: pixelated;
 		background-repeat: repeat;
+		box-shadow:
+			calc(var(--scale) * -1) 0 0 rgba(0, 0, 0, 0.15),
+			calc(var(--scale) * 1) 0 0 rgba(0, 0, 0, 0.15),
+			calc(var(--scale) * -1) calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.25),
+			calc(var(--scale) * 1) calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.25),
+			0 calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.30);
 	}
 
 	.proxy-tile:hover {
-		box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+		transform: translate(-50%, calc(-50% - 4px)) scale(1.02) !important;
+		box-shadow:
+			0 calc(var(--scale) * -1) 0 rgba(0, 0, 0, 0.10),
+			calc(var(--scale) * -1) 0 0 rgba(0, 0, 0, 0.19),
+			calc(var(--scale) * 1) 0 0 rgba(0, 0, 0, 0.19),
+			calc(var(--scale) * -1) calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.26),
+			calc(var(--scale) * 1) calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.26),
+			0 calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.30),
+			calc(var(--scale) * -2) 0 0 rgba(0, 0, 0, 0.14),
+			calc(var(--scale) * 2) 0 0 rgba(0, 0, 0, 0.14),
+			calc(var(--scale) * -2) calc(var(--scale) * 2) 0 rgba(0, 0, 0, 0.19),
+			calc(var(--scale) * 2) calc(var(--scale) * 2) 0 rgba(0, 0, 0, 0.19),
+			0 calc(var(--scale) * 2) 0 rgba(0, 0, 0, 0.23),
+			calc(var(--scale) * -3) 0 0 rgba(0, 0, 0, 0.08),
+			calc(var(--scale) * 3) 0 0 rgba(0, 0, 0, 0.08),
+			calc(var(--scale) * -3) calc(var(--scale) * 3) 0 rgba(0, 0, 0, 0.11),
+			calc(var(--scale) * 3) calc(var(--scale) * 3) 0 rgba(0, 0, 0, 0.11),
+			0 calc(var(--scale) * 3) 0 rgba(0, 0, 0, 0.15);
 	}
 
 	.proxy-icon {

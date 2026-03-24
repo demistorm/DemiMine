@@ -371,6 +371,7 @@
                 {proxy}
                 {canvasOffset}
                 {zoom}
+                pixelScale={$globalSettings.background_texture_scale}
                 textureUrl={scaledProxyTileTextureUrl}
                 on:click={() => handleProxyClick(proxy)}
                 on:dragging={handleDragging}
@@ -384,6 +385,7 @@
                 {server}
                 {canvasOffset}
                 {zoom}
+                pixelScale={$globalSettings.background_texture_scale}
                 textureUrl={scaledServerTileTextureUrl}
                 on:click={() => handleServerClick(server)}
                 on:dragging={handleDragging}
