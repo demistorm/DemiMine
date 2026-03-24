@@ -401,10 +401,11 @@
 	.step-labels {
 		display: flex;
 		justify-content: center;
-		gap: 60px;
 	}
 
 	.step-labels span {
+		width: 88px;
+		text-align: center;
 		color: var(--text-secondary);
 		font-size: 0.75rem;
 		transition: all 0.2s;

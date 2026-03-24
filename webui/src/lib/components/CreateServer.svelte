@@ -230,25 +230,20 @@
 			<div class="steps">
 				<div class="step-indicator">
 					<div class="step-dot" class:active={step === 1}>1</div>
-                    <div class="step-line" class:active={step === 2}></div>
-                    <div class="step-dot" class:active={step === 2}>2</div>
-                </div>
-                <div class="step-indicator">
-                    <div class="step-dot" class:active={step === 1}>1</div>
-                    <div class="step-line" class:active={step >= 2}></div>
-                    <div class="step-dot" class:active={step === 2}>2</div>
-                    {#if proxyId !== null}
-                        <div class="step-line" class:active={step >= 3}></div>
-                        <div class="step-dot" class:active={step === 3}>3</div>
-                    {/if}
-                </div>
-                <div class="step-labels">
-                    <span class:active={step === 1}>Basic Info</span>
-                    <span class:active={step === 2}>Configuration</span>
-                    {#if proxyId !== null}
-                        <span class:active={step === 3}>MiniMOTD</span>
-                    {/if}
-                </div>
+					<div class="step-line" class:active={step >= 2}></div>
+					<div class="step-dot" class:active={step === 2}>2</div>
+					{#if proxyId !== null}
+						<div class="step-line" class:active={step >= 3}></div>
+						<div class="step-dot" class:active={step === 3}>3</div>
+					{/if}
+				</div>
+				<div class="step-labels">
+					<span class:active={step === 1}>Basic Info</span>
+					<span class:active={step === 2}>Configuration</span>
+					{#if proxyId !== null}
+						<span class:active={step === 3}>MiniMOTD</span>
+					{/if}
+				</div>
 			</div>
 
 			{#if step === 1}
@@ -589,10 +584,11 @@
 	.step-labels {
 		display: flex;
 		justify-content: center;
-		gap: 60px;
 	}
 
 	.step-labels span {
+		width: 88px;
+		text-align: center;
 		color: var(--text-secondary);
 		font-size: 0.75rem;
 		transition: all 0.2s;
