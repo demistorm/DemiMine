@@ -8,7 +8,7 @@
 	import ProxyTile from '$lib/components/ProxyTile.svelte';
 	import CreateServer from '$lib/components/CreateServer.svelte';
 	import CreateProxy from '$lib/components/CreateProxy.svelte';
-	import { generateManhattanPath, pointsToPolylineString } from '$lib/utils/manhattanPath';
+	import { generateManhattanPath, pointsToPolylineString, computeClusteredConnections, type ServerPosition } from '$lib/utils/manhattanPath';
 
 	let canvasOffset = { x: 0, y: 0 };
 	let zoom = 1;
@@ -224,17 +224,23 @@
 	$: connections = computeConnections(proxyList, serverList, $dragPositions);
 
     function computeConnections(proxies: Proxy[], servers: Server[], livePos: typeof $dragPositions) {
-        return proxies.flatMap(proxy =>
-            servers
-                .filter(s => s.proxy_id === proxy.id)
-                .map(server => {
-                    const pPos = livePos[proxy.id] ?? { x: proxy.canvas_x ?? 0, y: proxy.canvas_y ?? 0 };
-                    const sPos = livePos[server.id] ?? { x: server.canvas_x ?? 0, y: server.canvas_y ?? 0 };
-                    return {
-                        points: generateManhattanPath(pPos.x + 60, pPos.y + 60, sPos.x + 60, sPos.y + 60)
-                    };
-                })
-        );
+        return proxies.flatMap(proxy => {
+            const proxyServers = servers.filter(s => s.proxy_id === proxy.id);
+
+			if (proxyServers.length === 0) return [];
+
+			const pPos = livePos[proxy.id] ?? { x: proxy.canvas_x ?? 0, y: proxy.canvas_y ?? 0 };
+			const serverPositions: ServerPosition[] = proxyServers.map(server => ({
+				id: server.id,
+				x: (livePos[server.id]?.x ?? server.canvas_x ?? 0) + 50,
+				y: (livePos[server.id]?.y ?? server.canvas_y ?? 0) + 50
+			}));
+
+			const proxyCenter = { x: pPos.x + 50, y: pPos.y + 50 };
+			const polylines = computeClusteredConnections(proxyCenter, serverPositions);
+
+			return polylines.map(points => ({ points }));
+        });
     }
 
     function handleDragging(e: CustomEvent) {
