@@ -314,8 +314,8 @@
 
 	.modal {
 		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 0.5rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		width: 90%;
 		max-width: 500px;
 		max-height: 90vh;
@@ -327,7 +327,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 1.25rem 1.5rem;
-		border-bottom: 1px solid var(--border);
+		border-bottom: 3px solid var(--border);
 	}
 
 	.modal-header h2 {
@@ -357,7 +357,7 @@
 
 	.steps {
 		padding: 1rem 1.5rem;
-		border-bottom: 1px solid var(--border);
+		border-bottom: 3px solid var(--border);
 	}
 
 	.step-indicator {
@@ -437,8 +437,8 @@
 		width: 100%;
 		padding: 0.625rem 0.875rem;
 		background-color: var(--bg-primary);
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		color: var(--text-primary);
 		font-size: 0.9375rem;
 	}
@@ -487,7 +487,7 @@
 		width: 64px;
 		height: 64px;
 		object-fit: contain;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		background-color: var(--bg-tertiary);
 		padding: 0.25rem;
 	}
@@ -498,8 +498,8 @@
 		gap: 0.5rem;
 		padding: 0.75rem 1rem;
 		background-color: var(--bg-tertiary);
-		border: 2px dashed var(--border);
-		border-radius: 0.5rem;
+		border: 6px dashed var(--border);
+		border-radius: 0;
 		cursor: pointer;
 		transition: all 0.2s;
 	}
@@ -530,7 +530,7 @@
 
 	.info-box {
 		background: var(--bg-tertiary);
-		border-radius: 0.375rem;
+		border-radius: 0;
 		padding: 0.75rem 1rem;
 		margin-bottom: 1.25rem;
 	}
@@ -557,17 +557,17 @@
 		justify-content: flex-end;
 		gap: 0.75rem;
 		padding-top: 1rem;
-		border-top: 1px solid var(--border);
+		border-top: 3px solid var(--border);
 	}
 
 	.btn {
 		padding: 0.625rem 1.25rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.2s;
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		background-color: var(--bg-tertiary);
 		color: var(--text-primary);
 	}

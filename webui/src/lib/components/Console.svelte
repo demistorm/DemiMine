@@ -281,10 +281,10 @@
 	.command-input input {
 		flex: 1;
 		background-color: var(--bg-primary);
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		color: var(--text-primary);
 		padding: 0.625rem 0.875rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		font-family: 'Courier New', Courier, monospace;
 	}
 
@@ -298,7 +298,7 @@
 		color: var(--text-primary);
 		border: none;
 		padding: 0.625rem 1.25rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		cursor: pointer;
 		font-weight: 500;
 	}
@@ -315,8 +315,8 @@
 	.error-message {
 		padding: 0.75rem 1rem;
 		background-color: rgba(239, 68, 68, 0.1);
-		border: 1px solid rgba(239, 68, 68, 0.3);
-		border-radius: 0.375rem;
+		border: 3px solid rgba(239, 68, 68, 0.3);
+		border-radius: 0;
 		color: #ef4444;
 		font-size: 0.875rem;
 		margin: 0 1rem 0.5rem 1rem;

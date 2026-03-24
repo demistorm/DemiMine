@@ -100,7 +100,7 @@
 		color: var(--text-primary);
 		text-decoration: none;
 		padding: 0.5rem 1rem;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		transition: color 0.2s;
 		cursor: pointer;
 		background: none;
@@ -138,7 +138,7 @@
 		width: 100px;
 		height: 6px;
 		background-color: var(--bg-tertiary);
-		border-radius: 3px;
+		border-radius: 0;
 		overflow: hidden;
 	}
 

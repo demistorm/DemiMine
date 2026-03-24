@@ -91,8 +91,8 @@
 		align-items: center;
 		padding: 1.25rem 1.5rem;
 		background-color: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 0.5rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		transition: border-color 0.2s;
 	}
 
@@ -129,12 +129,12 @@
 
 	.btn {
 		padding: 0.5rem 1rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.2s;
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		background-color: var(--bg-tertiary);
 		color: var(--text-primary);
 	}

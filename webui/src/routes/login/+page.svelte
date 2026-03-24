@@ -116,8 +116,8 @@
 
 	.login-form {
 		background-color: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 0.5rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		padding: 2rem;
 		width: 100%;
 		max-width: 400px;
@@ -147,10 +147,10 @@
 	input {
 		width: 100%;
 		background-color: var(--bg-primary);
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		color: var(--text-primary);
 		padding: 0.75rem;
-		border-radius: 0.25rem;
+		border-radius: 0;
 	}
 
 	input:focus {
@@ -169,7 +169,7 @@
 		color: var(--text-primary);
 		border: none;
 		padding: 0.75rem 1.5rem;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		font-weight: 600;
 		cursor: pointer;
 		margin-top: 0.5rem;

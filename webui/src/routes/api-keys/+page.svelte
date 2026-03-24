@@ -161,8 +161,8 @@
 		margin-bottom: 2.5rem;
 		padding: 1.5rem;
 		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 0.5rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 	}
 
 	.section h2 {
@@ -170,7 +170,7 @@
 		font-size: 1.25rem;
 		margin: 0 0 1.5rem;
 		padding-bottom: 0.75rem;
-		border-bottom: 1px solid var(--border);
+		border-bottom: 3px solid var(--border);
 	}
 
 	.section h3 {
@@ -197,7 +197,7 @@
 
 	.alert {
 		padding: 0.75rem 1rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		margin-bottom: 1.5rem;
 		display: flex;
 		justify-content: space-between;
@@ -224,8 +224,8 @@
 		align-items: center;
 		padding: 1rem;
 		background: var(--bg-tertiary);
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		margin-bottom: 0.75rem;
 	}
 
@@ -260,8 +260,8 @@
 	.create-key-section {
 		background: var(--bg-tertiary);
 		padding: 1.5rem;
-		border-radius: 0.375rem;
-		border: 1px solid var(--border);
+		border-radius: 0;
+		border: 3px solid var(--border);
 	}
 
 	.field {
@@ -281,8 +281,8 @@
 		max-width: 400px;
 		padding: 0.625rem 0.875rem;
 		background-color: var(--bg-primary);
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		color: var(--text-primary);
 		font-size: 0.9375rem;
 	}
@@ -294,12 +294,12 @@
 
 	.btn {
 		padding: 0.625rem 1.25rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		font-size: 0.9375rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.2s;
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		background-color: var(--bg-secondary);
 		color: var(--text-primary);
 	}

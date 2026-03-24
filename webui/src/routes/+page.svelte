@@ -396,10 +396,10 @@
     </div>
 
     <div class="create-buttons">
-        <button class="create-btn" on:click={() => showCreateModal = true}>
+        <button class="create-btn" style="--scale: {$globalSettings.background_texture_scale}px;" on:click={() => showCreateModal = true}>
             Create Server
         </button>
-        <button class="create-btn proxy" on:click={() => showCreateProxyModal = true}>
+        <button class="create-btn proxy" style="--scale: {$globalSettings.background_texture_scale}px;" on:click={() => showCreateProxyModal = true}>
             Create Proxy
         </button>
     </div>
@@ -525,15 +525,43 @@
 
     .create-btn {
         @apply bg-accent hover:bg-accent-hover text-text-primary;
-        padding: 0.75rem 1.5rem;
-        border-radius: 0.5rem;
+        padding: 0.6rem 1.2rem;
+        font-size: 0.875rem;
         font-weight: 600;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        border-radius: 0;
+        transition: transform 0.2s, box-shadow 0.2s;
+        box-shadow:
+            calc(var(--scale) * -1) 0 0 rgba(0, 0, 0, 0.15),
+            calc(var(--scale) * 1) 0 0 rgba(0, 0, 0, 0.15),
+            calc(var(--scale) * -1) calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.25),
+            calc(var(--scale) * 1) calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.25),
+            0 calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.30);
+    }
+
+    .create-btn:hover {
+        transform: translateY(-2px);
+        box-shadow:
+            0 calc(var(--scale) * -1) 0 rgba(0, 0, 0, 0.10),
+            calc(var(--scale) * -1) 0 0 rgba(0, 0, 0, 0.19),
+            calc(var(--scale) * 1) 0 0 rgba(0, 0, 0, 0.19),
+            calc(var(--scale) * -1) calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.26),
+            calc(var(--scale) * 1) calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.26),
+            0 calc(var(--scale) * 1) 0 rgba(0, 0, 0, 0.30),
+            calc(var(--scale) * -2) 0 0 rgba(0, 0, 0, 0.14),
+            calc(var(--scale) * 2) 0 0 rgba(0, 0, 0, 0.14),
+            calc(var(--scale) * -2) calc(var(--scale) * 2) 0 rgba(0, 0, 0, 0.19),
+            calc(var(--scale) * 2) calc(var(--scale) * 2) 0 rgba(0, 0, 0, 0.19),
+            0 calc(var(--scale) * 2) 0 rgba(0, 0, 0, 0.23),
+            calc(var(--scale) * -3) 0 0 rgba(0, 0, 0, 0.08),
+            calc(var(--scale) * 3) 0 0 rgba(0, 0, 0, 0.08),
+            calc(var(--scale) * -3) calc(var(--scale) * 3) 0 rgba(0, 0, 0, 0.11),
+            calc(var(--scale) * 3) calc(var(--scale) * 3) 0 rgba(0, 0, 0, 0.11),
+            0 calc(var(--scale) * 3) 0 rgba(0, 0, 0, 0.15);
     }
 
     .create-btn.proxy {
         background-color: var(--bg-tertiary);
-        border: 1px solid var(--border);
+        border: 4px solid var(--border);
     }
 
     .create-btn.proxy:hover {
@@ -543,8 +571,8 @@
     .context-menu {
         position: fixed;
         background-color: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 0.375rem;
+        border: 3px solid var(--border);
+        border-radius: 0;
         padding: 0.25rem;
         z-index: 1000;
         min-width: 140px;
@@ -560,7 +588,7 @@
         color: var(--text-primary);
         text-align: left;
         cursor: pointer;
-        border-radius: 0.25rem;
+        border-radius: 0;
         font-size: 0.875rem;
         transition: background-color 0.15s;
     }

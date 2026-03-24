@@ -205,7 +205,7 @@
 		justify-content: space-between;
 		gap: 1.5rem;
 		padding: 1rem 2rem;
-		border-bottom: 1px solid var(--border);
+		border-bottom: 3px solid var(--border);
 	}
 
 	.back-btn {
@@ -256,11 +256,11 @@
 
 	.action-btn {
 		padding: 0.5rem 1rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
-		border: 1px solid transparent;
+		border: 3px solid transparent;
 		transition: all 0.2s;
 	}
 
@@ -301,7 +301,7 @@
 	.tabs {
 		display: flex;
 		gap: 0;
-		border-bottom: 1px solid var(--border);
+		border-bottom: 3px solid var(--border);
 		padding: 0 2rem;
 	}
 
@@ -313,7 +313,7 @@
 		cursor: pointer;
 		font-size: 0.9375rem;
 		font-weight: 500;
-		border-bottom: 2px solid transparent;
+		border-bottom: 6px solid transparent;
 		transition: all 0.2s;
 	}
 

@@ -444,7 +444,7 @@
 		cursor: pointer;
 		font-size: 0.875rem;
 		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		transition: all 0.2s;
 	}
 
@@ -464,12 +464,12 @@
 
 	.btn {
 		padding: 0.5rem 1rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.2s;
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		background-color: var(--bg-tertiary);
 		color: var(--text-primary);
 	}
@@ -503,7 +503,7 @@
 		grid-template-columns: 40px 1fr 100px 140px 120px;
 		padding: 0.75rem 1.5rem;
 		background: var(--bg-secondary);
-		border-bottom: 1px solid var(--border);
+		border-bottom: 3px solid var(--border);
 		font-size: 0.75rem;
 		font-weight: 600;
 		color: var(--text-secondary);
@@ -514,7 +514,7 @@
 		display: grid;
 		grid-template-columns: 40px 1fr 100px 140px 120px;
 		padding: 0.75rem 1.5rem;
-		border-bottom: 1px solid var(--border);
+		border-bottom: 3px solid var(--border);
 		align-items: center;
 		transition: background-color 0.2s;
 	}
@@ -558,7 +558,7 @@
 		color: var(--text-secondary);
 		cursor: pointer;
 		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		font-size: 0.875rem;
 		transition: all 0.2s;
 	}
@@ -588,7 +588,7 @@
 		right: 0;
 		bottom: 0;
 		background: rgba(59, 130, 246, 0.1);
-		border: 2px dashed var(--accent);
+		border: 6px dashed var(--accent);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -609,7 +609,7 @@
 		align-items: center;
 		padding: 1rem 1.5rem;
 		background: var(--bg-secondary);
-		border-bottom: 1px solid var(--border);
+		border-bottom: 3px solid var(--border);
 	}
 
 	.filename-container {
@@ -625,7 +625,7 @@
 
 	.badge {
 		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		font-size: 0.75rem;
 		font-weight: 500;
 	}
@@ -633,7 +633,7 @@
 	.badge-warning {
 		background-color: rgba(245, 158, 11, 0.1);
 		color: #f59e0b;
-		border: 1px solid rgba(245, 158, 11, 0.3);
+		border: 3px solid rgba(245, 158, 11, 0.3);
 	}
 
 	.editor-actions {
@@ -690,9 +690,9 @@
 
 	.modal {
 		background: var(--bg-secondary);
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		padding: 1.5rem;
-		border-radius: 0.5rem;
+		border-radius: 0;
 		min-width: 300px;
 	}
 
@@ -705,8 +705,8 @@
 		width: 100%;
 		padding: 0.625rem 0.875rem;
 		background: var(--bg-primary);
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		color: var(--text-primary);
 		margin-bottom: 1rem;
 	}

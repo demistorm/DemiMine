@@ -79,11 +79,11 @@
 <style>
 	.profile-btn {
 		padding: 0.5rem 1rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		background-color: var(--bg-tertiary);
 		color: var(--text-primary);
 		transition: all 0.2s;

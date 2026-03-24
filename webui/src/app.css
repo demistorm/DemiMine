@@ -28,7 +28,8 @@ body {
 }
 
 button {
-	@apply bg-accent hover:bg-accent-hover text-text-primary px-4 py-2 rounded transition-colors;
+	@apply bg-accent hover:bg-accent-hover text-text-primary px-4 py-2 transition-colors;
+	border: 3px solid transparent;
 }
 
 button:disabled {
@@ -36,7 +37,8 @@ button:disabled {
 }
 
 input, textarea {
-	@apply bg-bg-secondary text-text-primary border border-border rounded px-3 py-2;
+	@apply bg-bg-secondary text-text-primary px-3 py-2;
+	border: 3px solid var(--border);
 }
 
 input:focus, textarea:focus {

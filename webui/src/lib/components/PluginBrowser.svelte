@@ -265,8 +265,8 @@
 	.view-tab {
 		padding: 0.5rem 1rem;
 		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		color: var(--text-secondary);
 		cursor: pointer;
 		transition: all 0.2s;
@@ -292,8 +292,8 @@
 		flex: 1;
 		padding: 0.75rem 1rem;
 		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		color: var(--text-primary);
 		font-size: 0.9375rem;
 	}
@@ -304,12 +304,12 @@
 
 	.btn {
 		padding: 0.5rem 1rem;
-		border-radius: 0.375rem;
+		border-radius: 0;
 		font-size: 0.875rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.2s;
-		border: 1px solid var(--border);
+		border: 3px solid var(--border);
 		background-color: var(--bg-tertiary);
 		color: var(--text-primary);
 	}
@@ -361,8 +361,8 @@
 		gap: 1rem;
 		padding: 1rem;
 		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 0.5rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 		transition: border-color 0.2s;
 	}
 
@@ -374,7 +374,7 @@
 		width: 48px;
 		height: 48px;
 		flex-shrink: 0;
-		border-radius: 0.25rem;
+		border-radius: 0;
 		object-fit: cover;
 	}
 
@@ -382,7 +382,7 @@
 		width: 48px;
 		height: 48px;
 		background: var(--bg-tertiary);
-		border-radius: 0.25rem;
+		border-radius: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -442,8 +442,8 @@
 		align-items: center;
 		padding: 1rem 1.25rem;
 		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: 0.5rem;
+		border: 3px solid var(--border);
+		border-radius: 0;
 	}
 
 	.plugin-item.update-available {
