@@ -101,6 +101,12 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 			r.Post("/background-texture", settingsHandler.UploadBackgroundTexture)
 			r.Get("/background-texture", settingsHandler.ServeBackgroundTexture)
 			r.Delete("/background-texture", settingsHandler.DeleteBackgroundTexture)
+			r.Post("/server-tile-texture", settingsHandler.UploadServerTileTexture)
+			r.Get("/server-tile-texture", settingsHandler.ServeServerTileTexture)
+			r.Delete("/server-tile-texture", settingsHandler.DeleteServerTileTexture)
+			r.Post("/proxy-tile-texture", settingsHandler.UploadProxyTileTexture)
+			r.Get("/proxy-tile-texture", settingsHandler.ServeProxyTileTexture)
+			r.Delete("/proxy-tile-texture", settingsHandler.DeleteProxyTileTexture)
 		})
 
 		r.Route("/players", func(r chi.Router) {

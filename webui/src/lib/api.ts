@@ -494,7 +494,79 @@ export const settingsApi = {
 	},
 
 	deleteBackgroundTexture: () =>
-		api.delete<{ success: boolean }>('/api/settings/background-texture')
+		api.delete<{ success: boolean }>('/api/settings/background-texture'),
+
+	getServerTileTexture: async () => {
+		const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+		const headers: HeadersInit = {};
+		if (token) headers['Authorization'] = `Bearer ${token}`;
+
+		const response = await fetch('/api/settings/server-tile-texture', { headers });
+		if (!response.ok) throw new Error('Failed to load server tile texture');
+		const blob = await response.blob();
+		return URL.createObjectURL(blob);
+	},
+
+	uploadServerTileTexture: async (file: File) => {
+		const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+		const formData = new FormData();
+		formData.append('texture', file);
+
+		const headers: HeadersInit = {};
+		if (token) headers['Authorization'] = `Bearer ${token}`;
+
+		const response = await fetch('/api/settings/server-tile-texture', {
+			method: 'POST',
+			headers,
+			body: formData
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+			throw new ApiError(errorData as ApiErrorData);
+		}
+
+		return response.json() as Promise<{ success: boolean }>;
+	},
+
+	deleteServerTileTexture: () =>
+		api.delete<{ success: boolean }>('/api/settings/server-tile-texture'),
+
+	getProxyTileTexture: async () => {
+		const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+		const headers: HeadersInit = {};
+		if (token) headers['Authorization'] = `Bearer ${token}`;
+
+		const response = await fetch('/api/settings/proxy-tile-texture', { headers });
+		if (!response.ok) throw new Error('Failed to load proxy tile texture');
+		const blob = await response.blob();
+		return URL.createObjectURL(blob);
+	},
+
+	uploadProxyTileTexture: async (file: File) => {
+		const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+		const formData = new FormData();
+		formData.append('texture', file);
+
+		const headers: HeadersInit = {};
+		if (token) headers['Authorization'] = `Bearer ${token}`;
+
+		const response = await fetch('/api/settings/proxy-tile-texture', {
+			method: 'POST',
+			headers,
+			body: formData
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+			throw new ApiError(errorData as ApiErrorData);
+		}
+
+		return response.json() as Promise<{ success: boolean }>;
+	},
+
+	deleteProxyTileTexture: () =>
+		api.delete<{ success: boolean }>('/api/settings/proxy-tile-texture')
 };
 
 export interface Backup {

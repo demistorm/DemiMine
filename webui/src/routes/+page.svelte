@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { servers, proxies, loadServers, loadProxies, updateServerPosition, updateServerStatus, deleteServerFromStore, updateProxyPosition, deleteProxyFromStore } from '$lib/stores/servers';
 	import { dragPositions } from '$lib/stores/dragPositions';
-	import { backgroundTextureUrl, globalSettings, loadBackgroundTexture, loadGlobalSettings } from '$lib/stores/settings';
+	import { backgroundTextureUrl, serverTileTextureUrl, proxyTileTextureUrl, globalSettings, loadBackgroundTexture, loadServerTileTexture, loadProxyTileTexture, loadGlobalSettings } from '$lib/stores/settings';
 	import { api, type Server, type Proxy } from '$lib/api';
 	import ServerTile from '$lib/components/ServerTile.svelte';
 	import ProxyTile from '$lib/components/ProxyTile.svelte';
@@ -23,10 +23,12 @@
 	let deleteStep = 0;
 	let ignoreNextClick = false;
 	let scaledBackgroundTextureUrl: string | null = null;
+	let scaledServerTileTextureUrl: string | null = null;
+	let scaledProxyTileTextureUrl: string | null = null;
 
 	$: serverList = $servers || [];
 	$: proxyList = $proxies || [];
-	$: globalSettings, backgroundTextureUrl;
+	$: globalSettings, backgroundTextureUrl, serverTileTextureUrl, proxyTileTextureUrl;
 
 	$: if ($backgroundTextureUrl && $globalSettings.background_texture_scale) {
 		scaleTexture($backgroundTextureUrl, $globalSettings.background_texture_scale);
@@ -34,11 +36,25 @@
 		scaledBackgroundTextureUrl = null;
 	}
 
+	$: if ($serverTileTextureUrl && $globalSettings.background_texture_scale) {
+		scaleServerTileTexture($serverTileTextureUrl, $globalSettings.background_texture_scale);
+	} else {
+		scaledServerTileTextureUrl = null;
+	}
+
+	$: if ($proxyTileTextureUrl && $globalSettings.background_texture_scale) {
+		scaleProxyTileTexture($proxyTileTextureUrl, $globalSettings.background_texture_scale);
+	} else {
+		scaledProxyTileTextureUrl = null;
+	}
+
 	onMount(() => {
 		loadGlobalSettings();
 		loadServers();
 		loadProxies();
 		loadBackgroundTexture();
+		loadServerTileTexture();
+		loadProxyTileTexture();
 		const navbarHeight = 56;
 		const canvasSize = 8000;
 		canvasOffset = {
@@ -62,6 +78,44 @@
 			ctx.drawImage(img, 0, 0, scaledSize, scaledSize);
 
 			scaledBackgroundTextureUrl = canvas.toDataURL('image/png');
+		};
+		img.src = url;
+	}
+
+	function scaleServerTileTexture(url: string, scale: number) {
+		const img = new Image();
+		img.onload = () => {
+			const canvas = document.createElement('canvas');
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return;
+
+			const scaledSize = 16 * scale;
+			canvas.width = scaledSize;
+			canvas.height = scaledSize;
+
+			ctx.imageSmoothingEnabled = false;
+			ctx.drawImage(img, 0, 0, scaledSize, scaledSize);
+
+			scaledServerTileTextureUrl = canvas.toDataURL('image/png');
+		};
+		img.src = url;
+	}
+
+	function scaleProxyTileTexture(url: string, scale: number) {
+		const img = new Image();
+		img.onload = () => {
+			const canvas = document.createElement('canvas');
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return;
+
+			const scaledSize = 16 * scale;
+			canvas.width = scaledSize;
+			canvas.height = scaledSize;
+
+			ctx.imageSmoothingEnabled = false;
+			ctx.drawImage(img, 0, 0, scaledSize, scaledSize);
+
+			scaledProxyTileTextureUrl = canvas.toDataURL('image/png');
 		};
 		img.src = url;
 	}
@@ -317,6 +371,7 @@
                 {proxy}
                 {canvasOffset}
                 {zoom}
+                textureUrl={scaledProxyTileTextureUrl}
                 on:click={() => handleProxyClick(proxy)}
                 on:dragging={handleDragging}
                 on:move={(e) => handleProxyMove(proxy, e.detail.x, e.detail.y)}
@@ -329,6 +384,7 @@
                 {server}
                 {canvasOffset}
                 {zoom}
+                textureUrl={scaledServerTileTextureUrl}
                 on:click={() => handleServerClick(server)}
                 on:dragging={handleDragging}
                 on:move={(e) => handleServerMove(server, e.detail.x, e.detail.y)}

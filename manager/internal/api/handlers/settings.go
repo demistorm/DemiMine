@@ -106,6 +106,8 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 const (
 	dataDir            = "/data"
 	backgroundTexture  = "background_texture.png"
+	serverTileTexture  = "server_tile_texture.png"
+	proxyTileTexture   = "proxy_tile_texture.png"
 	maxTextureFileSize = 1 << 20 // 1MB
 )
 
@@ -206,6 +208,224 @@ func (h *SettingsHandler) DeleteBackgroundTexture(w http.ResponseWriter, r *http
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]string{"error": "background texture not found"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete texture"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *SettingsHandler) UploadServerTileTexture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxTextureFileSize)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file too large"})
+		return
+	}
+
+	file, handler, err := r.FormFile("texture")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "no file uploaded"})
+		return
+	}
+	defer file.Close()
+
+	contentType := handler.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/png") && !strings.HasPrefix(contentType, "image/x-png") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "only PNG files are allowed"})
+		return
+	}
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read file"})
+		return
+	}
+
+	if len(data) > maxTextureFileSize {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file too large"})
+		return
+	}
+
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create data directory"})
+		return
+	}
+
+	texturePath := filepath.Join(dataDir, serverTileTexture)
+	if err := os.WriteFile(texturePath, data, 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save texture"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *SettingsHandler) ServeServerTileTexture(w http.ResponseWriter, r *http.Request) {
+	texturePath := filepath.Join(dataDir, serverTileTexture)
+
+	data, err := os.ReadFile(texturePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "server tile texture not found"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read texture"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.WriteHeader(http.StatusOK)
+	w.Write(data)
+}
+
+func (h *SettingsHandler) DeleteServerTileTexture(w http.ResponseWriter, r *http.Request) {
+	texturePath := filepath.Join(dataDir, serverTileTexture)
+
+	if err := os.Remove(texturePath); err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "server tile texture not found"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete texture"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *SettingsHandler) UploadProxyTileTexture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxTextureFileSize)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file too large"})
+		return
+	}
+
+	file, handler, err := r.FormFile("texture")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "no file uploaded"})
+		return
+	}
+	defer file.Close()
+
+	contentType := handler.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/png") && !strings.HasPrefix(contentType, "image/x-png") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "only PNG files are allowed"})
+		return
+	}
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read file"})
+		return
+	}
+
+	if len(data) > maxTextureFileSize {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file too large"})
+		return
+	}
+
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to create data directory"})
+		return
+	}
+
+	texturePath := filepath.Join(dataDir, proxyTileTexture)
+	if err := os.WriteFile(texturePath, data, 0644); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save texture"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (h *SettingsHandler) ServeProxyTileTexture(w http.ResponseWriter, r *http.Request) {
+	texturePath := filepath.Join(dataDir, proxyTileTexture)
+
+	data, err := os.ReadFile(texturePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "proxy tile texture not found"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read texture"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.WriteHeader(http.StatusOK)
+	w.Write(data)
+}
+
+func (h *SettingsHandler) DeleteProxyTileTexture(w http.ResponseWriter, r *http.Request) {
+	texturePath := filepath.Join(dataDir, proxyTileTexture)
+
+	if err := os.Remove(texturePath); err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "proxy tile texture not found"})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

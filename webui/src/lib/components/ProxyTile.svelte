@@ -5,6 +5,7 @@
 	export let proxy: Proxy;
 	export let canvasOffset = { x: 0, y: 0 };
 	export let zoom = 1;
+	export let textureUrl: string | null = null;
 
 	const dispatch = createEventDispatcher();
 
@@ -91,9 +92,9 @@
 	}
 </script>
 
-<div 
+<div
 	class="proxy-tile"
-	style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%);"
+	style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%); {textureUrl ? `background-image: url('${textureUrl}');` : ''}"
 	on:mousedown={handleMouseDown}
 	on:contextmenu={handleContextMenu}
 >
@@ -133,11 +134,13 @@
 		width: 120px;
 		padding: 1rem;
 		background-color: #4a5568;
-		border-radius: 0.5rem;
+		border-radius: 0;
 		cursor: pointer;
 		user-select: none;
 		transition: transform 0.1s, box-shadow 0.1s;
-		border: 2px solid var(--border);
+		border: 6px solid var(--border);
+		image-rendering: pixelated;
+		background-repeat: repeat;
 	}
 
 	.proxy-tile:hover {

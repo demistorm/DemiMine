@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { loadGlobalSettings, globalSettings, saveGlobalSettings, backgroundTextureUrl, loadBackgroundTexture, type GlobalSettings } from '$lib/stores/settings';
+	import { loadGlobalSettings, globalSettings, saveGlobalSettings, backgroundTextureUrl, serverTileTextureUrl, proxyTileTextureUrl, loadBackgroundTexture, loadServerTileTexture, loadProxyTileTexture, type GlobalSettings } from '$lib/stores/settings';
 	import { settingsApi, backupsApi, type Backup } from '$lib/api';
 	import { formatBytes, formatDate } from '$lib/utils';
 
@@ -25,12 +25,26 @@
 	let textureRemoving = false;
 	let textureDropZone = false;
 
+	let serverTextureFile: File | null = null;
+	let serverTextureFileName = '';
+	let serverTextureUploading = false;
+	let serverTextureRemoving = false;
+	let serverTextureDropZone = false;
+
+	let proxyTextureFile: File | null = null;
+	let proxyTextureFileName = '';
+	let proxyTextureUploading = false;
+	let proxyTextureRemoving = false;
+	let proxyTextureDropZone = false;
+
 	$: globalSettings;
-	$: backgroundTextureUrl;
+	$: backgroundTextureUrl, serverTileTextureUrl, proxyTileTextureUrl;
 
 	onMount(async () => {
 		await loadGlobalSettings();
 		await loadBackgroundTexture();
+		await loadServerTileTexture();
+		await loadProxyTileTexture();
 		const [h, m] = $globalSettings.backup_time.split(':').map(Number);
 		backupHour = h;
 		backupMinute = m;
@@ -215,10 +229,168 @@
     textureDropZone = true;
   }
 
-  function handleTextureDragLeave(e: DragEvent) {
-    e.preventDefault();
-    textureDropZone = false;
-  }
+	function handleTextureDragLeave(e: DragEvent) {
+		e.preventDefault();
+		textureDropZone = false;
+	}
+
+	function handleServerTextureFile(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (file) {
+			if (file.type !== 'image/png' && file.type !== 'image/x-png') {
+				error = 'Only PNG files are allowed';
+				setTimeout(() => error = '', 3000);
+				return;
+			}
+			serverTextureFile = file;
+			serverTextureFileName = file.name;
+		}
+	}
+
+	async function uploadServerTexture() {
+		if (!serverTextureFile) return;
+
+		serverTextureUploading = true;
+		error = '';
+		success = '';
+
+		try {
+			await settingsApi.uploadServerTileTexture(serverTextureFile);
+			await loadServerTileTexture();
+			success = 'Texture uploaded successfully';
+			setTimeout(() => success = '', 3000);
+			serverTextureFile = null;
+			serverTextureFileName = '';
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to upload texture';
+		} finally {
+			serverTextureUploading = false;
+		}
+	}
+
+	async function removeServerTexture() {
+		if (!confirm('Are you sure you want to remove the server tile texture?')) return;
+
+		serverTextureRemoving = true;
+		error = '';
+		success = '';
+
+		try {
+			await settingsApi.deleteServerTileTexture();
+			serverTileTextureUrl.set(null);
+			success = 'Texture removed successfully';
+			setTimeout(() => success = '', 3000);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to remove texture';
+		} finally {
+			serverTextureRemoving = false;
+		}
+	}
+
+	function handleServerTextureDrop(e: DragEvent) {
+		e.preventDefault();
+		serverTextureDropZone = false;
+		const file = e.dataTransfer?.files[0];
+		if (file) {
+			if (file.type !== 'image/png' && file.type !== 'image/x-png') {
+				error = 'Only PNG files are allowed';
+				setTimeout(() => error = '', 3000);
+				return;
+			}
+			serverTextureFile = file;
+			serverTextureFileName = file.name;
+		}
+	}
+
+	function handleServerTextureDragOver(e: DragEvent) {
+		e.preventDefault();
+		serverTextureDropZone = true;
+	}
+
+	function handleServerTextureDragLeave(e: DragEvent) {
+		e.preventDefault();
+		serverTextureDropZone = false;
+	}
+
+	function handleProxyTextureFile(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (file) {
+			if (file.type !== 'image/png' && file.type !== 'image/x-png') {
+				error = 'Only PNG files are allowed';
+				setTimeout(() => error = '', 3000);
+				return;
+			}
+			proxyTextureFile = file;
+			proxyTextureFileName = file.name;
+		}
+	}
+
+	async function uploadProxyTexture() {
+		if (!proxyTextureFile) return;
+
+		proxyTextureUploading = true;
+		error = '';
+		success = '';
+
+		try {
+			await settingsApi.uploadProxyTileTexture(proxyTextureFile);
+			await loadProxyTileTexture();
+			success = 'Texture uploaded successfully';
+			setTimeout(() => success = '', 3000);
+			proxyTextureFile = null;
+			proxyTextureFileName = '';
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to upload texture';
+		} finally {
+			proxyTextureUploading = false;
+		}
+	}
+
+	async function removeProxyTexture() {
+		if (!confirm('Are you sure you want to remove the proxy tile texture?')) return;
+
+		proxyTextureRemoving = true;
+		error = '';
+		success = '';
+
+		try {
+			await settingsApi.deleteProxyTileTexture();
+			proxyTileTextureUrl.set(null);
+			success = 'Texture removed successfully';
+			setTimeout(() => success = '', 3000);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to remove texture';
+		} finally {
+			proxyTextureRemoving = false;
+		}
+	}
+
+	function handleProxyTextureDrop(e: DragEvent) {
+		e.preventDefault();
+		proxyTextureDropZone = false;
+		const file = e.dataTransfer?.files[0];
+		if (file) {
+			if (file.type !== 'image/png' && file.type !== 'image/x-png') {
+				error = 'Only PNG files are allowed';
+				setTimeout(() => error = '', 3000);
+				return;
+			}
+			proxyTextureFile = file;
+			proxyTextureFileName = file.name;
+		}
+	}
+
+	function handleProxyTextureDragOver(e: DragEvent) {
+		e.preventDefault();
+		proxyTextureDropZone = true;
+	}
+
+	function handleProxyTextureDragLeave(e: DragEvent) {
+		e.preventDefault();
+		proxyTextureDropZone = false;
+	}
 </script>
 
 <svelte:head>
@@ -247,14 +419,15 @@
 
     <div class="section">
       <h2>Appearance</h2>
-      <p class="hint">Customize the background texture for the main canvas with a 16x16 pixel art PNG.</p>
+      <p class="hint">Customize textures for the canvas background and tiles with 16x16 pixel art PNGs.</p>
 
       <div class="field">
-        <label>Background Texture Scale</label>
+        <label>Texture Scale Factor</label>
         <input type="range" min="1" max="12" step="1" bind:value={$globalSettings.background_texture_scale} />
-        <span class="hint">Scale factor: {$globalSettings.background_texture_scale}x (1x = 16px, 4x = 64px)</span>
+        <span class="hint">Scale factor: {$globalSettings.background_texture_scale}x (applies to all textures, 1x = 16px, 4x = 64px)</span>
       </div>
 
+      <h3>Background Texture</h3>
       <div class="texture-preview">
         {#if $backgroundTextureUrl}
           <div class="texture-preview-inner">
@@ -284,6 +457,74 @@
         {#if textureFile && !$backgroundTextureUrl}
           <button class="btn" on:click={uploadTexture} disabled={textureUploading}>
             {textureUploading ? 'Uploading...' : 'Upload Texture'}
+          </button>
+        {/if}
+      </div>
+
+      <h3>Server Tile Texture</h3>
+      <div class="texture-preview">
+        {#if $serverTileTextureUrl}
+          <div class="texture-preview-inner">
+            <img src={$serverTileTextureUrl} alt="Server tile texture" />
+            <button class="btn small danger" on:click={removeServerTexture} disabled={serverTextureRemoving}>
+              {serverTextureRemoving ? 'Removing...' : 'Remove'}
+            </button>
+          </div>
+        {:else}
+          <div class="drop-zone {serverTextureDropZone ? 'drag-over' : ''}"
+               on:drop={handleServerTextureDrop}
+               on:dragover={handleServerTextureDragOver}
+               on:dragleave={handleServerTextureDragLeave}>
+            <div class="drop-zone-content">
+              <p>Drop a 16x16 PNG texture here, or click to browse</p>
+              <input type="file" id="serverTextureFile" accept="image/png" on:change={handleServerTextureFile} />
+              <label for="serverTextureFile" class="browse-btn">Browse</label>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="field" style="margin-top: 1rem;">
+        {#if serverTextureFileName}
+          <span class="selected-file">Selected: {serverTextureFileName}</span>
+        {/if}
+        {#if serverTextureFile && !$serverTileTextureUrl}
+          <button class="btn" on:click={uploadServerTexture} disabled={serverTextureUploading}>
+            {serverTextureUploading ? 'Uploading...' : 'Upload Texture'}
+          </button>
+        {/if}
+      </div>
+
+      <h3>Proxy Tile Texture</h3>
+      <div class="texture-preview">
+        {#if $proxyTileTextureUrl}
+          <div class="texture-preview-inner">
+            <img src={$proxyTileTextureUrl} alt="Proxy tile texture" />
+            <button class="btn small danger" on:click={removeProxyTexture} disabled={proxyTextureRemoving}>
+              {proxyTextureRemoving ? 'Removing...' : 'Remove'}
+            </button>
+          </div>
+        {:else}
+          <div class="drop-zone {proxyTextureDropZone ? 'drag-over' : ''}"
+               on:drop={handleProxyTextureDrop}
+               on:dragover={handleProxyTextureDragOver}
+               on:dragleave={handleProxyTextureDragLeave}>
+            <div class="drop-zone-content">
+              <p>Drop a 16x16 PNG texture here, or click to browse</p>
+              <input type="file" id="proxyTextureFile" accept="image/png" on:change={handleProxyTextureFile} />
+              <label for="proxyTextureFile" class="browse-btn">Browse</label>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="field" style="margin-top: 1rem;">
+        {#if proxyTextureFileName}
+          <span class="selected-file">Selected: {proxyTextureFileName}</span>
+        {/if}
+        {#if proxyTextureFile && !$proxyTileTextureUrl}
+          <button class="btn" on:click={uploadProxyTexture} disabled={proxyTextureUploading}>
+            {proxyTextureUploading ? 'Uploading...' : 'Upload Texture'}
           </button>
         {/if}
       </div>

@@ -20,6 +20,8 @@ export const globalSettings = writable<GlobalSettings>({
 });
 
 export const backgroundTextureUrl = writable<string | null>(null);
+export const serverTileTextureUrl = writable<string | null>(null);
+export const proxyTileTextureUrl = writable<string | null>(null);
 
 export const proxyMCVersion = derived(globalSettings, ($settings) => $settings.proxy_mc_version);
 
@@ -57,6 +59,24 @@ export const loadBackgroundTexture = async () => {
 		backgroundTextureUrl.set(url);
 	} catch (err) {
 		backgroundTextureUrl.set(null);
+	}
+};
+
+export const loadServerTileTexture = async () => {
+	try {
+		const url = await settingsApi.getServerTileTexture();
+		serverTileTextureUrl.set(url);
+	} catch (err) {
+		serverTileTextureUrl.set(null);
+	}
+};
+
+export const loadProxyTileTexture = async () => {
+	try {
+		const url = await settingsApi.getProxyTileTexture();
+		proxyTileTextureUrl.set(url);
+	} catch (err) {
+		proxyTileTextureUrl.set(null);
 	}
 };
 

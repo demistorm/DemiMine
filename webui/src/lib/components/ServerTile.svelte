@@ -5,6 +5,7 @@
 	export let server: Server;
 	export let canvasOffset = { x: 0, y: 0 };
 	export let zoom = 1;
+	export let textureUrl: string | null = null;
 
 	const dispatch = createEventDispatcher();
 
@@ -102,7 +103,7 @@
 <div
     class="server-tile"
     class:dragging={isDragging}
-    style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%);"
+    style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%); {textureUrl ? `background-image: url('${textureUrl}');` : ''}"
     on:mousedown={handleMouseDown}
     role="button"
     tabindex={0}
@@ -135,11 +136,13 @@
         width: 120px;
         padding: 1rem;
         background-color: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 0.5rem;
+        border: 5px solid var(--border);
+        border-radius: 0;
         cursor: pointer;
         transition: transform 0.2s, box-shadow 0.2s;
         user-select: none;
+        image-rendering: pixelated;
+        background-repeat: repeat;
     }
 
     .server-tile:hover {
