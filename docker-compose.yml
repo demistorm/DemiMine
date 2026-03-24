@@ -33,6 +33,7 @@ services:
       - DEMIMINE_MAX_RAM_MB=5144
       - RCON_PASSWORD=demimine_secure_yesllama_991
     labels:
-      - "demimine.managed=false"
+      - "demimine.managed=true"
+      - "demimine.type=manager"
     networks:
       - demimine_internal
