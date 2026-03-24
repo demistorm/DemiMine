@@ -360,8 +360,8 @@
                 <polyline
                     points={pointsToPolylineString(conn.points)}
                     fill="none"
-                    stroke="#808080"
-                    stroke-width="4"
+                    stroke="#676767"
+                    stroke-width="8"
                 />
             {/each}
         </svg>
