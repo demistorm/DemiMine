@@ -583,6 +583,46 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var currentName sql.NullString
+	var currentProxyID sql.NullInt64
+	var currentDomain sql.NullString
+	var status string
+	var proxyHostPort int
+	var proxyName string
+
+	h.db.QueryRow("SELECT name, proxy_id, domain, status FROM servers WHERE id = ?", id).Scan(&currentName, &currentProxyID, &currentDomain, &status)
+
+	if currentProxyID.Valid {
+		h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", currentProxyID.Int64).Scan(&proxyName, &proxyHostPort)
+	}
+
+	if req.Name != nil && currentName.String != *req.Name {
+		if status == "running" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "cannot rename server while it is running. Stop the server first."})
+			return
+		}
+
+		oldPath := filepath.Join(h.cfg.ServersDir, currentName.String)
+		newPath := filepath.Join(h.cfg.ServersDir, *req.Name)
+
+		if _, err := os.Stat(oldPath); err == nil {
+			if _, err := os.Stat(newPath); err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "a server directory with this name already exists"})
+				return
+			}
+			if err := os.Rename(oldPath, newPath); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to rename server directory: %v", err)})
+				return
+			}
+		}
+	}
+
 	if req.Name != nil {
 		h.db.Exec("UPDATE servers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, id)
 	}
@@ -615,17 +655,6 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.StartOnBoot != nil {
 		h.db.Exec("UPDATE servers SET start_on_boot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.StartOnBoot, id)
-	}
-
-	var currentName sql.NullString
-	var currentProxyID sql.NullInt64
-	var currentDomain sql.NullString
-	var proxyHostPort int
-	var proxyName string
-	h.db.QueryRow("SELECT name, proxy_id, domain FROM servers WHERE id = ?", id).Scan(&currentName, &currentProxyID, &currentDomain)
-
-	if currentProxyID.Valid {
-		h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", currentProxyID.Int64).Scan(&proxyName, &proxyHostPort)
 	}
 
 	if req.Name != nil {
@@ -745,6 +774,12 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 		if err := h.minimotdMgr.RenameServer(proxyName, currentName.String, *req.Name, domain, fmt.Sprintf("%d", proxyHostPort)); err != nil {
 			fmt.Printf("Failed to rename MiniMOTD config: %v\n", err)
+		}
+	}
+
+	if req.Name != nil && currentProxyID.Valid {
+		if err := SyncProxyConfig(h.db, currentProxyID.Int64, h.cfg.ServersDir); err != nil {
+			fmt.Printf("Warning: failed to sync proxy config after rename: %v\n", err)
 		}
 	}
 
