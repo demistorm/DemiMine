@@ -11,7 +11,7 @@
 	import { generateManhattanPath, pointsToPolylineString, computeClusteredConnections, type ServerPosition } from '$lib/utils/manhattanPath';
 
 	let canvasOffset = { x: 0, y: 0 };
-	let zoom = 1;
+	let zoom = 0.6;
 	let isDragging = false;
 	let dragStart = { x: 0, y: 0 };
 	let showCreateModal = false;
@@ -29,10 +29,11 @@
 		loadServers();
 		loadProxies();
 		const navbarHeight = 56;
+		const canvasSize = 8000;
 		canvasOffset = {
-			x: window.innerWidth / 2 - 4000,
-            y: (window.innerHeight - navbarHeight) / 2 - 4000
-	 };
+			x: window.innerWidth / 2 - (canvasSize / 2) * zoom,
+			y: (window.innerHeight - navbarHeight) / 2 - (canvasSize / 2) * zoom
+		};
 	});
 
 	function handleWheel(e: WheelEvent) {
