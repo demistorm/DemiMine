@@ -360,8 +360,8 @@
                 <polyline
                     points={pointsToPolylineString(conn.points)}
                     fill="none"
-                    stroke="#63b3ed"
-                    stroke-width="2"
+                    stroke="#808080"
+                    stroke-width="4"
                 />
             {/each}
         </svg>
@@ -510,7 +510,7 @@
         width: 8000px;
         height: 8000px;
         pointer-events: none;
-        z-index: 2;
+        z-index: 0;
     }
 
     .create-buttons {
