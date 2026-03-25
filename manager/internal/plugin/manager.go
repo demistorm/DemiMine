@@ -267,7 +267,11 @@ func (m *Manager) CheckForUpdates(targetType string, targetID int64, gameVersion
 
 	var results []UpdateResult
 	for _, p := range plugins {
-		versions, err := m.modrinth.GetProjectVersions(p.ProjectID, []string{gameVersion}, loaders)
+		var gameVersions []string
+		if gameVersion != "" {
+			gameVersions = []string{gameVersion}
+		}
+		versions, err := m.modrinth.GetProjectVersions(p.ProjectID, gameVersions, loaders)
 		if err != nil {
 			continue
 		}
@@ -297,7 +301,11 @@ func (m *Manager) Update(targetType string, targetID int64, projectID string, ga
 		return nil, fmt.Errorf("plugin not installed")
 	}
 
-	versions, err := m.modrinth.GetProjectVersions(projectID, []string{gameVersion}, loaders)
+	var gameVersions []string
+	if gameVersion != "" {
+		gameVersions = []string{gameVersion}
+	}
+	versions, err := m.modrinth.GetProjectVersions(projectID, gameVersions, loaders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get versions: %w", err)
 	}

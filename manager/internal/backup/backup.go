@@ -119,7 +119,7 @@ func (m *Manager) CreateSnapshot(ctx context.Context, notifier WSNotifier) (*mod
 	time.Sleep(2 * time.Second)
 
 	// Build tar args using actual directory paths
-	tarArgs := "-C " + m.dataDir + " demimine.db"
+	tarArgs := "-C " + m.dataDir + " ."
 	tarArgs += " -C " + filepath.Dir(m.serversDir) + " " + filepath.Base(m.serversDir)
 	if _, err := os.Stat(m.javaDir); err == nil {
 		tarArgs += " -C " + filepath.Dir(m.javaDir) + " " + filepath.Base(m.javaDir)
