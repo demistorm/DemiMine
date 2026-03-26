@@ -42,6 +42,47 @@ func (h *ModrinthHandler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	gameVersion := r.URL.Query().Get("game_version")
 
+	lowerQuery := strings.ToLower(query)
+	if lowerQuery == "mcxbox" || lowerQuery == "mcxboxbroadcast" {
+		project, err := h.client.GetProject("mcxboxbroadcast")
+		if err == nil {
+			versions, _ := h.client.GetProjectVersions("mcxboxbroadcast", nil, nil)
+			latestVersion := ""
+			if len(versions) > 0 {
+				latestVersion = versions[0].VersionNumber
+			}
+			hit := modrinth.ProjectHit{
+				ProjectID:     project.ID,
+				Slug:          project.Slug,
+				Title:         project.Title,
+				Description:   project.Description,
+				Categories:    project.Categories,
+				ClientSide:    project.ClientSide,
+				ServerSide:    project.ServerSide,
+				ProjectType:   project.ProjectType,
+				Downloads:     project.Downloads,
+				Follows:       project.Followers,
+				IconURL:       project.IconURL,
+				DateCreated:   project.DateCreated,
+				DateModified:  project.DateModified,
+				LatestVersion: latestVersion,
+				License:       project.License.ID,
+				Color:         0,
+				Loaders:       nil,
+				GameVersions:  nil,
+			}
+			result := &modrinth.SearchResult{
+				Hits:      []modrinth.ProjectHit{hit},
+				Offset:    0,
+				Limit:     1,
+				TotalHits: 1,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(result)
+			return
+		}
+	}
+
 	var facets [][]string
 	if len(loaders) > 0 || gameVersion != "" {
 		facets = modrinth.BuildPluginFacets(loaders, gameVersion)

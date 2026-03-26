@@ -71,6 +71,8 @@ func (c *Client) SearchPlugins(params SearchParams) (*SearchResult, error) {
 		query.Set("facets", string(facetsJSON))
 	}
 
+	query.Set("fields", "project_id,slug,title,description,categories,icon_url,downloads,loaders,latest_version")
+
 	endpoint := "/search?" + query.Encode()
 	data, err := c.get(endpoint)
 	if err != nil {
@@ -88,8 +90,12 @@ func (c *Client) SearchPlugins(params SearchParams) (*SearchResult, error) {
 func BuildPluginFacets(loaders []string, gameVersion string) [][]string {
 	var facets [][]string
 
+	var loaderFacet []string
 	for _, loader := range loaders {
-		facets = append(facets, []string{fmt.Sprintf("categories:%s", loader)})
+		loaderFacet = append(loaderFacet, fmt.Sprintf("categories:%s", loader))
+	}
+	if len(loaderFacet) > 0 {
+		facets = append(facets, loaderFacet)
 	}
 
 	if gameVersion != "" {

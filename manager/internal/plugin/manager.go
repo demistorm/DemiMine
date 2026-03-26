@@ -23,6 +23,7 @@ type InstalledPlugin struct {
 	VersionNumber string            `json:"version_number"`
 	Filename      string            `json:"filename"`
 	FileHash      string            `json:"file_hash"`
+	LoaderType    string            `json:"loader_type"`
 	InstalledAt   time.Time         `json:"installed_at"`
 	Dependencies  []InstalledPlugin `json:"dependencies,omitempty"`
 }
@@ -35,6 +36,7 @@ type InstallOptions struct {
 	GameVersion  string
 	Loaders      []string
 	ServerName   string
+	LoaderType   string
 	TargetSubdir string
 }
 
@@ -57,7 +59,7 @@ func NewManager(db *sql.DB, serversDir string) *Manager {
 func (m *Manager) GetInstalled(targetType string, targetID int64) ([]InstalledPlugin, error) {
 	rows, err := m.db.Query(`
 		SELECT id, target_type, target_id, project_id, project_slug, project_name,
-		       version_id, version_number, filename, file_hash, installed_at
+		       version_id, version_number, filename, file_hash, loader_type, installed_at
 		FROM installed_plugins
 		WHERE target_type = ? AND target_id = ?
 		ORDER BY project_name
@@ -72,7 +74,7 @@ func (m *Manager) GetInstalled(targetType string, targetID int64) ([]InstalledPl
 		var p InstalledPlugin
 		err := rows.Scan(
 			&p.ID, &p.TargetType, &p.TargetID, &p.ProjectID, &p.ProjectSlug, &p.ProjectName,
-			&p.VersionID, &p.VersionNumber, &p.Filename, &p.FileHash, &p.InstalledAt,
+			&p.VersionID, &p.VersionNumber, &p.Filename, &p.FileHash, &p.LoaderType, &p.InstalledAt,
 		)
 		if err != nil {
 			continue
@@ -87,12 +89,12 @@ func (m *Manager) GetInstalledByProject(targetType string, targetID int64, proje
 	var p InstalledPlugin
 	err := m.db.QueryRow(`
 		SELECT id, target_type, target_id, project_id, project_slug, project_name,
-		       version_id, version_number, filename, file_hash, installed_at
+		       version_id, version_number, filename, file_hash, loader_type, installed_at
 		FROM installed_plugins
 		WHERE target_type = ? AND target_id = ? AND project_id = ?
 	`, targetType, targetID, projectID).Scan(
 		&p.ID, &p.TargetType, &p.TargetID, &p.ProjectID, &p.ProjectSlug, &p.ProjectName,
-		&p.VersionID, &p.VersionNumber, &p.Filename, &p.FileHash, &p.InstalledAt,
+		&p.VersionID, &p.VersionNumber, &p.Filename, &p.FileHash, &p.LoaderType, &p.InstalledAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -112,6 +114,13 @@ func (m *Manager) Install(opts InstallOptions) (*InstalledPlugin, error) {
 		return nil, fmt.Errorf("plugin already installed")
 	}
 
+	project, err := m.modrinth.GetProject(opts.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	isMCXboxBroadcast := project.Slug == "mcxboxbroadcast"
+
 	var version *modrinth.Version
 	if opts.VersionID != "" {
 		version, err = m.modrinth.GetVersion(opts.VersionID)
@@ -120,10 +129,14 @@ func (m *Manager) Install(opts InstallOptions) (*InstalledPlugin, error) {
 		if opts.GameVersion != "" {
 			gameVersions = []string{opts.GameVersion}
 		}
+		versionLoaders := opts.Loaders
+		if isMCXboxBroadcast {
+			versionLoaders = []string{}
+		}
 		var versions []modrinth.Version
-		versions, err = m.modrinth.GetProjectVersions(opts.ProjectID, gameVersions, opts.Loaders)
+		versions, err = m.modrinth.GetProjectVersions(opts.ProjectID, gameVersions, versionLoaders)
 		if err == nil {
-			version = modrinth.FindBestVersion(versions, opts.GameVersion, opts.Loaders)
+			version = modrinth.FindBestVersion(versions, opts.GameVersion, versionLoaders)
 			if version == nil {
 				err = fmt.Errorf("no compatible version found")
 			}
@@ -139,8 +152,21 @@ func (m *Manager) Install(opts InstallOptions) (*InstalledPlugin, error) {
 	}
 
 	subdir := opts.TargetSubdir
-	if subdir == "" {
-		subdir = "plugins"
+	loaderType := opts.LoaderType
+
+	if isMCXboxBroadcast {
+		loaderType = "geyser"
+		if subdir == "" {
+			if opts.TargetType == "proxy" {
+				subdir = "plugins/Geyser-Velocity/extensions"
+			} else {
+				subdir = "plugins/Geyser-Spigot/extensions"
+			}
+		}
+	} else {
+		if subdir == "" {
+			subdir = "plugins"
+		}
 	}
 
 	targetPath := filepath.Join(m.serversDir, opts.ServerName, subdir)
@@ -153,17 +179,12 @@ func (m *Manager) Install(opts InstallOptions) (*InstalledPlugin, error) {
 		return nil, fmt.Errorf("failed to download plugin: %w", err)
 	}
 
-	project, err := m.modrinth.GetProject(opts.ProjectID)
-	if err != nil {
-		project = &modrinth.Project{ID: opts.ProjectID, Title: opts.ProjectID, Slug: opts.ProjectID}
-	}
-
 	result, err := m.db.Exec(`
 		INSERT INTO installed_plugins (target_type, target_id, project_id, project_slug, project_name,
-		                               version_id, version_number, filename, file_hash)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                               version_id, version_number, filename, file_hash, loader_type)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, opts.TargetType, opts.TargetID, opts.ProjectID, project.Slug, project.Title,
-		version.ID, version.VersionNumber, file.Filename, file.Hashes.SHA1)
+		version.ID, version.VersionNumber, file.Filename, file.Hashes.SHA1, loaderType)
 	if err != nil {
 		os.Remove(destPath)
 		return nil, fmt.Errorf("failed to record installation: %w", err)
@@ -182,6 +203,7 @@ func (m *Manager) Install(opts InstallOptions) (*InstalledPlugin, error) {
 		VersionNumber: version.VersionNumber,
 		Filename:      file.Filename,
 		FileHash:      file.Hashes.SHA1,
+		LoaderType:    loaderType,
 		InstalledAt:   time.Now(),
 	}, nil
 }
@@ -208,7 +230,7 @@ func (m *Manager) downloadFile(url, dest string) error {
 }
 
 func (m *Manager) Uninstall(targetType string, targetID int64, projectID string) error {
-	var filename, pluginsDir string
+	var filename, loaderType, pluginsDir string
 	var targetName string
 
 	if targetType == "server" {
@@ -226,9 +248,9 @@ func (m *Manager) Uninstall(targetType string, targetID int64, projectID string)
 	}
 
 	err := m.db.QueryRow(`
-		SELECT filename FROM installed_plugins
+		SELECT filename, loader_type FROM installed_plugins
 		WHERE target_type = ? AND target_id = ? AND project_id = ?
-	`, targetType, targetID, projectID).Scan(&filename)
+	`, targetType, targetID, projectID).Scan(&filename, &loaderType)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("plugin not found")
 	}
@@ -236,7 +258,17 @@ func (m *Manager) Uninstall(targetType string, targetID int64, projectID string)
 		return fmt.Errorf("failed to get plugin info: %w", err)
 	}
 
-	pluginPath := filepath.Join(m.serversDir, pluginsDir, "plugins", filename)
+	var pluginPath string
+	if loaderType == "geyser" {
+		if targetType == "proxy" {
+			pluginPath = filepath.Join(m.serversDir, pluginsDir, "plugins/Geyser-Velocity/extensions", filename)
+		} else {
+			pluginPath = filepath.Join(m.serversDir, pluginsDir, "plugins/Geyser-Spigot/extensions", filename)
+		}
+	} else {
+		pluginPath = filepath.Join(m.serversDir, pluginsDir, "plugins", filename)
+	}
+
 	if err := os.Remove(pluginPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete plugin file: %w", err)
 	}
@@ -305,12 +337,16 @@ func (m *Manager) Update(targetType string, targetID int64, projectID string, ga
 	if gameVersion != "" {
 		gameVersions = []string{gameVersion}
 	}
-	versions, err := m.modrinth.GetProjectVersions(projectID, gameVersions, loaders)
+	versionLoaders := loaders
+	if existing.ProjectSlug == "mcxboxbroadcast" {
+		versionLoaders = []string{}
+	}
+	versions, err := m.modrinth.GetProjectVersions(projectID, gameVersions, versionLoaders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get versions: %w", err)
 	}
 
-	latest := modrinth.FindBestVersion(versions, gameVersion, loaders)
+	latest := modrinth.FindBestVersion(versions, gameVersion, versionLoaders)
 	if latest == nil {
 		return nil, fmt.Errorf("no compatible version found")
 	}
@@ -337,7 +373,17 @@ func (m *Manager) Update(targetType string, targetID int64, projectID string, ga
 		return nil, fmt.Errorf("no file found in version")
 	}
 
-	targetPath := filepath.Join(m.serversDir, targetName, "plugins")
+	var targetPath string
+	if existing.LoaderType == "geyser" {
+		if targetType == "proxy" {
+			targetPath = filepath.Join(m.serversDir, targetName, "plugins/Geyser-Velocity/extensions")
+		} else {
+			targetPath = filepath.Join(m.serversDir, targetName, "plugins/Geyser-Spigot/extensions")
+		}
+	} else {
+		targetPath = filepath.Join(m.serversDir, targetName, "plugins")
+	}
+
 	oldPath := filepath.Join(targetPath, existing.Filename)
 	os.Remove(oldPath)
 

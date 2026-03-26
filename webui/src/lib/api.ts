@@ -331,6 +331,7 @@ export interface ModrinthProjectHit {
 	license: string;
 	loaders: string[];
 	game_versions: string[];
+	loader_type?: string;
 }
 
 export interface ModrinthProject {
@@ -390,6 +391,7 @@ export interface InstalledPlugin {
 	version_number: string;
 	filename: string;
 	file_hash: string;
+	loader_type?: string;
 	installed_at: string;
 	dependencies?: InstalledPlugin[];
 }

@@ -164,11 +164,16 @@ func FindBestVersion(versions []Version, gameVersion string, loaders []string) *
 			continue
 		}
 
+		// If version has no game_versions, it's version-agnostic (like Geyser extensions)
 		gameMatch := false
-		for _, gv := range v.GameVersions {
-			if gv == gameVersion {
-				gameMatch = true
-				break
+		if len(v.GameVersions) == 0 {
+			gameMatch = true
+		} else {
+			for _, gv := range v.GameVersions {
+				if gv == gameVersion {
+					gameMatch = true
+					break
+				}
 			}
 		}
 		if !gameMatch && gameVersion != "" {

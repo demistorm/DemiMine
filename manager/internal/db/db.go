@@ -183,6 +183,7 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE servers ADD COLUMN jar_build INTEGER DEFAULT 0`,
 		`ALTER TABLE servers ADD COLUMN jar_hash TEXT`,
 		`ALTER TABLE servers ADD COLUMN start_on_boot INTEGER DEFAULT 0`,
+		`ALTER TABLE installed_plugins ADD COLUMN loader_type TEXT DEFAULT ''`,
 	}
 
 	recreateMigrations := []struct {
@@ -261,6 +262,8 @@ func RunMigrations(db *sql.DB) error {
 	for _, alter := range alterMigrations {
 		db.Exec(alter)
 	}
+
+	db.Exec(`UPDATE installed_plugins SET loader_type = '' WHERE loader_type IS NULL`)
 
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies(status)`,

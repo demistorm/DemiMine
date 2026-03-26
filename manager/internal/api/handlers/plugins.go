@@ -123,14 +123,13 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 	}
 
 	installed, err := h.pluginManager.Install(plugin.InstallOptions{
-		TargetType:   targetType,
-		TargetID:     targetID,
-		ProjectID:    req.ProjectID,
-		VersionID:    req.VersionID,
-		GameVersion:  gameVersion,
-		Loaders:      loaders,
-		ServerName:   serverName,
-		TargetSubdir: "plugins",
+		TargetType:  targetType,
+		TargetID:    targetID,
+		ProjectID:   req.ProjectID,
+		VersionID:   req.VersionID,
+		GameVersion: gameVersion,
+		Loaders:     loaders,
+		ServerName:  serverName,
 	})
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -169,13 +168,12 @@ func (h *PluginHandler) getDependenciesRecursive(projectID, gameVersion string, 
 			continue
 		}
 		depPlugin, err := h.pluginManager.Install(plugin.InstallOptions{
-			TargetType:   targetType,
-			TargetID:     targetID,
-			ProjectID:    dep.ProjectID,
-			GameVersion:  gameVersion,
-			Loaders:      loaders,
-			ServerName:   serverName,
-			TargetSubdir: "plugins",
+			TargetType:  targetType,
+			TargetID:    targetID,
+			ProjectID:   dep.ProjectID,
+			GameVersion: gameVersion,
+			Loaders:     loaders,
+			ServerName:  serverName,
 		})
 		if err != nil {
 			continue
