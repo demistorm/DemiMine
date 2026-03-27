@@ -35,8 +35,9 @@ COPY webui/tsconfig.json ./
 # Install dependencies
 RUN npm install
 
-# Copy frontend source
+# Copy frontend source and static assets
 COPY webui/src ./src
+COPY webui/static ./static
 
 # Build frontend
 RUN npm run build

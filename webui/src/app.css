@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+	font-family: 'Minecraft';
+	src: url('/fonts/MinecraftRegular-Bmg3.otf') format('opentype');
+	font-weight: normal;
+	font-style: normal;
+	font-display: swap;
+}
+
 :root {
 	--bg-primary: #0f0f0f;
 	--bg-secondary: #1a1a1a;
@@ -34,6 +42,10 @@ button {
 
 button:disabled {
 	@apply opacity-50 cursor-not-allowed;
+}
+
+h1, h2, h3, h4, h5, h6 {
+	font-family: 'Minecraft', sans-serif;
 }
 
 input, textarea {

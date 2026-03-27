@@ -203,6 +203,7 @@
 		background: none;
 		border: none;
 		font-size: 1rem;
+		font-family: 'Minecraft', sans-serif;
 	}
 
 	.nav-link:hover {

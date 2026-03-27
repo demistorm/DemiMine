@@ -285,6 +285,7 @@
 		margin: 0;
 		font-size: 1.25rem;
 		color: var(--text-primary);
+		font-family: 'Minecraft', sans-serif;
 	}
 
 	.status {
@@ -368,6 +369,7 @@
 		border-bottom: 6px solid transparent;
 		transition: all 0.2s;
 		white-space: nowrap;
+		font-family: 'Minecraft', sans-serif;
 	}
 
 	.tab:hover {

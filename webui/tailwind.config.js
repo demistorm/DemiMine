@@ -3,6 +3,9 @@ export default {
 	content: ['./src/**/*.{html,js,svelte,ts}', './src/*.{html,js,svelte,ts}'],
 	theme: {
 		extend: {
+			fontFamily: {
+				'minecraft': ['Minecraft', 'sans-serif'],
+			},
 			colors: {
 				'bg-primary': '#0f0f0f',
 				'bg-secondary': '#1a1a1a',
