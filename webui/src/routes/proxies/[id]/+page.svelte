@@ -187,11 +187,11 @@
 		<button class="tab" class:active={activeTab === 'files'} on:click={() => setTab('files')}>
 			Files
 		</button>
-		<button class="tab" class:active={activeTab === 'settings'} on:click={() => setTab('settings')}>
-			Settings
-		</button>
 		<button class="tab" class:active={activeTab === 'plugins'} on:click={() => setTab('plugins')}>
 			Plugins
+		</button>
+		<button class="tab" class:active={activeTab === 'settings'} on:click={() => setTab('settings')}>
+			Settings
 		</button>
 	</div>
 
@@ -204,9 +204,6 @@
 				<div class:hidden={activeTab !== 'files'}>
 					<Files id={proxyId} type="proxy" />
 				</div>
-				<div class:hidden={activeTab !== 'settings'}>
-					<ProxySettings {proxy} on:deleted={goBack} />
-				</div>
 				<div class:hidden={activeTab !== 'plugins'}>
 					<PluginBrowser
 						targetType="proxy"
@@ -214,6 +211,9 @@
 						gameVersion=""
 						loaders={['velocity']}
 					/>
+				</div>
+				<div class:hidden={activeTab !== 'settings'}>
+					<ProxySettings {proxy} on:deleted={goBack} />
 				</div>
 			</div>
 		{:else}
