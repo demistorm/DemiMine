@@ -4,11 +4,36 @@
 	import { settingsApi, backupsApi, type Backup } from '$lib/api';
 	import { formatBytes, formatDate } from '$lib/utils';
 	import { backupStatus, isBackupRunning, isRestoreRunning, backupOperationLabel } from '$lib/stores/servers';
+	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 
 	let loading = true;
 	let saving = false;
 	let error = '';
 	let success = '';
+
+	let accentColor = '#8b5e2a';
+	let colorPickerOpen = false;
+
+	function darkenColor(hex: string, amount: number): string {
+		let r = parseInt(hex.slice(1, 3), 16);
+		let g = parseInt(hex.slice(3, 5), 16);
+		let b = parseInt(hex.slice(5, 7), 16);
+		r = Math.max(0, Math.round(r * (1 - amount)));
+		g = Math.max(0, Math.round(g * (1 - amount)));
+		b = Math.max(0, Math.round(b * (1 - amount)));
+		return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+	}
+
+	function applyAccentColor(color: string) {
+		if (typeof document !== 'undefined') {
+			document.documentElement.style.setProperty('--accent', color);
+			document.documentElement.style.setProperty('--accent-hover', darkenColor(color, 0.25));
+		}
+	}
+
+	$: {
+		applyAccentColor(accentColor);
+	}
 
 	let backupHour = 3;
 	let backupMinute = 0;
@@ -51,6 +76,8 @@
 		backupMinute = m;
 		backupIntervalDays = $globalSettings.backup_interval_days;
 		retentionCount = $globalSettings.retention_count;
+		accentColor = $globalSettings.accent_color;
+		applyAccentColor(accentColor);
 		await loadBackups();
      loading = false;
 	 });
@@ -74,7 +101,8 @@
         backup_time: `${String(backupHour).padStart(2, '0')}:${String(backupMinute).padStart(2, '0')}`,
         backup_interval_days: String(backupIntervalDays),
         retention_count: retentionCount,
-        background_texture_scale: $globalSettings.background_texture_scale
+        background_texture_scale: $globalSettings.background_texture_scale,
+        accent_color: accentColor
       });
       success = 'Settings saved successfully';
       setTimeout(() => success = '', 3000);
@@ -446,6 +474,37 @@
       <p class="hint">Customize textures for the canvas background and tiles with 16x16 pixel art PNGs.</p>
 
       <div class="field">
+        <label>Accent Color</label>
+        <div class="color-picker-section">
+          <div class="color-picker-row">
+            <ColorPicker
+              bind:hex={accentColor}
+              {ChromeVariant}
+              components={{ wrapper: ChromeVariant.wrapper }}
+              isDialog={true}
+              isAlpha={false}
+              isTextInput={true}
+              textInputModes={['hex']}
+              sliderDirection="horizontal"
+              bind:isOpen={colorPickerOpen}
+            />
+            <div class="color-preview-area">
+              <div class="color-swatch-large" style="background: {accentColor}"></div>
+              <div class="color-info">
+                <span class="color-hex">{accentColor}</span>
+                <span class="color-hint">Hover: {darkenColor(accentColor, 0.25)}</span>
+              </div>
+            </div>
+          </div>
+          <div class="button-preview">
+            <span class="preview-label">Preview:</span>
+            <button class="btn primary">Normal</button>
+            <button class="btn primary" style="background-color: {darkenColor(accentColor, 0.25)}; border-color: {darkenColor(accentColor, 0.25)};">Hover</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
         <label>Texture Scale Factor</label>
         <input type="range" min="1" max="12" step="1" bind:value={$globalSettings.background_texture_scale} />
         <span class="hint">Scale factor: {$globalSettings.background_texture_scale}x (applies to all textures, 1x = 16px, 4x = 64px)</span>
@@ -664,6 +723,106 @@
     overflow-x: hidden;
   }
 
+  .color-picker-section {
+    margin-top: 0.5rem;
+    --cp-bg-color: var(--bg-secondary);
+    --cp-border-color: var(--border);
+    --cp-text-color: var(--text-primary);
+    --cp-input-color: var(--bg-tertiary);
+    --cp-button-hover-color: var(--bg-tertiary);
+    --picker-radius: 0;
+  }
+
+  .color-picker-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+  }
+
+  .color-picker-row :global(.wrapper) {
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+
+  .color-picker-row :global(label) {
+    background: transparent !important;
+    color: var(--accent) !important;
+    border: 3px solid var(--accent) !important;
+    border-radius: 0 !important;
+    padding: 0 1rem !important;
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    height: 48px !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+  }
+
+  .color-picker-row :global(label:hover) {
+    background-color: var(--accent) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .color-picker-row :global(label .container) {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  .color-picker-row :global(label .alpha),
+  .color-picker-row :global(label .color) {
+    width: 18px !important;
+    height: 18px !important;
+    border-radius: 0 !important;
+  }
+
+  .color-preview-area {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .color-swatch-large {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .color-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .color-hex {
+    font-family: monospace;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+  }
+
+  .color-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-family: monospace;
+  }
+
+  .button-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .preview-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
+
   .settings-container {
     max-width: 800px;
     margin: 0 auto;
@@ -857,6 +1016,8 @@
   .file-name {
     color: var(--text-secondary);
     font-size: 0.875rem;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

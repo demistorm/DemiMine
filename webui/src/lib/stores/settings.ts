@@ -8,6 +8,7 @@ export interface GlobalSettings {
 	retention_count: number;
 	server_timezone: string;
 	background_texture_scale: number;
+	accent_color: string;
 }
 
 export const globalSettings = writable<GlobalSettings>({
@@ -16,7 +17,8 @@ export const globalSettings = writable<GlobalSettings>({
 	backup_interval_days: '3',
 	retention_count: 2,
 	server_timezone: 'UTC',
-	background_texture_scale: 4
+	background_texture_scale: 4,
+	accent_color: '#8b5e2a'
 });
 
 export const backgroundTextureUrl = writable<string | null>(null);
@@ -36,7 +38,8 @@ export const loadGlobalSettings = async () => {
 			backup_interval_days: settings.backup_interval_days || '3',
 			retention_count: settings.retention_count ? parseInt(settings.retention_count) : 2,
 			server_timezone: settings.server_timezone || 'UTC',
-			background_texture_scale: settings.background_texture_scale ? parseInt(settings.background_texture_scale) : 4
+			background_texture_scale: settings.background_texture_scale ? parseInt(settings.background_texture_scale) : 4,
+			accent_color: settings.accent_color || '#8b5e2a'
 		});
 	} catch (err) {
 		console.error('Failed to load global settings:', err);

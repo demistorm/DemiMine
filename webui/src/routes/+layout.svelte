@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { browser } from '$app/environment';
 	import '../app.css';
 	import { page } from '$app/stores';
 	import { token } from '$lib/stores/auth';
@@ -7,6 +8,21 @@
 	import { backupStatus, isBackupRunning, backupOperationLabel } from '$lib/stores/servers';
 	import { ws } from '$lib/websocket';
 	import { inputMode } from '$lib/stores/inputMode';
+	import { settingsApi } from '$lib/api';
+
+	if (browser) {
+		const saved = localStorage.getItem('accent_color');
+		if (saved) {
+			document.documentElement.style.setProperty('--accent', saved);
+			const r = parseInt(saved.slice(1, 3), 16);
+			const g = parseInt(saved.slice(3, 5), 16);
+			const b = parseInt(saved.slice(5, 7), 16);
+			const dr = Math.max(0, Math.round(r * 0.75)).toString(16).padStart(2, '0');
+			const dg = Math.max(0, Math.round(g * 0.75)).toString(16).padStart(2, '0');
+			const db = Math.max(0, Math.round(b * 0.75)).toString(16).padStart(2, '0');
+			document.documentElement.style.setProperty('--accent-hover', `#${dr}${dg}${db}`);
+		}
+	}
 
 	let usedMB = 0;
 	let maxMB = 0;
@@ -62,6 +78,21 @@
 		fetchResources();
 		pollingInterval = setInterval(fetchResources, 2000) as unknown as number;
 		await connectWebSocket();
+		if ($token) {
+		try {
+			const settings = await settingsApi.get();
+			const color = settings.accent_color || '#8b5e2a';
+			document.documentElement.style.setProperty('--accent', color);
+			const r = parseInt(color.slice(1, 3), 16);
+			const g = parseInt(color.slice(3, 5), 16);
+			const b = parseInt(color.slice(5, 7), 16);
+			const dr = Math.max(0, Math.round(r * 0.75)).toString(16).padStart(2, '0');
+			const dg = Math.max(0, Math.round(g * 0.75)).toString(16).padStart(2, '0');
+			const db = Math.max(0, Math.round(b * 0.75)).toString(16).padStart(2, '0');
+			document.documentElement.style.setProperty('--accent-hover', `#${dr}${dg}${db}`);
+			localStorage.setItem('accent_color', color);
+		} catch (e) {}
+		}
 	});
 
 	$: if ($token && !wsSetup) {

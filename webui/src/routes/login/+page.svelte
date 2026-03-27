@@ -1,8 +1,23 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import { api, type AuthStatus } from '$lib/api';
 	import { token } from '$lib/stores/auth';
+
+	if (browser) {
+		const saved = localStorage.getItem('accent_color');
+		if (saved) {
+			document.documentElement.style.setProperty('--accent', saved);
+			const r = parseInt(saved.slice(1, 3), 16);
+			const g = parseInt(saved.slice(3, 5), 16);
+			const b = parseInt(saved.slice(5, 7), 16);
+			const dr = Math.max(0, Math.round(r * 0.75)).toString(16).padStart(2, '0');
+			const dg = Math.max(0, Math.round(g * 0.75)).toString(16).padStart(2, '0');
+			const db = Math.max(0, Math.round(b * 0.75)).toString(16).padStart(2, '0');
+			document.documentElement.style.setProperty('--accent-hover', `#${dr}${dg}${db}`);
+		}
+	}
 
 	let authStatus: AuthStatus | null = null;
 	let username = '';

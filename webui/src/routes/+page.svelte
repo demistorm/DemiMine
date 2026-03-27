@@ -594,7 +594,8 @@
     }
 
     .create-btn {
-        @apply bg-accent hover:bg-accent-hover text-text-primary;
+        background-color: var(--accent);
+        color: var(--text-primary);
         padding: 0.6rem 1.2rem;
         font-size: 0.875rem;
         font-weight: 600;
@@ -609,6 +610,7 @@
     }
 
     .create-btn:hover {
+        background-color: var(--accent-hover);
         transform: translateY(-2px);
         box-shadow:
             0 calc(var(--scale) * -1) 0 rgba(0, 0, 0, 0.10),

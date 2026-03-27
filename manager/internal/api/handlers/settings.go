@@ -62,6 +62,10 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		settings["background_texture_scale"] = "4"
 	}
 
+	if _, ok := settings["accent_color"]; !ok {
+		settings["accent_color"] = "#8b5e2a"
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(settings)
 }
@@ -72,6 +76,7 @@ type UpdateSettingsRequest struct {
 	BackupIntervalDays     string `json:"backup_interval_days"`
 	RetentionCount         int    `json:"retention_count"`
 	BackgroundTextureScale int    `json:"background_texture_scale"`
+	AccentColor            string `json:"accent_color"`
 }
 
 func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +102,9 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.BackgroundTextureScale > 0 {
 		h.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('background_texture_scale', ?)", req.BackgroundTextureScale)
+	}
+	if req.AccentColor != "" {
+		h.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('accent_color', ?)", req.AccentColor)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

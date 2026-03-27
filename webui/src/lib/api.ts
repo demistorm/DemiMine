@@ -459,7 +459,7 @@ export const settingsApi = {
 	get: () =>
 		api.get<{ [key: string]: string }>('/api/settings'),
 
-	update: (data: { proxy_mc_version?: string; backup_time?: string; backup_interval_days?: string; retention_count?: number; background_texture_scale?: number }) =>
+	update: (data: { proxy_mc_version?: string; backup_time?: string; backup_interval_days?: string; retention_count?: number; background_texture_scale?: number; accent_color?: string }) =>
 		api.put<{ success: boolean }>('/api/settings', data),
 
 	getBackgroundTexture: async () => {
