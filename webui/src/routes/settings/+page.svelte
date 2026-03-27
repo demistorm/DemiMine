@@ -72,7 +72,7 @@
       await saveGlobalSettings({
         proxy_mc_version: $globalSettings.proxy_mc_version,
         backup_time: `${String(backupHour).padStart(2, '0')}:${String(backupMinute).padStart(2, '0')}`,
-        backup_interval_days: backupIntervalDays,
+        backup_interval_days: String(backupIntervalDays),
         retention_count: retentionCount,
         background_texture_scale: $globalSettings.background_texture_scale
       });

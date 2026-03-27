@@ -31,7 +31,7 @@
 	const dispatch = createEventDispatcher();
 
 	async function checkJarUpdate() {
-		if (server.type !== 'paper' && server.type !== 'purpur') {
+		if (server.type !== 'paper' && server.type !== 'purpur' && server.type !== 'nanolimbo') {
 			return;
 		}
 
@@ -257,7 +257,7 @@
 		<div class="alert success">{success}</div>
 	{/if}
 
-	{#if server.type === 'paper' || server.type === 'purpur'}
+	{#if server.type === 'paper' || server.type === 'purpur' || server.type === 'nanolimbo'}
 		<div class="section">
 			<h2>Software Updates</h2>
 
@@ -268,12 +268,12 @@
 			{:else if updateInfo}
 				<div class="field">
 					<label>Current Version</label>
-					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${server.version} (build ${server.jar_build > 0 ? server.jar_build : 'unknown'})`} disabled />
+					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${server.version}`} disabled />
 				</div>
 
 				<div class="field">
 					<label>Latest Version</label>
-					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${updateInfo.latest_version} (build ${updateInfo.latest_build})`} disabled />
+					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${updateInfo.latest_version}`} disabled />
 				</div>
 
 				{#if updateInfo.has_update}
@@ -286,7 +286,7 @@
 					{:else}
 						<div class="field">
 							<button class="btn primary" on:click={updateJar} disabled={updatingJar}>
-								{updatingJar ? 'Updating...' : `Update to Build ${updateInfo.latest_build}`}
+								{updatingJar ? 'Updating...' : `Update to ${updateInfo.latest_version}`}
 							</button>
 						</div>
 					{/if}

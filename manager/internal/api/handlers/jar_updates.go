@@ -64,6 +64,8 @@ func (h *JarUpdateHandler) CheckServerJarUpdate(w http.ResponseWriter, r *http.R
 			hash = currentHash.String
 		}
 		updateInfo, checkErr = mc.CheckPurpurUpdate(serverVersion, build, hash)
+	case "nanolimbo":
+		updateInfo, checkErr = mc.CheckNanoLimboUpdate(serverVersion)
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -110,6 +112,7 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 
 	var build int
 	var hash string
+	var nanolimboLatestVersion string
 
 	switch serverType {
 	case "paper":
@@ -120,6 +123,22 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 		}
 	case "purpur":
 		build, hash, err = mc.DownloadPurpurJar(serverVersion, jarPath)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to download JAR: %v", err), http.StatusInternalServerError)
+			return
+		}
+	case "nanolimbo":
+		updateInfo, checkErr := mc.CheckNanoLimboUpdate(serverVersion)
+		if checkErr != nil {
+			http.Error(w, fmt.Sprintf("Failed to check for latest version: %v", checkErr), http.StatusInternalServerError)
+			return
+		}
+		if !updateInfo.HasUpdate {
+			http.Error(w, "No update available", http.StatusBadRequest)
+			return
+		}
+		nanolimboLatestVersion = updateInfo.LatestVersion
+		build, hash, err = mc.DownloadNanoLimboJar(nanolimboLatestVersion, jarPath)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to download JAR: %v", err), http.StatusInternalServerError)
 			return
@@ -142,6 +161,11 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 		_, err = h.db.Exec(
 			"UPDATE servers SET jar_build = ?, jar_hash = ? WHERE id = ?",
 			build, hash, serverID,
+		)
+	case "nanolimbo":
+		_, err = h.db.Exec(
+			"UPDATE servers SET version = ? WHERE id = ?",
+			nanolimboLatestVersion, serverID,
 		)
 	}
 

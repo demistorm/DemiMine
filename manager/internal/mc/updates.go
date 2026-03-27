@@ -56,6 +56,8 @@ var (
 	purpurUpdateCacheMu   sync.RWMutex
 	velocityUpdateCache   = make(map[string]*cachedUpdate)
 	velocityUpdateCacheMu sync.RWMutex
+	nanolimboUpdateCache  *cachedUpdate
+	nanolimboUpdateMu     sync.RWMutex
 )
 
 func getPaperCacheKey(version string, currentBuild int) string {
@@ -325,6 +327,61 @@ func CheckVelocityUpdate(currentVersion string, currentBuild int) (*JarUpdateInf
 	velocityUpdateCacheMu.Lock()
 	velocityUpdateCache[cacheKey] = &cachedUpdate{info: info, fetchedAt: time.Now()}
 	velocityUpdateCacheMu.Unlock()
+
+	return &info, nil
+}
+
+func CheckNanoLimboUpdate(currentVersion string) (*JarUpdateInfo, error) {
+	nanolimboUpdateMu.RLock()
+	if nanolimboUpdateCache != nil {
+		if time.Since(nanolimboUpdateCache.fetchedAt) < updateCacheTTL {
+			info := nanolimboUpdateCache.info
+			nanolimboUpdateMu.RUnlock()
+			return &info, nil
+		}
+	}
+	nanolimboUpdateMu.RUnlock()
+
+	resp, err := httpClient.Get("https://api.github.com/repos/BoomEaro/NanoLimbo/releases")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch nanolimbo releases: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var releases []NanoLimboRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("failed to decode nanolimbo releases: %w", err)
+	}
+
+	if len(releases) == 0 {
+		return &JarUpdateInfo{
+			HasUpdate:      false,
+			CurrentVersion: currentVersion,
+			LatestVersion:  currentVersion,
+		}, nil
+	}
+
+	latestVersion := releases[0].TagName
+
+	// strip "v" prefix for comparison
+	stripV := func(s string) string {
+		return strings.TrimPrefix(s, "v")
+	}
+
+	currentClean := stripV(currentVersion)
+	latestClean := stripV(latestVersion)
+
+	hasUpdate := compareVersionStrings(latestClean, currentClean)
+
+	info := JarUpdateInfo{
+		HasUpdate:      hasUpdate,
+		CurrentVersion: currentVersion,
+		LatestVersion:  latestVersion,
+	}
+
+	nanolimboUpdateMu.Lock()
+	nanolimboUpdateCache = &cachedUpdate{info: info, fetchedAt: time.Now()}
+	nanolimboUpdateMu.Unlock()
 
 	return &info, nil
 }
