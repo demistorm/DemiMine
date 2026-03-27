@@ -15,8 +15,13 @@
 	let currentX = proxy.canvas_x ?? 0;
 	let currentY = proxy.canvas_y ?? 0;
 
-	$: if (!isDragging && proxy.canvas_x != null) currentX = proxy.canvas_x;
-	$: if (!isDragging && proxy.canvas_y != null) currentY = proxy.canvas_y;
+	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let touchStartPos = { x: 0, y: 0 };
+	let touchDragging = false;
+	let touchMoved = false;
+
+	$: if (!isDragging && !touchDragging && proxy.canvas_x != null) currentX = proxy.canvas_x;
+	$: if (!isDragging && !touchDragging && proxy.canvas_y != null) currentY = proxy.canvas_y;
 
 	function handleMouseDown(e: MouseEvent) {
 		if (e.ctrlKey && e.button === 0) {
@@ -61,6 +66,80 @@
 		dispatch('move', { x: Math.round(currentX), y: Math.round(currentY) });
 	}
 
+	function handleTouchStart(e: TouchEvent) {
+		if (e.touches.length !== 1) return;
+		const touch = e.touches[0];
+		e.preventDefault();
+
+		touchStartPos = { x: touch.clientX, y: touch.clientY };
+		touchMoved = false;
+		touchDragging = false;
+
+		longPressTimer = setTimeout(() => {
+			touchDragging = true;
+			dragStart = {
+				x: (touchStartPos.x - canvasOffset.x) / zoom - currentX,
+				y: (touchStartPos.y - canvasOffset.y) / zoom - currentY
+			};
+			window.addEventListener('touchmove', handleTouchMove);
+			window.addEventListener('touchend', handleTouchEnd);
+		}, 500);
+
+		window.addEventListener('touchmove', handleTouchMoveEarly);
+		window.addEventListener('touchend', handleTouchEndEarly);
+	}
+
+	function handleTouchMoveEarly(e: TouchEvent) {
+		if (e.touches.length !== 1) return;
+		const touch = e.touches[0];
+		const dx = touch.clientX - touchStartPos.x;
+		const dy = touch.clientY - touchStartPos.y;
+
+		if (Math.sqrt(dx * dx + dy * dy) > 10) {
+			touchMoved = true;
+			if (longPressTimer) {
+				clearTimeout(longPressTimer);
+				longPressTimer = null;
+			}
+			window.removeEventListener('touchmove', handleTouchMoveEarly);
+			window.removeEventListener('touchend', handleTouchEndEarly);
+		}
+	}
+
+	function handleTouchEndEarly() {
+		if (longPressTimer) {
+			clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+		if (!touchMoved && !touchDragging) {
+			dispatch('click');
+		}
+		window.removeEventListener('touchmove', handleTouchMoveEarly);
+		window.removeEventListener('touchend', handleTouchEndEarly);
+	}
+
+	function handleTouchMove(e: TouchEvent) {
+		if (!touchDragging || e.touches.length !== 1) return;
+		e.preventDefault();
+		const touch = e.touches[0];
+		const newX = (touch.clientX - canvasOffset.x) / zoom - dragStart.x;
+		const newY = (touch.clientY - canvasOffset.y) / zoom - dragStart.y;
+
+		currentX = Math.round(newX / 100) * 100;
+		currentY = Math.round(newY / 100) * 100;
+
+		dispatch('dragging', { id: proxy.id, x: currentX, y: currentY, type: 'proxy' });
+	}
+
+	function handleTouchEnd() {
+		if (touchDragging) {
+			dispatch('move', { x: Math.round(currentX), y: Math.round(currentY) });
+		}
+		touchDragging = false;
+		window.removeEventListener('touchmove', handleTouchMove);
+		window.removeEventListener('touchend', handleTouchEnd);
+	}
+
 	function handleContextMenu(e: MouseEvent) {
 		e.preventDefault();
 		dispatch('contextmenu', { x: e.clientX, y: e.clientY });
@@ -97,6 +176,7 @@
     class="proxy-tile"
     style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%); --scale: {pixelScale}px; {textureUrl ? `background-image: url('${textureUrl}');` : ''}"
     on:mousedown={handleMouseDown}
+    on:touchstart={handleTouchStart}
     on:contextmenu={handleContextMenu}
 >
 	<div class="proxy-icon">
@@ -135,6 +215,7 @@
 		border-radius: 0;
 		cursor: pointer;
 		user-select: none;
+		touch-action: none;
 		transition: transform 0.2s, box-shadow 0.2s;
 		border: 6px solid var(--border);
 		image-rendering: pixelated;

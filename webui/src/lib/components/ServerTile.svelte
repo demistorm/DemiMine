@@ -15,8 +15,13 @@
 	let currentX = server.canvas_x ?? 0;
 	let currentY = server.canvas_y ?? 0;
 
-	$: if (!isDragging && server.canvas_x != null) currentX = server.canvas_x;
-	$: if (!isDragging && server.canvas_y != null) currentY = server.canvas_y;
+	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	let touchStartPos = { x: 0, y: 0 };
+	let touchDragging = false;
+	let touchMoved = false;
+
+	$: if (!isDragging && !touchDragging && server.canvas_x != null) currentX = server.canvas_x;
+	$: if (!isDragging && !touchDragging && server.canvas_y != null) currentY = server.canvas_y;
 
 	function handleMouseDown(e: MouseEvent) {
 		if (e.ctrlKey && e.button === 0) {
@@ -65,9 +70,88 @@
         window.removeEventListener('mouseup', handleMouseUp);
     }
 
+	function handleTouchStart(e: TouchEvent) {
+		if (e.touches.length !== 1) return;
+		const touch = e.touches[0];
+		e.preventDefault();
+
+		touchStartPos = { x: touch.clientX, y: touch.clientY };
+		touchMoved = false;
+		touchDragging = false;
+
+		longPressTimer = setTimeout(() => {
+			touchDragging = true;
+			dragStart = {
+				x: (touchStartPos.x - canvasOffset.x) / zoom - currentX,
+				y: (touchStartPos.y - canvasOffset.y) / zoom - currentY
+			};
+			window.addEventListener('touchmove', handleTouchMove);
+			window.addEventListener('touchend', handleTouchEnd);
+		}, 500);
+
+		window.addEventListener('touchmove', handleTouchMoveEarly);
+		window.addEventListener('touchend', handleTouchEndEarly);
+	}
+
+	function handleTouchMoveEarly(e: TouchEvent) {
+		if (e.touches.length !== 1) return;
+		const touch = e.touches[0];
+		const dx = touch.clientX - touchStartPos.x;
+		const dy = touch.clientY - touchStartPos.y;
+
+		if (Math.sqrt(dx * dx + dy * dy) > 10) {
+			touchMoved = true;
+			if (longPressTimer) {
+				clearTimeout(longPressTimer);
+				longPressTimer = null;
+			}
+			window.removeEventListener('touchmove', handleTouchMoveEarly);
+			window.removeEventListener('touchend', handleTouchEndEarly);
+		}
+	}
+
+	function handleTouchEndEarly() {
+		if (longPressTimer) {
+			clearTimeout(longPressTimer);
+			longPressTimer = null;
+		}
+		if (!touchMoved && !touchDragging) {
+			dispatch('click');
+		}
+		window.removeEventListener('touchmove', handleTouchMoveEarly);
+		window.removeEventListener('touchend', handleTouchEndEarly);
+	}
+
+	function handleTouchMove(e: TouchEvent) {
+		if (!touchDragging || e.touches.length !== 1) return;
+		e.preventDefault();
+		const touch = e.touches[0];
+		const newX = (touch.clientX - canvasOffset.x) / zoom - dragStart.x;
+		const newY = (touch.clientY - canvasOffset.y) / zoom - dragStart.y;
+
+		currentX = Math.round(newX / 100) * 100;
+		currentY = Math.round(newY / 100) * 100;
+
+		dispatch('dragging', { id: server.id, x: currentX, y: currentY, type: 'server' });
+	}
+
+	function handleTouchEnd() {
+		if (touchDragging) {
+			dispatch('move', { x: currentX, y: currentY });
+		}
+		touchDragging = false;
+		window.removeEventListener('touchmove', handleTouchMove);
+		window.removeEventListener('touchend', handleTouchEnd);
+	}
+
 	onDestroy(() => {
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
+		if (longPressTimer) clearTimeout(longPressTimer);
+		window.removeEventListener('touchmove', handleTouchMove);
+		window.removeEventListener('touchend', handleTouchEnd);
+		window.removeEventListener('touchmove', handleTouchMoveEarly);
+		window.removeEventListener('touchend', handleTouchEndEarly);
     });
 
 	function getStatusColor(status: string) {
@@ -106,6 +190,7 @@
     class:dragging={isDragging}
     style="left: {currentX + 50}px; top: {currentY + 50}px; transform: translate(-50%, -50%); --scale: {pixelScale}px; {textureUrl ? `background-image: url('${textureUrl}');` : ''}"
     on:mousedown={handleMouseDown}
+    on:touchstart={handleTouchStart}
     role="button"
     tabindex={0}
 >
@@ -142,6 +227,7 @@
         cursor: pointer;
         transition: transform 0.2s, box-shadow 0.2s;
         user-select: none;
+        touch-action: none;
         image-rendering: pixelated;
         background-repeat: repeat;
         box-shadow:
@@ -178,6 +264,10 @@
         cursor: move;
         z-index: 10;
         transform: translate(-50%, -50%);
+    }
+
+    .server-tile:active:not(.dragging) {
+        transform: translate(-50%, -50%) scale(0.97);
     }
 
     .server-icon {

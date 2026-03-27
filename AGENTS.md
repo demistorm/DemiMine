@@ -211,11 +211,10 @@ DemiMine/
 
 ## Development Workflow
 
-**IMPORTANT:** After any code changes (fixes, additions, or modifications), you MUST rebuild the Docker images without cache and restart the containers:
+**IMPORTANT:** After ANY code change, you MUST ALWAYS rebuild and restart the containers immediately. Never wait for the user to ask — just do it:
 
 ```bash
-docker compose build --no-cache
-docker compose up -d
+docker compose build --no-cache && docker compose up -d
 ```
 
 This is critical because:

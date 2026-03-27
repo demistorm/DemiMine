@@ -25,6 +25,10 @@
 	let scaledBackgroundTextureUrl: string | null = null;
 	let scaledServerTileTextureUrl: string | null = null;
 	let scaledProxyTileTextureUrl: string | null = null;
+	let touchStartDistance = 0;
+	let touchStartZoom = 1;
+	let lastTouchMidpoint = { x: 0, y: 0 };
+	let activeTouches = 0;
 
 	$: serverList = $servers || [];
 	$: proxyList = $proxies || [];
@@ -159,6 +163,68 @@
         isDragging = false;
         (e.target as HTMLElement).style.cursor = 'grab';
     }
+
+	function getTouchDistance(touches: TouchList): number {
+		const dx = touches[0].clientX - touches[1].clientX;
+		const dy = touches[0].clientY - touches[1].clientY;
+		return Math.sqrt(dx * dx + dy * dy);
+	}
+
+	function getTouchMidpoint(touches: TouchList): { x: number; y: number } {
+		return {
+			x: (touches[0].clientX + touches[1].clientX) / 2,
+			y: (touches[0].clientY + touches[1].clientY) / 2
+		};
+	}
+
+	function handleTouchStart(e: TouchEvent) {
+		if (e.touches.length === 2) {
+			e.preventDefault();
+			touchStartDistance = getTouchDistance(e.touches);
+			touchStartZoom = zoom;
+			lastTouchMidpoint = getTouchMidpoint(e.touches);
+			activeTouches = 2;
+		}
+	}
+
+	function handleTouchMove(e: TouchEvent) {
+		if (e.touches.length < 2) {
+			activeTouches = 0;
+			return;
+		}
+
+		e.preventDefault();
+		const currentDistance = getTouchDistance(e.touches);
+		const currentMidpoint = getTouchMidpoint(e.touches);
+
+		if (touchStartDistance > 0) {
+			const rawScale = currentDistance / touchStartDistance;
+			const scale = 1 + (rawScale - 1) * 0.7;
+			const newZoom = Math.max(0.1, Math.min(4.0, touchStartZoom * scale));
+
+			const beforeX = (currentMidpoint.x - canvasOffset.x) / zoom;
+			const beforeY = (currentMidpoint.y - canvasOffset.y) / zoom;
+
+			canvasOffset = {
+				x: currentMidpoint.x - beforeX * newZoom,
+				y: currentMidpoint.y - beforeY * newZoom
+			};
+			zoom = newZoom;
+		}
+
+		const dx = currentMidpoint.x - lastTouchMidpoint.x;
+		const dy = currentMidpoint.y - lastTouchMidpoint.y;
+		canvasOffset = { x: canvasOffset.x + dx, y: canvasOffset.y + dy };
+
+		lastTouchMidpoint = currentMidpoint;
+	}
+
+	function handleTouchEnd(e: TouchEvent) {
+		if (e.touches.length < 2) {
+			activeTouches = 0;
+			touchStartDistance = 0;
+		}
+	}
 
     function handleServerClick(server: Server) {
         goto(`/servers/${server.id}`);
@@ -351,6 +417,9 @@
     on:mousemove={handleMouseMove}
     on:mouseup={handleMouseUp}
     on:mouseleave={handleMouseUp}
+    on:touchstart={handleTouchStart}
+    on:touchmove={handleTouchMove}
+    on:touchend={handleTouchEnd}
 >
     <div class="canvas" style="transform: translate({canvasOffset.x}px, {canvasOffset.y}px) scale({zoom})">
         <div class="grid-background" style="background-image: {scaledBackgroundTextureUrl ? `url(${scaledBackgroundTextureUrl})` : 'none'};"></div>
@@ -480,6 +549,7 @@
         overflow: hidden;
         cursor: grab;
         background: var(--bg-primary);
+        touch-action: none;
     }
 
     .canvas {
