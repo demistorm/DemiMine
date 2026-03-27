@@ -4,6 +4,7 @@
 	import { getAceMode } from '$lib/utils/ace-utils';
 	import { formatDate } from '$lib/utils';
 	import { globalSettings } from '$lib/stores/settings';
+	import { inputMode } from '$lib/stores/inputMode';
 	import AceEditor from '$lib/components/AceEditor.svelte';
 
 	export let id: number;
@@ -276,7 +277,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if editingFile}
-	<div class="editor-container">
+	<div class="editor-container" class:mobile={$inputMode === 'mobile'}>
 		<div class="editor-header">
 			<div class="filename-container">
 				<span class="filename">{selectedFile?.name}</span>
@@ -306,6 +307,7 @@
 {:else}
 	<div 
 		class="file-browser"
+		class:mobile={$inputMode === 'mobile'}
 		class:dragging={isDragging}
 		on:dragover={handleDragOver}
 		on:dragleave={handleDragLeave}
@@ -352,15 +354,17 @@
 					<span class="col-actions">Actions</span>
 				</div>
 				{#each files as file}
-					<div class="file-item" class:folder={file.is_dir}>
+					<div class="file-item" class:folder={file.is_dir} class:compact={$inputMode === 'mobile'}>
 						<span class="col-icon">
 							{#if file.is_dir}📁{:else}📄{/if}
 						</span>
 						<span class="col-name" on:click={() => openFile(file)}>
 							{file.name}
 						</span>
-						<span class="col-size">{file.is_dir ? '-' : formatSize(file.size)}</span>
-						<span class="col-modified">{formatDate(file.modified, $globalSettings.server_timezone)}</span>
+						{#if $inputMode === 'desktop'}
+							<span class="col-size">{file.is_dir ? '-' : formatSize(file.size)}</span>
+							<span class="col-modified">{formatDate(file.modified, $globalSettings.server_timezone)}</span>
+						{/if}
 						<span class="col-actions">
 							{#if !file.is_dir}
 								<button class="action-btn" on:click={() => downloadFile(file)} title="Download">⬇</button>
@@ -523,14 +527,26 @@
 		background-color: var(--bg-secondary);
 	}
 
+	.file-item.compact {
+		grid-template-columns: 32px 1fr auto;
+		padding: 0.625rem 1rem;
+	}
+
 	.col-icon {
 		font-size: 1.125rem;
+	}
+
+	.compact .col-icon {
+		font-size: 1rem;
 	}
 
 	.col-name {
 		color: var(--text-primary);
 		font-weight: 500;
 		cursor: pointer;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.file-item.folder .col-name {
@@ -720,5 +736,33 @@
 		display: flex;
 		gap: 0.5rem;
 		justify-content: flex-end;
+	}
+
+	.mobile .toolbar {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+	}
+
+	.mobile .file-header {
+		display: none;
+	}
+
+	.mobile .editor-header {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+	}
+
+	.mobile .image-viewer img {
+		width: 90vw;
+		height: 70vh;
+	}
+
+	.mobile .modal {
+		min-width: auto;
+		margin: 1rem;
 	}
 </style>

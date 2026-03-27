@@ -5,6 +5,7 @@
 	import { servers, loadServers, updateServerStatus } from '$lib/stores/servers';
 	import { ws } from '$lib/websocket';
 	import { api } from '$lib/api';
+	import { inputMode } from '$lib/stores/inputMode';
 	import Console from '$lib/components/Console.svelte';
 	import Files from '$lib/components/Files.svelte';
 	import Settings from '$lib/components/Settings.svelte';
@@ -127,37 +128,71 @@
 	<title>{server?.name || 'Server'} - DemiMine</title>
 </svelte:head>
 
-<div class="server-detail">
+<div class="server-detail" class:mobile={$inputMode === 'mobile'}>
 	<div class="header">
-		<button class="back-btn" on:click={goBack}>
-			← Back to Canvas
-		</button>
-	<div class="server-info">
-		<h1>{server?.name || 'Loading...'}</h1>
-		{#if server}
-			<span class="status">
-				<span class="status-dot" style="background-color: {getStatusColor(server.status)}"></span>
-				{getStatusText(server.status)}
-			</span>
-		{/if}
-		</div>
-		<div class="actions">
-		{#if server}
-			<ProfileButton targetId={serverId} targetType="server" isRunning={server.status === 'running'} />
-			{#if server.status === 'running'}
-				<button class="action-btn warning" on:click={restartServer} disabled={actionLoading}>
-					Restart
+		{#if $inputMode === 'mobile'}
+			<div class="header-row-1">
+				<button class="back-btn" on:click={goBack}>
+					← Back
 				</button>
-				<button class="action-btn danger" on:click={stopServer} disabled={actionLoading}>
-					Stop
-				</button>
-				{:else}
-					<button class="action-btn success" on:click={startServer} disabled={actionLoading}>
-						Start
-					</button>
+				{#if server}
+					<span class="status">
+						<span class="status-dot" style="background-color: {getStatusColor(server.status)}"></span>
+						{getStatusText(server.status)}
+					</span>
 				{/if}
-			{/if}
-		</div>
+				<div class="actions">
+					{#if server}
+						<ProfileButton targetId={serverId} targetType="server" isRunning={server.status === 'running'} />
+						{#if server.status === 'running'}
+							<button class="action-btn warning" on:click={restartServer} disabled={actionLoading}>
+								Restart
+							</button>
+							<button class="action-btn danger" on:click={stopServer} disabled={actionLoading}>
+								Stop
+							</button>
+						{:else}
+							<button class="action-btn success" on:click={startServer} disabled={actionLoading}>
+								Start
+							</button>
+						{/if}
+					{/if}
+				</div>
+			</div>
+			<div class="server-name-row">
+				<h1>{server?.name || 'Loading...'}</h1>
+			</div>
+		{:else}
+			<button class="back-btn" on:click={goBack}>
+				← Back
+			</button>
+			<div class="server-info">
+				<h1>{server?.name || 'Loading...'}</h1>
+				{#if server}
+					<span class="status">
+						<span class="status-dot" style="background-color: {getStatusColor(server.status)}"></span>
+						{getStatusText(server.status)}
+					</span>
+				{/if}
+			</div>
+			<div class="actions">
+				{#if server}
+					<ProfileButton targetId={serverId} targetType="server" isRunning={server.status === 'running'} />
+					{#if server.status === 'running'}
+						<button class="action-btn warning" on:click={restartServer} disabled={actionLoading}>
+							Restart
+						</button>
+						<button class="action-btn danger" on:click={stopServer} disabled={actionLoading}>
+							Stop
+						</button>
+					{:else}
+						<button class="action-btn success" on:click={startServer} disabled={actionLoading}>
+							Start
+						</button>
+					{/if}
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	<div class="tabs">
@@ -332,6 +367,7 @@
 		font-weight: 500;
 		border-bottom: 6px solid transparent;
 		transition: all 0.2s;
+		white-space: nowrap;
 	}
 
 	.tab:hover {
@@ -371,5 +407,81 @@
 
 	.tab-content > .hidden {
 		display: none !important;
+	}
+
+	.mobile .header {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.mobile .header-row-1 {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.mobile .header-row-1 .back-btn {
+		padding: 0.25rem 0.5rem;
+		font-size: 0.875rem;
+		flex-shrink: 0;
+	}
+
+	.mobile .header-row-1 .status {
+		flex-shrink: 0;
+	}
+
+	.mobile .header-row-1 .status .status-dot {
+		width: 6px;
+		height: 6px;
+	}
+
+	.mobile .header-row-1 .status {
+		font-size: 0.75rem;
+	}
+
+	.mobile .header-row-1 .actions {
+		margin-left: auto;
+		gap: 0.3rem;
+	}
+
+	.mobile .header-row-1 .action-btn {
+		padding: 0.25rem 0.5rem;
+		font-size: 0.7rem;
+		border-width: 1px;
+	}
+
+	.mobile .header-row-1 :global(.profile-btn) {
+		padding: 0.25rem 0.5rem;
+		font-size: 0.7rem;
+		border-width: 1px;
+	}
+
+	.mobile .server-name-row {
+		padding: 0.25rem 0;
+	}
+
+	.mobile .server-name-row h1 {
+		margin: 0;
+		font-size: 1rem;
+		color: var(--text-primary);
+	}
+
+	.mobile .tabs {
+		padding: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+
+	.mobile .tabs::-webkit-scrollbar {
+		display: none;
+	}
+
+	.mobile .tab {
+		padding: 0.75rem 1rem;
+		font-size: 0.875rem;
 	}
 </style>

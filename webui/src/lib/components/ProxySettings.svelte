@@ -813,7 +813,7 @@
 	.save-bar {
 		position: fixed;
 		bottom: 0;
-		left: 200px;
+		left: 0;
 		right: 0;
 		padding: 1rem 2rem;
 		background-color: var(--bg-secondary);

@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import { ws } from '$lib/websocket';
 	import { AnsiUp } from 'ansi_up';
+	import { inputMode } from '$lib/stores/inputMode';
 
 	export let id: number;
 	export let type: 'server' | 'proxy' = 'server';
@@ -174,7 +175,7 @@
 	}
 </script>
 
-<div class="console-container">
+<div class="console-container" class:mobile={$inputMode === 'mobile'}>
 	<div class="log-output" bind:this={logContainer} on:scroll={handleScroll}>
 		{#if logs.length === 0}
 			<div class="empty-state">No logs available. Start the {entityName} to see console output.</div>
@@ -377,5 +378,24 @@
 
 	@keyframes blink {
 		50% { opacity: 0; }
+	}
+
+	.mobile .connection-status {
+		display: none;
+	}
+
+	.mobile .command-input {
+		padding: 0.5rem 0.75rem;
+		gap: 0.4rem;
+	}
+
+	.mobile .command-input input {
+		padding: 0.5rem 0.625rem;
+		font-size: 0.8125rem;
+	}
+
+	.mobile .command-input button {
+		padding: 0.5rem 0.75rem;
+		font-size: 0.8125rem;
 	}
 </style>

@@ -2,6 +2,7 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { api, type Server, jarUpdateApi, type JarUpdateInfo } from '$lib/api';
 	import { servers } from '$lib/stores/servers';
+	import { inputMode } from '$lib/stores/inputMode';
 
 	export let server: Server;
 
@@ -249,7 +250,7 @@
 
 </script>
 
-<div class="settings">
+<div class="settings" class:mobile={$inputMode === 'mobile'}>
 	{#if error}
 		<div class="alert error">{error}<button on:click={() => error = ''}>×</button></div>
 	{/if}
@@ -540,7 +541,7 @@
 		</div>
 	</div>
 
-	<div class="save-bar">
+	<div class="save-bar" class:mobile={$inputMode === 'mobile'}>
 		<button class="btn primary" on:click={saveChanges} disabled={saving}>
 			{saving ? 'Saving...' : 'Save Changes'}
 		</button>
@@ -743,7 +744,7 @@
 	.save-bar {
 		position: fixed;
 		bottom: 0;
-		left: 200px;
+		left: 0;
 		right: 0;
 		padding: 1rem 2rem;
 		background-color: var(--bg-secondary);
@@ -882,4 +883,34 @@
 		font-weight: 500;
 	}
 
+	.mobile .settings {
+		padding: 0 0.75rem 80px;
+		overflow-x: hidden;
+	}
+
+	.mobile .section {
+		padding: 1rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.mobile .field input[type="text"],
+	.mobile .field input[type="number"] {
+		max-width: 100%;
+	}
+
+	.mobile .slider-container {
+		max-width: 100%;
+	}
+
+	.mobile .schedule-fields {
+		margin-left: 0;
+	}
+
+	.mobile .time-input {
+		max-width: 100%;
+	}
+
+	.mobile .save-bar {
+		padding: 0.75rem 1rem;
+	}
 </style>

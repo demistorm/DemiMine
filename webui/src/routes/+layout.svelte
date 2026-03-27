@@ -6,12 +6,14 @@
 	import { resourcesApi, type SystemResources, getToken } from '$lib/api';
 	import { backupStatus, isBackupRunning, backupOperationLabel } from '$lib/stores/servers';
 	import { ws } from '$lib/websocket';
+	import { inputMode } from '$lib/stores/inputMode';
 
 	let usedMB = 0;
 	let maxMB = 0;
 	let pollingInterval: number;
 	let backupTimeout: number | null = null;
 	let wsSetup = false;
+	let mobileMenuOpen = false;
 
 	async function fetchResources() {
 		try {
@@ -81,8 +83,18 @@
 		token.set(null);
 	}
 
+	function toggleMobileMenu() {
+		mobileMenuOpen = !mobileMenuOpen;
+	}
+
+	function formatMB(mb: number): string {
+		if (mb >= 1024) return `${(mb / 1024).toFixed(1)}GB`;
+		return `${mb}MB`;
+	}
+
 	$: percentage = maxMB > 0 ? (usedMB / maxMB) * 100 : 0;
 	$: barColor = percentage > 95 ? 'var(--error)' : percentage > 80 ? 'var(--warning)' : 'var(--accent)';
+	$: ramText = `${formatMB(usedMB)}/${formatMB(maxMB)}`;
 </script>
 
 {#if $page.url.pathname !== '/login'}
@@ -99,30 +111,62 @@
 			</a>
 		</div>
 
-		<div class="ram-indicator">
-			<div class="ram-bar-container">
-				<div class="ram-bar-fill" style="width: {percentage}%; background-color: {barColor};"></div>
+		{#if $inputMode === 'desktop'}
+			<div class="ram-indicator">
+				<div class="ram-bar-container">
+					<div class="ram-bar-fill" style="width: {percentage}%; background-color: {barColor};"></div>
+				</div>
+				<span class="ram-text">{usedMB} MB / {maxMB} MB</span>
 			</div>
-			<span class="ram-text">{usedMB} MB / {maxMB} MB</span>
-		</div>
 
-		<div class="nav-links">
-			<a href="/settings" class="nav-link" class:active={$page.url.pathname === '/settings'}>
-				Settings
-			</a>
-			<a href="/" class="nav-link" class:active={$page.url.pathname === '/'}>
-				Servers
-			</a>
-			{#if $token}
-				<button on:click={handleLogout} class="nav-link">
-					Logout
-				</button>
-			{:else}
-				<a href="/login" class="nav-link">
-					Login
+			<div class="nav-links">
+				<a href="/settings" class="nav-link" class:active={$page.url.pathname === '/settings'}>
+					Settings
 				</a>
+				<a href="/" class="nav-link" class:active={$page.url.pathname === '/'}>
+					Servers
+				</a>
+				{#if $token}
+					<button on:click={handleLogout} class="nav-link">
+						Logout
+					</button>
+				{:else}
+					<a href="/login" class="nav-link">
+						Login
+					</a>
+				{/if}
+			</div>
+		{:else}
+			<span class="ram-compact" style="color: {barColor};">{ramText}</span>
+
+			<button class="hamburger-btn" on:click={toggleMobileMenu}>
+				<span class="hamburger-line"></span>
+				<span class="hamburger-line"></span>
+				<span class="hamburger-line"></span>
+			</button>
+
+			{#if mobileMenuOpen}
+				<div class="mobile-menu-overlay" on:click={toggleMobileMenu}>
+					<div class="mobile-menu" on:click|stopPropagation>
+						<a href="/settings" class="mobile-nav-link" class:active={$page.url.pathname === '/settings'} on:click={toggleMobileMenu}>
+							Settings
+						</a>
+						<a href="/" class="mobile-nav-link" class:active={$page.url.pathname === '/'} on:click={toggleMobileMenu}>
+							Servers
+						</a>
+						{#if $token}
+							<button class="mobile-nav-link" on:click={() => { handleLogout(); toggleMobileMenu(); }}>
+								Logout
+							</button>
+						{:else}
+							<a href="/login" class="mobile-nav-link" on:click={toggleMobileMenu}>
+								Login
+							</a>
+						{/if}
+					</div>
+				</div>
 			{/if}
-		</div>
+		{/if}
 	</nav>
 {/if}
 
@@ -205,6 +249,12 @@
 		text-align: right;
 	}
 
+	.ram-compact {
+		font-size: 0.75rem;
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
 	.backup-indicator {
 		display: flex;
 		align-items: center;
@@ -229,6 +279,67 @@
 		color: var(--accent);
 		font-weight: 500;
 		white-space: nowrap;
+	}
+
+	.hamburger-btn {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-around;
+		width: 28px;
+		height: 24px;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		padding: 0;
+		gap: 4px;
+	}
+
+	.hamburger-line {
+		display: block;
+		width: 100%;
+		height: 3px;
+		background-color: var(--text-primary);
+		transition: background-color 0.2s;
+	}
+
+	.hamburger-btn:hover .hamburger-line {
+		background-color: var(--accent);
+	}
+
+	.mobile-menu-overlay {
+		position: fixed;
+		top: 56px;
+		left: 0;
+		right: 0;
+		background: rgba(0, 0, 0, 0.7);
+		z-index: 99;
+	}
+
+	.mobile-menu {
+		background: var(--bg-secondary);
+		border-bottom: 3px solid var(--border);
+		padding: 0.5rem 0;
+	}
+
+	.mobile-nav-link {
+		display: block;
+		color: var(--text-primary);
+		text-decoration: none;
+		padding: 0.75rem 1.5rem;
+		border-radius: 0;
+		transition: all 0.2s;
+		cursor: pointer;
+		background: none;
+		border: none;
+		font-size: 1rem;
+		text-align: left;
+		width: 100%;
+	}
+
+	.mobile-nav-link:hover,
+	.mobile-nav-link.active {
+		color: var(--accent);
+		background: var(--bg-tertiary);
 	}
 
 	@keyframes spin {

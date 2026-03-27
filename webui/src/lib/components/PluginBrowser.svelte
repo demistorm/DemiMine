@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { modrinthApi, pluginApi } from '$lib/api';
 	import type { ModrinthProjectHit, InstalledPlugin, PluginUpdateResult } from '$lib/api';
+	import { inputMode } from '$lib/stores/inputMode';
 
 	export let targetType: 'server' | 'proxy';
 	export let targetId: number;
@@ -108,7 +109,7 @@
 	});
 </script>
 
-<div class="plugin-browser">
+<div class="plugin-browser" class:mobile={$inputMode === 'mobile'}>
 	<div class="header">
 		<h2>Plugins</h2>
 		<div class="view-tabs">
@@ -469,5 +470,49 @@
 		text-align: center;
 		padding: 3rem;
 		color: var(--text-secondary);
+	}
+
+	.mobile .plugin-browser {
+		padding: 1rem;
+	}
+
+	.mobile .header {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
+
+	.mobile .view-tabs {
+		width: 100%;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	.mobile .view-tabs::-webkit-scrollbar {
+		display: none;
+	}
+
+	.mobile .view-tab {
+		flex-shrink: 0;
+	}
+
+	.mobile .search-section {
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.mobile .plugin-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.mobile .plugin-item {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
+
+	.mobile .plugin-item .btn {
+		width: 100%;
+		text-align: center;
 	}
 </style>

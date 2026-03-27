@@ -661,6 +661,7 @@
     height: calc(100vh - 56px);
     margin-top: 80px;
     overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .settings-container {
