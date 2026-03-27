@@ -137,8 +137,9 @@
 					<span class="backup-label">{$backupOperationLabel}</span>
 				</div>
 			{/if}
-			<a href="/" class="nav-link">
-				<strong>DemiMine</strong>
+			<a href="/" class="nav-link nav-brand-link">
+				<img src="/favicon.png" alt="" class="nav-icon" />
+				<strong class="brand-text">DemiMine</strong>
 			</a>
 		</div>
 
@@ -222,6 +223,25 @@
 	.nav-brand {
 		display: flex;
 		align-items: center;
+	}
+
+	.nav-brand-link {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.nav-icon {
+		width: 28px;
+		height: 28px;
+		image-rendering: pixelated;
+	}
+
+	@media (min-width: 769px) {
+		.brand-text {
+			font-size: 1.6rem;
+		}
 	}
 
 	.nav-link {
