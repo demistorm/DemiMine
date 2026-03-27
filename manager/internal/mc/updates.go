@@ -49,6 +49,17 @@ type cachedUpdate struct {
 
 const updateCacheTTL = 1 * time.Hour
 
+func sweepExpiredFromMap(m map[string]*cachedUpdate, mu *sync.RWMutex) {
+	mu.Lock()
+	defer mu.Unlock()
+	now := time.Now()
+	for k, v := range m {
+		if now.Sub(v.fetchedAt) > updateCacheTTL {
+			delete(m, k)
+		}
+	}
+}
+
 var (
 	paperUpdateCache      = make(map[string]*cachedUpdate)
 	paperUpdateCacheMu    sync.RWMutex
@@ -150,6 +161,8 @@ func CheckPaperUpdate(version string, currentBuild int) (*JarUpdateInfo, error) 
 	paperUpdateCache[cacheKey] = &cachedUpdate{info: info, fetchedAt: time.Now()}
 	paperUpdateCacheMu.Unlock()
 
+	sweepExpiredFromMap(paperUpdateCache, &paperUpdateCacheMu)
+
 	return &info, nil
 }
 
@@ -223,6 +236,8 @@ func CheckPurpurUpdate(version string, currentBuild int, currentHash string) (*J
 	purpurUpdateCacheMu.Lock()
 	purpurUpdateCache[cacheKey] = &cachedUpdate{info: info, fetchedAt: time.Now()}
 	purpurUpdateCacheMu.Unlock()
+
+	sweepExpiredFromMap(purpurUpdateCache, &purpurUpdateCacheMu)
 
 	return &info, nil
 }
@@ -327,6 +342,8 @@ func CheckVelocityUpdate(currentVersion string, currentBuild int) (*JarUpdateInf
 	velocityUpdateCacheMu.Lock()
 	velocityUpdateCache[cacheKey] = &cachedUpdate{info: info, fetchedAt: time.Now()}
 	velocityUpdateCacheMu.Unlock()
+
+	sweepExpiredFromMap(velocityUpdateCache, &velocityUpdateCacheMu)
 
 	return &info, nil
 }

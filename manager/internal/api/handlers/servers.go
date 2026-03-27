@@ -1242,8 +1242,24 @@ func (h *ServerHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	const maxFileSize = 10 << 20 // 10MB
+
 	var content []byte
 	isGzipped := strings.HasSuffix(fullPath, ".gz")
+
+	fileInfo, err := os.Stat(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+		return
+	}
+	if fileInfo.Size() > maxFileSize {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "file too large to preview (use download instead)"})
+		return
+	}
 
 	if isGzipped {
 		f, err := os.Open(fullPath)

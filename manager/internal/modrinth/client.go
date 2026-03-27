@@ -20,14 +20,17 @@ type Client struct {
 }
 
 type cache struct {
-	mu    sync.RWMutex
-	items map[string]*cacheItem
+	mu       sync.RWMutex
+	items    map[string]*cacheItem
+	setCount int64
 }
 
 type cacheItem struct {
 	data      []byte
 	expiresAt time.Time
 }
+
+const cacheSweepInterval = 100
 
 func NewClient() *Client {
 	return &Client{
@@ -75,11 +78,15 @@ func (c *Client) get(endpoint string) ([]byte, error) {
 }
 
 func (c *cache) get(key string) []byte {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	item, exists := c.items[key]
-	if !exists || time.Now().After(item.expiresAt) {
+	if !exists {
+		return nil
+	}
+	if time.Now().After(item.expiresAt) {
+		delete(c.items, key)
 		return nil
 	}
 	return item.data
@@ -92,6 +99,16 @@ func (c *cache) set(key string, data []byte, ttl time.Duration) {
 	c.items[key] = &cacheItem{
 		data:      data,
 		expiresAt: time.Now().Add(ttl),
+	}
+
+	c.setCount++
+	if c.setCount%cacheSweepInterval == 0 {
+		now := time.Now()
+		for k, item := range c.items {
+			if now.After(item.expiresAt) {
+				delete(c.items, k)
+			}
+		}
 	}
 }
 

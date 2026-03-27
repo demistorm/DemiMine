@@ -301,6 +301,7 @@ func (c *Client) SyncServerStatus(ctx context.Context, database *sql.DB) {
 		log.Printf("Failed to query running servers for status sync: %v", err)
 		return
 	}
+	defer rows.Close()
 
 	type serverInfo struct {
 		id   int64
@@ -317,7 +318,6 @@ func (c *Client) SyncServerStatus(ctx context.Context, database *sql.DB) {
 		}
 		servers = append(servers, serverInfo{id: id, name: name})
 	}
-	rows.Close()
 
 	for _, s := range servers {
 		exists, _ := c.ContainerExists(ctx, s.name)

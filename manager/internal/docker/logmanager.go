@@ -16,6 +16,8 @@ import (
 	"github.com/docker/docker/api/types/events"
 )
 
+var sparkURLRegex = regexp.MustCompile(`https://spark\.lucko\.me/[A-Za-z0-9]{8,}`)
+
 type LogStream struct {
 	serverID   int64
 	container  string
@@ -213,6 +215,7 @@ func (lm *LogManager) StartStreamingForRunningContainers(ctx context.Context, db
 	if err != nil {
 		return fmt.Errorf("failed to query running servers: %w", err)
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var s ServerInfo
@@ -222,7 +225,6 @@ func (lm *LogManager) StartStreamingForRunningContainers(ctx context.Context, db
 		}
 		servers = append(servers, s)
 	}
-	rows.Close()
 
 	for _, s := range servers {
 		log.Printf("Starting log streaming for running server %d (%s)", s.ID, s.Name)
@@ -509,8 +511,7 @@ func (lm *LogManager) extractProfilerURL(logLine string) string {
 	cleanLine := spark.StripColorCodes(logLine)
 
 	// Match only spark report URLs (alphanumeric hash, not docs URLs)
-	urlRegex := regexp.MustCompile(`https://spark\.lucko\.me/[A-Za-z0-9]{8,}`)
-	return urlRegex.FindString(cleanLine)
+	return sparkURLRegex.FindString(cleanLine)
 }
 
 func (lm *LogManager) broadcastProfilerURL(serverID int64, url string) {

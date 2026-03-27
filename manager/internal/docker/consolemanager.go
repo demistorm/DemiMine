@@ -193,6 +193,7 @@ func (cm *ConsoleManager) StartConsolesForRunningContainers(ctx context.Context)
 	if err != nil {
 		return fmt.Errorf("failed to query running servers: %w", err)
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var s ServerInfo
@@ -202,7 +203,6 @@ func (cm *ConsoleManager) StartConsolesForRunningContainers(ctx context.Context)
 		}
 		servers = append(servers, s)
 	}
-	rows.Close()
 
 	for _, s := range servers {
 		cm.mu.RLock()
