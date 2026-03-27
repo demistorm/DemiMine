@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -132,6 +133,8 @@ func GetPaperVersions() ([]VersionInfo, error) {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
+	versions = filterSupersededPreReleases(versions)
+
 	paperCache.set(versions)
 	return versions, nil
 }
@@ -190,6 +193,9 @@ func GetFabricVersions() ([]VersionInfo, error) {
 
 	var versions []VersionInfo
 	for _, v := range data {
+		if isOldStyleWeeklySnapshot(v.Version) || strings.Contains(v.Version, "_unobfuscated") {
+			continue
+		}
 		versions = append(versions, VersionInfo{
 			Version: v.Version,
 			Stable:  v.Stable,
@@ -200,6 +206,8 @@ func GetFabricVersions() ([]VersionInfo, error) {
 	sort.Slice(versions, func(i, j int) bool {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
+
+	versions = filterSupersededPreReleases(versions)
 
 	fabricCache.set(versions)
 	return versions, nil
@@ -247,6 +255,8 @@ func GetNeoForgeVersions() ([]VersionInfo, error) {
 	sort.Slice(versions, func(i, j int) bool {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
+
+	versions = filterSupersededPreReleases(versions)
 
 	neoforgeCache.set(versions)
 	return versions, nil
@@ -429,6 +439,44 @@ func extractSnapshotNum(version string) int {
 		return num
 	}
 	return 0
+}
+
+var (
+	preReleaseSuffixRe   = regexp.MustCompile(`-(?:pre\d+|rc\d+|pre-\d+|rc-\d+|snapshot-\d+)$`)
+	oldStyleWeeklySnapRe = regexp.MustCompile(`^\d{2}w\d{2}[a-z]$`)
+)
+
+func hasPreReleaseSuffix(version string) bool {
+	return preReleaseSuffixRe.MatchString(version)
+}
+
+func extractBaseVersion(version string) string {
+	return preReleaseSuffixRe.ReplaceAllString(version, "")
+}
+
+func isOldStyleWeeklySnapshot(version string) bool {
+	return oldStyleWeeklySnapRe.MatchString(version)
+}
+
+func filterSupersededPreReleases(versions []VersionInfo) []VersionInfo {
+	fullReleases := make(map[string]bool)
+	for _, v := range versions {
+		if !hasPreReleaseSuffix(v.Version) {
+			fullReleases[v.Version] = true
+		}
+	}
+
+	var filtered []VersionInfo
+	for _, v := range versions {
+		if hasPreReleaseSuffix(v.Version) {
+			base := extractBaseVersion(v.Version)
+			if fullReleases[base] {
+				continue
+			}
+		}
+		filtered = append(filtered, v)
+	}
+	return filtered
 }
 
 type NanoLimboRelease struct {

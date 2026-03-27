@@ -213,7 +213,10 @@ func TestGetFabricVersionsMock(t *testing.T) {
 			w.Write([]byte(`[
 				{"version":"1.21.3","stable":true},
 				{"version":"1.21.2","stable":true},
+				{"version":"1.21.2-pre1","stable":false},
 				{"version":"1.20.4","stable":true},
+				{"version":"25w14craftmine","stable":false},
+				{"version":"25w46a","stable":false},
 				{"version":"22w20a","stable":false}
 			]`))
 		} else {
@@ -233,18 +236,28 @@ func TestGetFabricVersionsMock(t *testing.T) {
 		t.Fatalf("GetFabricVersions() error = %v", err)
 	}
 
+	// 22w20a and 25w46a should be filtered (old-style weekly snapshots)
+	// 1.21.2-pre1 should be filtered (full release 1.21.2 exists)
+	// 25w14craftmine should be kept (special snapshot)
+	// 1.21.3, 1.21.2, 1.20.4 should be kept
 	if len(versions) != 4 {
 		t.Errorf("Expected 4 versions, got %d", len(versions))
 	}
 
-	stableCount := 0
+	versionSet := make(map[string]bool)
 	for _, v := range versions {
-		if v.Stable {
-			stableCount++
+		versionSet[v.Version] = true
+	}
+
+	for _, expected := range []string{"1.21.3", "1.21.2", "1.20.4", "25w14craftmine"} {
+		if !versionSet[expected] {
+			t.Errorf("Expected version %q to be present", expected)
 		}
 	}
-	if stableCount != 3 {
-		t.Errorf("Expected 3 stable versions, got %d", stableCount)
+	for _, unexpected := range []string{"22w20a", "25w46a", "1.21.2-pre1"} {
+		if versionSet[unexpected] {
+			t.Errorf("Expected version %q to be filtered out", unexpected)
+		}
 	}
 }
 
