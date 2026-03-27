@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 import type { Server, Proxy } from '$lib/api';
 import { api } from '$lib/api';
 
@@ -7,6 +7,46 @@ export const proxies = writable<Proxy[]>([]);
 export const isAuthenticated = writable<boolean>(false);
 export const canvasZoom = writable<number>(1);
 export const canvasPan = writable<{ x: number; y: number }>({ x: 0, y: 0 });
+
+export interface BackupStatus {
+	status: 'idle' | 'pending' | 'stopping_servers' | 'stopping_proxies' |
+		'archiving' | 'restarting' | 'complete' | 'failed' |
+		'restoring_extracting' | 'restoring_applying' | 'restoring_complete';
+	backupId: number | null;
+	message: string;
+	timestamp: number | null;
+}
+
+export const backupStatus = writable<BackupStatus>({
+	status: 'idle',
+	backupId: null,
+	message: '',
+	timestamp: null
+});
+
+export const isBackupRunning = derived(backupStatus, $s =>
+	$s.status !== 'idle' && $s.status !== 'complete' && $s.status !== 'failed' && $s.status !== 'restoring_complete'
+);
+
+export const isRestoreRunning = derived(backupStatus, $s =>
+	$s.status.startsWith('restoring')
+);
+
+export const backupOperationLabel = derived(backupStatus, $s => {
+	switch ($s.status) {
+		case 'pending': return 'Starting...';
+		case 'stopping_servers': return 'Stopping servers...';
+		case 'stopping_proxies': return 'Stopping proxies...';
+		case 'archiving': return 'Creating archive...';
+		case 'restarting': return 'Restarting...';
+		case 'restoring_extracting': return 'Extracting...';
+		case 'restoring_applying': return 'Applying...';
+		case 'complete': return 'Complete!';
+		case 'restoring_complete': return 'Restarting...';
+		case 'failed': return 'Failed';
+		default: return '';
+	}
+});
 
 export async function loadServers() {
 	try {

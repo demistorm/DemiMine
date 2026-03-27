@@ -1636,8 +1636,7 @@ func (h *ProxyHandler) StopByID(id int64) error {
 
 	ctx := context.Background()
 	timeout := 30
-	containerName := "demimine-" + name
-	if err := h.docker.StopContainer(ctx, containerName, &timeout); err != nil {
+	if err := h.docker.StopProxyContainer(ctx, name, &timeout); err != nil {
 		if !strings.Contains(err.Error(), "No such container") {
 			return err
 		}

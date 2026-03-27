@@ -1,11 +1,11 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -41,9 +41,16 @@ type WSNotifier struct {
 }
 
 func (n *WSNotifier) BroadcastBackupStatus(status string) {
+	n.BroadcastBackupStatusWithID(0, status, "")
+}
+
+func (n *WSNotifier) BroadcastBackupStatusWithID(backupID int64, status string, message string) {
 	msg := map[string]interface{}{
-		"type":   "backup_status",
-		"status": status,
+		"type":      "backup_status",
+		"status":    status,
+		"backup_id": backupID,
+		"message":   message,
+		"timestamp": time.Now().Unix(),
 	}
 	data, _ := json.Marshal(msg)
 	n.hub.Broadcast(data)
@@ -82,19 +89,24 @@ func (h *BackupsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BackupsHandler) Create(w http.ResponseWriter, r *http.Request) {
-	notifier := &WSNotifier{hub: h.hub}
-
-	backup, err := h.manager.CreateSnapshot(context.Background(), notifier)
+	pending, err := h.manager.CreatePendingBackup()
 	if err != nil {
-		notifier.BroadcastBackupStatus("failed")
 		http.Error(w, fmt.Sprintf(`{"error":"failed to create backup: %v"}`, err), http.StatusInternalServerError)
 		return
 	}
 
+	go func() {
+		notifier := &WSNotifier{hub: h.hub}
+		if _, err := h.manager.RunBackup(pending.ID, notifier); err != nil {
+			log.Printf("Backup %d failed: %v", pending.ID, err)
+		}
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":   true,
-		"backup_id": backup.ID,
+		"backup_id": pending.ID,
+		"status":    "pending",
 	})
 }
 
@@ -121,7 +133,7 @@ func (h *BackupsHandler) RestoreFromUpload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	file, header, err := r.FormFile("backup")
+	file, _, err := r.FormFile("backup")
 	if err != nil {
 		http.Error(w, `{"error":"no backup file provided"}`, http.StatusBadRequest)
 		return
@@ -134,21 +146,21 @@ func (h *BackupsHandler) RestoreFromUpload(w http.ResponseWriter, r *http.Reques
 		http.Error(w, fmt.Sprintf(`{"error":"failed to save uploaded file: %v"}`, err), http.StatusInternalServerError)
 		return
 	}
-	defer tempFile.Close()
+	tempFile.Close()
 
-	notifier := &WSNotifier{hub: h.hub}
-
-	if err := h.manager.RestoreSnapshot(context.Background(), tempPath, notifier); err != nil {
-		notifier.BroadcastBackupStatus("failed")
-		http.Error(w, fmt.Sprintf(`{"error":"failed to restore backup: %v"}`, err), http.StatusInternalServerError)
-		return
-	}
+	go func() {
+		notifier := &WSNotifier{hub: h.hub}
+		if err := h.manager.RunRestore(tempPath, notifier); err != nil {
+			log.Printf("Restore from upload failed: %v", err)
+		}
+		os.Remove(tempPath)
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"message":  "Backup restored successfully. The manager will restart shortly.",
-		"filename": header.Filename,
+		"success": true,
+		"status":  "restoring",
+		"message": "Restore started. System will restart when complete.",
 	})
 }
 
@@ -165,24 +177,24 @@ func (h *BackupsHandler) RestoreFromDisk(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	backup, err := h.manager.GetBackup(id)
+	bk, err := h.manager.GetBackup(id)
 	if err != nil {
 		http.Error(w, `{"error":"backup not found"}`, http.StatusNotFound)
 		return
 	}
 
-	notifier := &WSNotifier{hub: h.hub}
-
-	if err := h.manager.RestoreSnapshot(context.Background(), backup.ArchivePath, notifier); err != nil {
-		notifier.BroadcastBackupStatus("failed")
-		http.Error(w, fmt.Sprintf(`{"error":"failed to restore backup: %v"}`, err), http.StatusInternalServerError)
-		return
-	}
+	go func() {
+		notifier := &WSNotifier{hub: h.hub}
+		if err := h.manager.RunRestore(bk.ArchivePath, notifier); err != nil {
+			log.Printf("Restore from disk failed: %v", err)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
-		"message": "Backup restored successfully. The manager will restart shortly.",
+		"status":  "restoring",
+		"message": "Restore started. System will restart when complete.",
 	})
 }
 

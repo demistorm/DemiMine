@@ -3,11 +3,15 @@
 	import '../app.css';
 	import { page } from '$app/stores';
 	import { token } from '$lib/stores/auth';
-	import { resourcesApi, type SystemResources } from '$lib/api';
+	import { resourcesApi, type SystemResources, getToken } from '$lib/api';
+	import { backupStatus, isBackupRunning, backupOperationLabel } from '$lib/stores/servers';
+	import { ws } from '$lib/websocket';
 
 	let usedMB = 0;
 	let maxMB = 0;
 	let pollingInterval: number;
+	let backupTimeout: number | null = null;
+	let wsSetup = false;
 
 	async function fetchResources() {
 		try {
@@ -19,15 +23,58 @@
 		}
 	}
 
-	onMount(() => {
+	function setupBackupStatusHandler() {
+		ws.on('backup_status', (message: any) => {
+			backupStatus.set({
+				status: message.status,
+				backupId: message.backup_id || null,
+				message: message.message || '',
+				timestamp: message.timestamp || null
+			});
+
+			if (message.status === 'complete' || message.status === 'failed' || message.status === 'restoring_complete') {
+				if (backupTimeout) clearTimeout(backupTimeout);
+				backupTimeout = setTimeout(() => {
+					backupStatus.set({ status: 'idle', backupId: null, message: '', timestamp: null });
+				}, 5000) as unknown as number;
+			}
+		});
+	}
+
+	async function connectWebSocket() {
+		if (wsSetup) return;
+		const authToken = getToken();
+		if (!authToken) return;
+
+		try {
+			ws.disconnect();
+			await ws.connect();
+			setupBackupStatusHandler();
+			wsSetup = true;
+		} catch (e) {
+			console.error('WebSocket connection failed:', e);
+		}
+	}
+
+	onMount(async () => {
 		fetchResources();
 		pollingInterval = setInterval(fetchResources, 2000) as unknown as number;
+		await connectWebSocket();
 	});
 
+	$: if ($token && !wsSetup) {
+		wsSetup = false;
+		connectWebSocket();
+	}
+
+	$: if (!$token) {
+		wsSetup = false;
+		ws.disconnect();
+	}
+
 	onDestroy(() => {
-		if (pollingInterval) {
-			clearInterval(pollingInterval);
-		}
+		if (pollingInterval) clearInterval(pollingInterval);
+		if (backupTimeout) clearTimeout(backupTimeout);
 	});
 
 	function handleLogout() {
@@ -41,6 +88,12 @@
 {#if $page.url.pathname !== '/login'}
 	<nav class="top-nav">
 		<div class="nav-brand">
+			{#if $isBackupRunning}
+				<div class="backup-indicator" title={$backupStatus.message}>
+					<span class="backup-spinner"></span>
+					<span class="backup-label">{$backupOperationLabel}</span>
+				</div>
+			{/if}
 			<a href="/" class="nav-link">
 				<strong>DemiMine</strong>
 			</a>
@@ -150,5 +203,35 @@
 	.ram-text {
 		min-width: 100px;
 		text-align: right;
+	}
+
+	.backup-indicator {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.2rem 0.6rem;
+		background: rgba(59, 130, 246, 0.15);
+		border: 2px solid var(--accent);
+		margin-right: 0.75rem;
+	}
+
+	.backup-spinner {
+		width: 12px;
+		height: 12px;
+		border: 2px solid var(--accent);
+		border-top-color: transparent;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	.backup-label {
+		font-size: 0.7rem;
+		color: var(--accent);
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
 	}
 </style>

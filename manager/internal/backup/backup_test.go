@@ -208,26 +208,36 @@ func TestFunctional_ScheduledBackupLogic(t *testing.T) {
 		t.Error("Should run backup when no previous backup exists")
 	}
 
-	_, err := db.Exec("INSERT INTO settings (key, value) VALUES ('last_backup_date', ?)", time.Now().Format("2006-01-02"))
+	_, err := db.Exec("INSERT INTO backups (created_at, size_bytes, archive_path, status) VALUES (?, ?, ?, 'complete')",
+		time.Now(), 1000, filepath.Join(backupDir, "test.tar.zst"))
 	if err != nil {
-		t.Fatalf("Failed to set last backup date: %v", err)
-	}
-	_, err = db.Exec("INSERT INTO settings (key, value) VALUES ('backup_interval_days', '3')")
-	if err != nil {
-		t.Fatalf("Failed to set interval: %v", err)
+		t.Fatalf("Failed to insert backup record: %v", err)
 	}
 
 	if manager.ShouldRunBackup() {
-		t.Error("Should NOT run backup when backup was today")
+		t.Error("Should NOT run backup when backup was just created")
 	}
 
-	_, err = db.Exec("UPDATE settings SET value = ? WHERE key = 'last_backup_date'", time.Now().AddDate(0, 0, -4).Format("2006-01-02"))
+	db.Exec("DELETE FROM backups")
+
+	_, err = db.Exec("INSERT INTO backups (created_at, size_bytes, archive_path, status) VALUES (?, ?, ?, 'complete')",
+		time.Now().AddDate(0, 0, -4), 1000, filepath.Join(backupDir, "test-old.tar.zst"))
 	if err != nil {
-		t.Fatalf("Failed to update last backup date: %v", err)
+		t.Fatalf("Failed to insert old backup record: %v", err)
 	}
 
 	if !manager.ShouldRunBackup() {
-		t.Error("Should run backup when 4 days have passed (interval=3)")
+		t.Error("Should run backup when most recent backup is 4 days old (interval=3)")
+	}
+
+	if manager.AlreadyCheckedToday() {
+		t.Error("Should NOT have checked today yet")
+	}
+
+	manager.MarkCheckedToday()
+
+	if !manager.AlreadyCheckedToday() {
+		t.Error("Should have checked today after MarkCheckedToday")
 	}
 
 	t.Log("Scheduled backup logic verified")

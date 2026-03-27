@@ -3,6 +3,7 @@
 	import { loadGlobalSettings, globalSettings, saveGlobalSettings, backgroundTextureUrl, serverTileTextureUrl, proxyTileTextureUrl, loadBackgroundTexture, loadServerTileTexture, loadProxyTileTexture, type GlobalSettings } from '$lib/stores/settings';
 	import { settingsApi, backupsApi, type Backup } from '$lib/api';
 	import { formatBytes, formatDate } from '$lib/utils';
+	import { backupStatus, isBackupRunning, isRestoreRunning, backupOperationLabel } from '$lib/stores/servers';
 
 	let loading = true;
 	let saving = false;
@@ -14,11 +15,8 @@
 	let backupIntervalDays = '3';
 	let retentionCount = 2;
 	let backups: Backup[] = [];
-	let backupInProgress = false;
 	let restoreFile: File | null = null;
 	let restoreFileName = '';
-	let restoring = false;
-
 	let textureFile: File | null = null;
 	let textureFileName = '';
 	let textureUploading = false;
@@ -39,6 +37,9 @@
 
 	$: globalSettings;
 	$: backgroundTextureUrl, serverTileTextureUrl, proxyTileTextureUrl;
+
+	$: backupInProgress = $isBackupRunning;
+	$: restoreInProgress = $isRestoreRunning;
 
 	onMount(async () => {
 		await loadGlobalSettings();
@@ -85,18 +86,14 @@
   }
 
   async function triggerBackup() {
-    if (backupInProgress) return;
+    if ($isBackupRunning) return;
+    error = '';
+    success = '';
     
-    backupInProgress = true;
     try {
       await backupsApi.create();
-      await loadBackups();
-      success = 'Backup completed successfully';
-      setTimeout(() => success = '', 3000);
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to create backup';
-    } finally {
-      backupInProgress = false;
+      error = err instanceof Error ? err.message : 'Failed to start backup';
     }
   }
 
@@ -127,6 +124,20 @@
     }
   }
 
+  async function restoreFromId(id: number) {
+    if ($isRestoreRunning) return;
+    if (!confirm('This will replace ALL servers, proxies, and settings. This action cannot be undone. Continue?')) return;
+
+    error = '';
+    success = '';
+    try {
+      await backupsApi.restoreFromId(id);
+      success = 'Restore started...';
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to start restore';
+    }
+  }
+
   function handleRestoreFile(e: Event) {
     const target = e.target as HTMLInputElement;
     const file = target.files?.[0];
@@ -137,23 +148,36 @@
   }
 
   async function restoreBackup() {
-    if (!restoreFile) return;
+    if (!restoreFile || $isRestoreRunning) return;
 
     if (!confirm('This will replace ALL servers, proxies, and settings. This cannot be undone. Continue?')) {
       return;
     }
 
-    restoring = true;
+    error = '';
+    success = '';
     try {
       await backupsApi.restore(restoreFile);
-      success = 'Restore initiated. The manager will restart.';
-      setTimeout(() => window.location.reload(), 2000);
+      success = 'Restore started...';
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to restore backup';
-    } finally {
-      restoring = false;
+      error = err instanceof Error ? err.message : 'Failed to start restore';
     }
   }
+
+	$: if ($backupStatus.status === 'complete') {
+		loadBackups();
+		success = $backupStatus.message || 'Backup completed successfully';
+		setTimeout(() => success = '', 3000);
+	}
+
+	$: if ($backupStatus.status === 'failed') {
+		error = $backupStatus.message || 'Backup failed';
+	}
+
+	$: if ($backupStatus.status === 'restoring_complete') {
+		success = 'Restore complete. Page will reload...';
+		setTimeout(() => window.location.reload(), 2000);
+	}
 
   function handleTextureFile(e: Event) {
     const target = e.target as HTMLInputElement;
@@ -565,7 +589,11 @@
 
       <div class="field">
         <button class="btn" on:click={triggerBackup} disabled={backupInProgress}>
-          {backupInProgress ? 'Backing up...' : 'Backup Now'}
+          {#if backupInProgress}
+            {$backupOperationLabel}
+          {:else}
+            Backup Now
+          {/if}
         </button>
       </div>
 
@@ -580,6 +608,9 @@
               </div>
               <div class="backup-actions">
                 <button class="btn small" on:click={() => downloadBackup(backup)}>Download</button>
+                <button class="btn small warning" on:click={() => restoreFromId(backup.id)} disabled={restoreInProgress}>
+                  Restore
+                </button>
                 <button class="btn small danger" on:click={() => deleteBackup(backup)}>Delete</button>
               </div>
             </div>
@@ -606,8 +637,12 @@
       </div>
 
       <div class="field">
-        <button class="btn danger" on:click={restoreBackup} disabled={!restoreFile || restoring}>
-          {restoring ? 'Restoring...' : 'Restore Backup'}
+        <button class="btn danger" on:click={restoreBackup} disabled={!restoreFile || restoreInProgress}>
+          {#if restoreInProgress}
+            {$backupOperationLabel}
+          {:else}
+            Restore Backup
+          {/if}
         </button>
       </div>
     </div>
@@ -891,6 +926,17 @@
 
   .btn.danger:hover:not(:disabled) {
     background-color: var(--error);
+    color: white;
+  }
+
+  .btn.warning {
+    color: #ca8a04;
+    border-color: #ca8a04;
+    background-color: transparent;
+  }
+
+  .btn.warning:hover:not(:disabled) {
+    background-color: #ca8a04;
     color: white;
   }
 

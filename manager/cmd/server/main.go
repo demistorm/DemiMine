@@ -96,11 +96,13 @@ func main() {
 
 	backupManager := backup.NewManager(database, cfg.DataDir, cfg.BackupsDir, cfg.ServersDir, cfg.JavaDir)
 	backupScheduler := backup.NewScheduler(backupManager)
-	backupScheduler.Start()
 	defer backupScheduler.Stop()
 
 	taskScheduler := scheduler.NewScheduler(database)
 	router := api.NewRouter(database, cfg, dockerClient, consoleManager, wsHandler.GetHub(), backupManager, taskScheduler, sparkService)
+
+	// Start schedulers AFTER handlers are set by NewRouter
+	backupScheduler.Start()
 	taskScheduler.Start()
 	defer taskScheduler.Stop()
 

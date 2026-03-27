@@ -38,6 +38,7 @@ type ProxyHandler interface {
 
 type WSNotifier interface {
 	BroadcastBackupStatus(status string)
+	BroadcastBackupStatusWithID(backupID int64, status string, message string)
 }
 
 func NewManager(db *sql.DB, dataDir, backupDir, serversDir, javaDir string) *Manager {
@@ -56,10 +57,14 @@ func (m *Manager) SetHandlers(serverHandler ServerHandler, proxyHandler ProxyHan
 }
 
 func (m *Manager) CreateSnapshot(ctx context.Context, notifier WSNotifier) (*models.Backup, error) {
-	if notifier != nil {
-		notifier.BroadcastBackupStatus("in_progress")
+	pending, err := m.CreatePendingBackup()
+	if err != nil {
+		return nil, err
 	}
+	return m.RunBackup(pending.ID, notifier)
+}
 
+func (m *Manager) CreatePendingBackup() (*models.Backup, error) {
 	now := time.Now()
 	dateStr := now.Format("2006-01-02")
 	archiveName := fmt.Sprintf("demimine-backup-%s.tar.zst", dateStr)
@@ -75,6 +80,25 @@ func (m *Manager) CreateSnapshot(ctx context.Context, notifier WSNotifier) (*mod
 		return nil, fmt.Errorf("failed to get backup id: %w", err)
 	}
 
+	return &models.Backup{
+		ID:          backupID,
+		CreatedAt:   now,
+		ArchivePath: archivePath,
+		Status:      "pending",
+	}, nil
+}
+
+func (m *Manager) RunBackup(backupID int64, notifier WSNotifier) (*models.Backup, error) {
+	var archivePath string
+	err := m.db.QueryRow("SELECT archive_path FROM backups WHERE id = ?", backupID).Scan(&archivePath)
+	if err != nil {
+		return nil, fmt.Errorf("backup record not found: %w", err)
+	}
+
+	if notifier != nil {
+		notifier.BroadcastBackupStatusWithID(backupID, "stopping_servers", "Stopping servers...")
+	}
+
 	var flaggedServers []int64
 	var flaggedProxies []int64
 
@@ -82,12 +106,19 @@ func (m *Manager) CreateSnapshot(ctx context.Context, notifier WSNotifier) (*mod
 		servers, err := m.serverHandler.ListAll()
 		if err != nil {
 			m.setBackupStatus(backupID, "failed")
+			if notifier != nil {
+				notifier.BroadcastBackupStatusWithID(backupID, "failed", fmt.Sprintf("Failed to list servers: %v", err))
+			}
 			return nil, fmt.Errorf("failed to list servers: %w", err)
 		}
 
 		for _, server := range servers {
 			if server.Status == "running" {
 				if err := m.serverHandler.StopByID(server.ID); err != nil {
+					m.setBackupStatus(backupID, "failed")
+					if notifier != nil {
+						notifier.BroadcastBackupStatusWithID(backupID, "failed", fmt.Sprintf("Failed to stop server %s: %v", server.Name, err))
+					}
 					return nil, fmt.Errorf("failed to stop server %s: %w", server.Name, err)
 				}
 			}
@@ -97,16 +128,27 @@ func (m *Manager) CreateSnapshot(ctx context.Context, notifier WSNotifier) (*mod
 		}
 	}
 
+	if notifier != nil {
+		notifier.BroadcastBackupStatusWithID(backupID, "stopping_proxies", "Stopping proxies...")
+	}
+
 	if m.proxyHandler != nil {
 		proxies, err := m.proxyHandler.ListAll()
 		if err != nil {
 			m.setBackupStatus(backupID, "failed")
+			if notifier != nil {
+				notifier.BroadcastBackupStatusWithID(backupID, "failed", fmt.Sprintf("Failed to list proxies: %v", err))
+			}
 			return nil, fmt.Errorf("failed to list proxies: %w", err)
 		}
 
 		for _, proxy := range proxies {
 			if proxy.Status == "running" {
 				if err := m.proxyHandler.StopByID(proxy.ID); err != nil {
+					m.setBackupStatus(backupID, "failed")
+					if notifier != nil {
+						notifier.BroadcastBackupStatusWithID(backupID, "failed", fmt.Sprintf("Failed to stop proxy %s: %v", proxy.Name, err))
+					}
 					return nil, fmt.Errorf("failed to stop proxy %s: %w", proxy.Name, err)
 				}
 			}
@@ -118,23 +160,32 @@ func (m *Manager) CreateSnapshot(ctx context.Context, notifier WSNotifier) (*mod
 
 	time.Sleep(2 * time.Second)
 
-	// Build tar args using actual directory paths
-	tarArgs := "-C " + m.dataDir + " ."
-	tarArgs += " -C " + filepath.Dir(m.serversDir) + " " + filepath.Base(m.serversDir)
-	if _, err := os.Stat(m.javaDir); err == nil {
-		tarArgs += " -C " + filepath.Dir(m.javaDir) + " " + filepath.Base(m.javaDir)
+	if notifier != nil {
+		notifier.BroadcastBackupStatusWithID(backupID, "archiving", "Creating archive...")
 	}
 
+	tarDirs := "data servers"
+	if _, err := os.Stat(m.javaDir); err == nil {
+		tarDirs += " java"
+	}
+
+	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "sh", "-c",
-		fmt.Sprintf("tar -cf - %s 2>/dev/null | zstd -f -o %s", tarArgs, archivePath))
+		fmt.Sprintf("tar -cf - -C / %s 2>/dev/null | zstd -f -o %s", tarDirs, archivePath))
 	if err := cmd.Run(); err != nil {
 		m.setBackupStatus(backupID, "failed")
+		if notifier != nil {
+			notifier.BroadcastBackupStatusWithID(backupID, "failed", fmt.Sprintf("Failed to create archive: %v", err))
+		}
 		return nil, fmt.Errorf("failed to create archive: %w", err)
 	}
 
 	fileInfo, err := os.Stat(archivePath)
 	if err != nil {
 		m.setBackupStatus(backupID, "failed")
+		if notifier != nil {
+			notifier.BroadcastBackupStatusWithID(backupID, "failed", "Failed to get archive size")
+		}
 		return nil, fmt.Errorf("failed to get archive size: %w", err)
 	}
 
@@ -145,6 +196,10 @@ func (m *Manager) CreateSnapshot(ctx context.Context, notifier WSNotifier) (*mod
 
 	if err := m.CleanupOldBackups(); err != nil {
 		fmt.Printf("Warning: failed to cleanup old backups: %v\n", err)
+	}
+
+	if (len(flaggedServers) > 0 || len(flaggedProxies) > 0) && notifier != nil {
+		notifier.BroadcastBackupStatusWithID(backupID, "restarting", "Restarting servers...")
 	}
 
 	if m.serverHandler != nil {
@@ -163,43 +218,56 @@ func (m *Manager) CreateSnapshot(ctx context.Context, notifier WSNotifier) (*mod
 		}
 	}
 
-	m.setLastBackupDate(dateStr)
-
 	if notifier != nil {
-		notifier.BroadcastBackupStatus("complete")
+		notifier.BroadcastBackupStatusWithID(backupID, "complete", "Backup completed successfully")
 	}
 
-	return &models.Backup{
-		ID:          backupID,
-		CreatedAt:   now,
-		SizeBytes:   fileInfo.Size(),
-		ArchivePath: archivePath,
-		Status:      "complete",
-	}, nil
+	return m.GetBackup(backupID)
 }
 
 func (m *Manager) RestoreSnapshot(ctx context.Context, archivePath string, notifier WSNotifier) error {
+	return m.RunRestore(archivePath, notifier)
+}
+
+func (m *Manager) RunRestore(archivePath string, notifier WSNotifier) error {
 	if notifier != nil {
-		notifier.BroadcastBackupStatus("restoring")
+		notifier.BroadcastBackupStatusWithID(0, "restoring_extracting", "Extracting backup archive...")
 	}
 
 	if _, err := os.Stat(archivePath); err != nil {
+		if notifier != nil {
+			notifier.BroadcastBackupStatusWithID(0, "failed", "Archive not found")
+		}
 		return fmt.Errorf("archive not found: %w", err)
 	}
 
 	tempDir := filepath.Join(m.dataDir, "temp_restore")
 	if err := os.RemoveAll(tempDir); err != nil {
+		if notifier != nil {
+			notifier.BroadcastBackupStatusWithID(0, "failed", "Failed to prepare temp directory")
+		}
 		return fmt.Errorf("failed to clean temp directory: %w", err)
 	}
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		if notifier != nil {
+			notifier.BroadcastBackupStatusWithID(0, "failed", "Failed to create temp directory")
+		}
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
+	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "sh", "-c",
 		fmt.Sprintf("zstd -d -c %s | tar -xf - -C %s", archivePath, tempDir))
 	if err := cmd.Run(); err != nil {
+		if notifier != nil {
+			notifier.BroadcastBackupStatusWithID(0, "failed", "Failed to extract archive")
+		}
 		return fmt.Errorf("failed to extract archive: %w", err)
+	}
+
+	if notifier != nil {
+		notifier.BroadcastBackupStatusWithID(0, "restoring_applying", "Applying restored data...")
 	}
 
 	backupData := filepath.Join(tempDir, "data")
@@ -207,9 +275,14 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, archivePath string, notif
 	backupJava := filepath.Join(tempDir, "java")
 
 	if _, err := os.Stat(backupData); err == nil {
-		if err := os.Rename(backupData, filepath.Join(m.dataDir, "demimine.db.restored")); err == nil {
-			os.Rename(filepath.Join(m.dataDir, "demimine.db"), filepath.Join(m.dataDir, "demimine.db.old"))
-			os.Rename(filepath.Join(m.dataDir, "demimine.db.restored"), filepath.Join(m.dataDir, "demimine.db"))
+		entries, err := os.ReadDir(backupData)
+		if err == nil {
+			for _, entry := range entries {
+				src := filepath.Join(backupData, entry.Name())
+				dst := filepath.Join(m.dataDir, entry.Name())
+				os.RemoveAll(dst)
+				os.Rename(src, dst)
+			}
 		}
 	}
 
@@ -224,7 +297,7 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, archivePath string, notif
 	}
 
 	if notifier != nil {
-		notifier.BroadcastBackupStatus("complete")
+		notifier.BroadcastBackupStatusWithID(0, "restoring_complete", "Restore complete. Restarting...")
 	}
 
 	return nil
@@ -280,18 +353,40 @@ func (m *Manager) ShouldRunBackup() bool {
 		return false
 	}
 
-	lastDate := m.getLastBackupDate()
-	if lastDate == "" {
+	var lastDate sql.NullString
+	m.db.QueryRow("SELECT created_at FROM backups WHERE status = 'complete' ORDER BY created_at DESC LIMIT 1").Scan(&lastDate)
+
+	if !lastDate.Valid || lastDate.String == "" {
 		return true
 	}
 
-	lastTime, err := time.Parse("2006-01-02", lastDate)
+	lastTime, err := time.Parse(time.RFC3339Nano, lastDate.String)
 	if err != nil {
 		return true
 	}
 
 	daysSince := int(time.Since(lastTime).Hours() / 24)
 	return daysSince >= interval
+}
+
+func (m *Manager) AlreadyCheckedToday() bool {
+	checkDate := m.getLastCheckDate()
+	return checkDate == time.Now().Format("2006-01-02")
+}
+
+func (m *Manager) MarkCheckedToday() {
+	m.setLastCheckDate(time.Now().Format("2006-01-02"))
+}
+
+func (m *Manager) getLastCheckDate() string {
+	var date string
+	m.db.QueryRow("SELECT value FROM settings WHERE key = 'last_backup_check_date'").Scan(&date)
+	return date
+}
+
+func (m *Manager) setLastCheckDate(date string) error {
+	_, err := m.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup_check_date', ?)", date)
+	return err
 }
 
 func (m *Manager) ListBackups() ([]models.Backup, error) {
@@ -351,17 +446,6 @@ func (m *Manager) DeleteBackup(id int64) error {
 
 func (m *Manager) setBackupStatus(id int64, status string) error {
 	_, err := m.db.Exec("UPDATE backups SET status = ? WHERE id = ?", status, id)
-	return err
-}
-
-func (m *Manager) getLastBackupDate() string {
-	var date string
-	m.db.QueryRow("SELECT value FROM settings WHERE key = 'last_backup_date'").Scan(&date)
-	return date
-}
-
-func (m *Manager) setLastBackupDate(date string) error {
-	_, err := m.db.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup_date', ?)", date)
 	return err
 }
 
