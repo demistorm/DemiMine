@@ -485,6 +485,7 @@
 <style>
 	.settings {
 		max-width: 800px;
+		margin: 40px auto 0;
 		padding-bottom: 80px;
 	}
 
