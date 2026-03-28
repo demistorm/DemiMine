@@ -317,21 +317,20 @@
 						</div>
 					</div>
 				{:else}
-					<div class="icon-upload-container">
-						<label class="icon-dropzone" class:uploading={iconUploading}>
-							<input 
-								type="file" 
-								accept="image/png"
-								on:change={handleIconSelect}
-								disabled={iconUploading}
-							/>
-							{#if iconUploading}
-								<span>Uploading...</span>
-							{:else}
-								<span>Click to upload 64x64 PNG</span>
-							{/if}
-						</label>
-					</div>
+					<label class="upload-btn" class:uploading={iconUploading}>
+						<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+							<polyline points="17 8 12 3 7 8"></polyline>
+							<line x1="12" y1="3" x2="12" y2="15"></line>
+						</svg>
+						<span>{iconUploading ? 'Uploading...' : 'Upload Icon'}</span>
+						<input 
+							type="file" 
+							accept="image/png"
+							on:change={handleIconSelect}
+							disabled={iconUploading}
+						/>
+					</label>
 				{/if}
 			</div>
 			{#if iconError}
@@ -624,39 +623,42 @@
 		padding: 0;
 	}
 
-	.icon-upload-container {
-		display: flex;
+	.upload-btn {
+		display: inline-flex;
 		align-items: center;
-	}
-
-	.icon-dropzone {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 80px;
-		height: 80px;
+		gap: 0.5rem;
+		padding: 0.625rem 0.875rem;
+		background-color: var(--bg-tertiary);
 		border: 6px dashed var(--border);
 		border-radius: 0;
 		cursor: pointer;
-		transition: border-color 0.2s, background-color 0.2s;
-		font-size: 0.75rem;
-		color: var(--text-secondary);
-		text-align: center;
-		padding: 0.5rem;
+		transition: all 0.2s;
+		width: 100%;
+		max-width: 400px;
+		box-sizing: border-box;
 	}
 
-	.icon-dropzone:hover:not(.uploading) {
+	.upload-btn:hover:not(.uploading) {
 		border-color: var(--accent);
-		background-color: var(--bg-tertiary);
+		background-color: var(--bg-secondary);
 	}
 
-	.icon-dropzone.uploading {
+	.upload-btn.uploading {
 		opacity: 0.6;
 		cursor: not-allowed;
 	}
 
-	.icon-dropzone input {
+	.upload-btn input {
 		display: none;
+	}
+
+	.upload-btn svg {
+		color: var(--text-secondary);
+	}
+
+	.upload-btn span {
+		color: var(--text-secondary);
+		font-size: 0.875rem;
 	}
 
 	.btn.small {

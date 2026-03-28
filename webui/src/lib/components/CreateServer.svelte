@@ -395,20 +395,27 @@
 
 					<div class="field">
 						<label>Server Icon (Optional)</label>
-						<div class="icon-upload">
+						<div class="icon-section">
 							{#if iconPreview}
-								<div class="icon-preview">
-									<img src={iconPreview} alt="Server icon preview" />
-									<button class="remove-icon" on:click={clearIcon}>×</button>
+								<div class="icon-preview-container">
+									<img src={iconPreview} alt="Server icon" class="icon-preview" />
+									<button class="btn small" on:click={clearIcon}>
+										Clear
+									</button>
 								</div>
 							{:else}
-								<label class="icon-dropzone">
-									<input 
-										type="file" 
+								<label class="upload-btn">
+									<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+										<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+										<polyline points="17 8 12 3 7 8"></polyline>
+										<line x1="12" y1="3" x2="12" y2="15"></line>
+									</svg>
+									<span>Upload Icon</span>
+									<input
+										type="file"
 										accept="image/png"
 										on:change={handleIconSelect}
 									/>
-									<span class="dropzone-text">Click to upload 64x64 PNG</span>
 								</label>
 							{/if}
 						</div>
@@ -785,70 +792,53 @@
 		border-color: var(--border);
 	}
 
-	.icon-upload {
+	.icon-section {
+		margin-bottom: 0.5rem;
+	}
+
+	.icon-preview-container {
 		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
+		align-items: center;
+		gap: 1rem;
 	}
 
 	.icon-preview {
-		position: relative;
-		display: inline-flex;
-	}
-
-	.icon-preview img {
 		width: 64px;
 		height: 64px;
-		border-radius: 0;
 		object-fit: contain;
-		background: var(--bg-tertiary);
+		border-radius: 0;
+		background-color: var(--bg-tertiary);
+		padding: 0.25rem;
 	}
 
-	.icon-preview .remove-icon {
-		position: absolute;
-		top: -8px;
-		right: -8px;
-		width: 20px;
-		height: 20px;
-		border-radius: 50%;
-		background: var(--error);
-		color: white;
-		border: none;
-		cursor: pointer;
-		font-size: 0.875rem;
-		display: flex;
+	.upload-btn {
+		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		line-height: 1;
-	}
-
-	.icon-dropzone {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 64px;
-		height: 64px;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		background-color: var(--bg-tertiary);
 		border: 6px dashed var(--border);
 		border-radius: 0;
 		cursor: pointer;
-		transition: border-color 0.2s, background-color 0.2s;
+		transition: all 0.2s;
 	}
 
-	.icon-dropzone:hover {
+	.upload-btn:hover {
 		border-color: var(--accent);
-		background-color: var(--bg-tertiary);
+		background-color: var(--bg-secondary);
 	}
 
-	.icon-dropzone input {
+	.upload-btn input {
 		display: none;
 	}
 
-	.dropzone-text {
-		font-size: 0.625rem;
+	.upload-btn svg {
 		color: var(--text-secondary);
-		text-align: center;
-		padding: 0.25rem;
-		line-height: 1.2;
+	}
+
+	.upload-btn span {
+		color: var(--text-secondary);
+		font-size: 0.875rem;
 	}
 
 	.hint.warning {
