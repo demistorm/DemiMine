@@ -255,6 +255,7 @@ export interface Server {
 	scheduled_stop: string | null;
 	minimotd_line1: string | null;
 	minimotd_line2: string | null;
+	jvm_flags: string | null;
 	start_on_boot: number;
 	created_at: string;
 	jar_build: number;
@@ -289,6 +290,7 @@ export interface Proxy {
 	canvas_y: number;
 	motd_line1: string | null;
 	motd_line2: string | null;
+	jvm_flags: string | null;
 	icon_path: string | null;
 	start_on_boot: number;
 	scheduled_start: string | null;

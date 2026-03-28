@@ -61,7 +61,8 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
-		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2, s.start_on_boot
+		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2, s.start_on_boot,
+		       s.jvm_flags
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
 		LEFT JOIN (SELECT server_id, COUNT(*) as cnt FROM players GROUP BY server_id) pc ON pc.server_id = s.id
@@ -86,12 +87,14 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		var hostPort sql.NullInt64
 		var minimotdLine1 sql.NullString
 		var minimotdLine2 sql.NullString
+		var jvmFlags sql.NullString
 
 		err := rows.Scan(
 			&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 			&minimotdLine1, &minimotdLine2, &s.StartOnBoot,
+			&jvmFlags,
 		)
 		if err != nil {
 			continue
@@ -112,6 +115,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		s.IconPath = h.getIconPath(s.ID, s.Name)
 		s.MinimotdLine1 = nullStringToPtr(minimotdLine1)
 		s.MinimotdLine2 = nullStringToPtr(minimotdLine2)
+		s.JVMFlags = nullStringToPtr(jvmFlags)
 
 		servers = append(servers, s)
 	}
@@ -290,6 +294,11 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	defaultFlags := mc.GetDefaultJVMFlags(req.Type, req.Version)
+	if _, err := h.db.Exec("UPDATE servers SET jvm_flags = ? WHERE id = ?", defaultFlags, id); err != nil {
+		fmt.Printf("Failed to set default JVM flags for server %d: %v\n", id, err)
+	}
+
 	if err := mc.WriteEntrypointScript(serverPath); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -422,13 +431,14 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var hostPort sql.NullInt64
 	var minimotdLine1 sql.NullString
 	var minimotdLine2 sql.NullString
+	var jvmFlags sql.NullString
 
 	err = h.db.QueryRow(`
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count,
-		       s.minimotd_line1, s.minimotd_line2
+		       s.minimotd_line1, s.minimotd_line2, s.jvm_flags
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
 		WHERE s.id = ?
@@ -436,7 +446,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 		&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
-		&minimotdLine1, &minimotdLine2,
+		&minimotdLine1, &minimotdLine2, &jvmFlags,
 	)
 
 	if err == sql.ErrNoRows {
@@ -466,6 +476,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		s.HostPort = &hp
 	}
 	s.IconPath = h.getIconPath(s.ID, s.Name)
+	s.JVMFlags = nullStringToPtr(jvmFlags)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s)
@@ -553,6 +564,7 @@ type UpdateServerRequest struct {
 	Domain              *string `json:"domain"`
 	MinimotdLine1       *string `json:"minimotd_line1"`
 	MinimotdLine2       *string `json:"minimotd_line2"`
+	JVMFlags            *string `json:"jvm_flags"`
 	StartOnBoot         *int    `json:"start_on_boot"`
 }
 
@@ -586,11 +598,13 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var currentName sql.NullString
 	var currentProxyID sql.NullInt64
 	var currentDomain sql.NullString
+	var currentType sql.NullString
+	var currentRAMMB sql.NullInt64
 	var status string
 	var proxyHostPort int
 	var proxyName string
 
-	h.db.QueryRow("SELECT name, proxy_id, domain, status FROM servers WHERE id = ?", id).Scan(&currentName, &currentProxyID, &currentDomain, &status)
+	h.db.QueryRow("SELECT name, proxy_id, domain, status, type, ram_mb FROM servers WHERE id = ?", id).Scan(&currentName, &currentProxyID, &currentDomain, &status, &currentType, &currentRAMMB)
 
 	if currentProxyID.Valid {
 		h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", currentProxyID.Int64).Scan(&proxyName, &proxyHostPort)
@@ -656,30 +670,33 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.StartOnBoot != nil {
 		h.db.Exec("UPDATE servers SET start_on_boot = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.StartOnBoot, id)
 	}
+	if req.JVMFlags != nil {
+		h.db.Exec("UPDATE servers SET jvm_flags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.JVMFlags, id)
+	}
 
-	if req.Name != nil {
-		h.db.Exec("UPDATE servers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, id)
-	}
-	if req.RAMMB != nil {
-		h.db.Exec("UPDATE servers SET ram_mb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.RAMMB, id)
-	}
-	if req.AutoShutdownMinutes != nil {
-		h.db.Exec("UPDATE servers SET auto_shutdown_minutes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.AutoShutdownMinutes, id)
-	}
-	if req.BackupIntervalDays != nil {
-		h.db.Exec("UPDATE servers SET backup_interval_days = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.BackupIntervalDays, id)
-	}
-	if req.ScheduledStart != nil {
-		h.db.Exec("UPDATE servers SET scheduled_start = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStart, id)
-	}
-	if req.ScheduledStop != nil {
-		h.db.Exec("UPDATE servers SET scheduled_stop = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStop, id)
-	}
-	if req.CanvasX != nil {
-		h.db.Exec("UPDATE servers SET canvas_x = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasX, id)
-	}
-	if req.CanvasY != nil {
-		h.db.Exec("UPDATE servers SET canvas_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.CanvasY, id)
+	// write user_jvm_args.txt for Forge/NeoForge when RAM or JVM flags change
+	if currentType.Valid && (currentType.String == "forge" || currentType.String == "neoforge") && currentName.Valid {
+		needsWrite := req.RAMMB != nil || req.JVMFlags != nil
+		if needsWrite {
+			ramMB := int(currentRAMMB.Int64)
+			if req.RAMMB != nil {
+				ramMB = *req.RAMMB
+			}
+			jvmFlags := ""
+			if req.JVMFlags != nil {
+				jvmFlags = *req.JVMFlags
+			} else {
+				var flags sql.NullString
+				h.db.QueryRow("SELECT jvm_flags FROM servers WHERE id = ?", id).Scan(&flags)
+				if flags.Valid {
+					jvmFlags = flags.String
+				}
+			}
+			serverPath := filepath.Join(h.cfg.ServersDir, currentName.String)
+			if err := mc.WriteUserJVMArgs(serverPath, ramMB, jvmFlags); err != nil {
+				fmt.Printf("Failed to write user_jvm_args.txt for server %d: %v\n", id, err)
+			}
+		}
 	}
 
 	var hasConfig bool
@@ -831,9 +848,10 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 	var name, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
+	var jvmFlags sql.NullString
 	err = h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort)
+		SELECT name, type, version, ram_mb, host_port, jvm_flags FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -846,11 +864,17 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		port = int(hostPort.Int64)
 	}
 
+	jvmFlagsStr := ""
+	if jvmFlags.Valid {
+		jvmFlagsStr = jvmFlags.String
+	}
+
 	cfg := &docker.ServerContainerConfig{
 		Name:        name,
 		ServerType:  serverType,
 		Version:     version,
 		RAMMB:       ramMB,
+		JVMFlags:    jvmFlagsStr,
 		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
 		HostPort:    port,
@@ -926,9 +950,10 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	var name, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
+	var jvmFlags sql.NullString
 	err = h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort)
+		SELECT name, type, version, ram_mb, host_port, jvm_flags FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -963,11 +988,17 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		port = int(hostPort.Int64)
 	}
 
+	jvmFlagsStr := ""
+	if jvmFlags.Valid {
+		jvmFlagsStr = jvmFlags.String
+	}
+
 	cfg := &docker.ServerContainerConfig{
 		Name:        name,
 		ServerType:  serverType,
 		Version:     version,
 		RAMMB:       ramMB,
+		JVMFlags:    jvmFlagsStr,
 		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
 		HostPort:    port,
@@ -1846,9 +1877,10 @@ func (h *ServerHandler) StartByID(id int64) error {
 	var name, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
+	var jvmFlags sql.NullString
 	err := h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort)
+		SELECT name, type, version, ram_mb, host_port, jvm_flags FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags)
 	if err != nil {
 		return err
 	}
@@ -1858,11 +1890,17 @@ func (h *ServerHandler) StartByID(id int64) error {
 		port = int(hostPort.Int64)
 	}
 
+	jvmFlagsStr := ""
+	if jvmFlags.Valid {
+		jvmFlagsStr = jvmFlags.String
+	}
+
 	cfg := &docker.ServerContainerConfig{
 		Name:        name,
 		ServerType:  serverType,
 		Version:     version,
 		RAMMB:       ramMB,
+		JVMFlags:    jvmFlagsStr,
 		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
 		HostPort:    port,

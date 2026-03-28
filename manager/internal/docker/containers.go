@@ -27,6 +27,7 @@ type ServerContainerConfig struct {
 	ServerType  string
 	Version     string
 	RAMMB       int
+	JVMFlags    string
 	ServerPath  string
 	NetworkName string
 	HostPort    int
@@ -83,6 +84,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 		fmt.Sprintf("SERVER_TYPE=%s", cfg.ServerType),
 		fmt.Sprintf("MC_VERSION=%s", cfg.Version),
 		fmt.Sprintf("RAM_MB=%d", cfg.RAMMB),
+		fmt.Sprintf("JVM_FLAGS=%s", cfg.JVMFlags),
 		fmt.Sprintf("RCON_PASSWORD=%s", os.Getenv("RCON_PASSWORD")),
 	}
 

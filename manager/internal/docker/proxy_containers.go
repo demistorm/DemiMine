@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -18,6 +19,7 @@ type ProxyContainerConfig struct {
 	ProxyPath   string
 	NetworkName string
 	RAMMB       int
+	JVMFlags    string
 }
 
 func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerConfig) (string, error) {
@@ -55,13 +57,17 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 		ramMB = 512
 	}
 
+	cmd := []string{"java", fmt.Sprintf("-Xmx%dM", ramMB), fmt.Sprintf("-Xms%dM", ramMB)}
+	if cfg.JVMFlags != "" {
+		cmd = append(cmd, strings.Split(cfg.JVMFlags, " ")...)
+	}
+	cmd = append(cmd, "-jar", "velocity.jar")
+
 	env := []string{
 		"TERM=xterm",
 		"TZ=America/Chicago",
 		fmt.Sprintf("RCON_PASSWORD=%s", os.Getenv("RCON_PASSWORD")),
 	}
-
-	cmd := []string{"java", fmt.Sprintf("-Xmx%dM", ramMB), "-jar", "velocity.jar"}
 
 	proxyPort := fmt.Sprintf("%d", cfg.HostPort)
 	config := &container.Config{
@@ -83,7 +89,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 	hostConfig := &container.HostConfig{
 		Binds: []string{fmt.Sprintf("%s:/proxy:rw", cfg.ProxyPath)},
 		Resources: container.Resources{
-			Memory: int64(ramMB) * 1024 * 1024,
+			Memory: int64(ramMB+256) * 1024 * 1024,
 		},
 		AutoRemove: true,
 		RestartPolicy: container.RestartPolicy{

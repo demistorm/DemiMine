@@ -176,6 +176,7 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE proxies ADD COLUMN start_on_boot INTEGER DEFAULT 0`,
 		`ALTER TABLE proxies ADD COLUMN scheduled_start TEXT`,
 		`ALTER TABLE proxies ADD COLUMN scheduled_stop TEXT`,
+		`ALTER TABLE proxies ADD COLUMN jvm_flags TEXT`,
 		`ALTER TABLE proxies ADD COLUMN motd_line1 TEXT`,
 		`ALTER TABLE proxies ADD COLUMN motd_line2 TEXT`,
 		`ALTER TABLE servers ADD COLUMN minimotd_line1 TEXT`,
@@ -183,6 +184,7 @@ func RunMigrations(db *sql.DB) error {
 		`ALTER TABLE servers ADD COLUMN jar_build INTEGER DEFAULT 0`,
 		`ALTER TABLE servers ADD COLUMN jar_hash TEXT`,
 		`ALTER TABLE servers ADD COLUMN start_on_boot INTEGER DEFAULT 0`,
+		`ALTER TABLE servers ADD COLUMN jvm_flags TEXT`,
 		`ALTER TABLE installed_plugins ADD COLUMN loader_type TEXT DEFAULT ''`,
 	}
 

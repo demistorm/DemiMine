@@ -24,12 +24,39 @@
 	let scheduledStartMinute = server.scheduled_start ? parseInt(server.scheduled_start.split(':')[1]) : 0;
 	let scheduledStopHour = server.scheduled_stop ? parseInt(server.scheduled_stop.split(':')[0]) : 22;
 	let scheduledStopMinute = server.scheduled_stop ? parseInt(server.scheduled_stop.split(':')[1]) : 0;
+	let jvmFlags = server.jvm_flags || '';
+	let jvmFlagsOpen = false;
 
 	let updateInfo: JarUpdateInfo | null = null;
 	let checkingUpdate = false;
 	let updatingJar = false;
 
 	const dispatch = createEventDispatcher();
+
+	function getDefaultJVMFlags(): string {
+		const aikarsFlags = '-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20';
+
+		const majorVersion = parseInt(server.version.split('.')[0]);
+		const isOldVersion = server.version.startsWith('1.');
+
+		if (server.type === 'nanolimbo') {
+			return '';
+		}
+
+		let needsVector = false;
+		if (isOldVersion) {
+			const minor = parseInt(server.version.split('.')[1]);
+			if (minor >= 20) needsVector = true;
+		} else {
+			if (majorVersion >= 18) needsVector = true;
+		}
+
+		return needsVector ? `--add-modules=jdk.incubator.vector ${aikarsFlags}` : aikarsFlags;
+	}
+
+	function resetJVMFlags() {
+		jvmFlags = getDefaultJVMFlags();
+	}
 
 	async function checkJarUpdate() {
 		if (server.type !== 'paper' && server.type !== 'purpur' && server.type !== 'nanolimbo') {
@@ -106,6 +133,10 @@
 				body.scheduled_stop = null;
 			}
 
+			if (jvmFlags !== (server.jvm_flags || '')) {
+				body.jvm_flags = jvmFlags;
+			}
+
 			await api.patch(`/api/servers/${server.id}`, body);
 			
 			success = 'Settings saved successfully';
@@ -118,7 +149,8 @@
 					minimotd_line2: minimotdLine2,
 					start_on_boot: startOnBoot ? 1 : 0,
 					scheduled_start: scheduleEnabled ? `${scheduledStartHour.toString().padStart(2, '0')}:${scheduledStartMinute.toString().padStart(2, '0')}` : null,
-					scheduled_stop: scheduleEnabled ? `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}` : null
+					scheduled_stop: scheduleEnabled ? `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}` : null,
+					jvm_flags: jvmFlags
 				} : s)
 			);
 			
@@ -398,111 +430,40 @@
 	</div>
 
 	<div class="section">
-		<h2>Automation</h2>
-		
-		<div class="field">
-			<label class="checkbox-label">
-				<input type="checkbox" bind:checked={startOnBoot} />
-				<span>Start on boot</span>
-			</label>
-			<span class="hint">Automatically start this server when the manager starts</span>
-		</div>
-		
-		<div class="field">
-			<label class="checkbox-label">
-				<input type="checkbox" bind:checked={scheduleEnabled} />
-				<span>Enable scheduled start/stop</span>
-			</label>
-			<span class="hint">Automatically start and stop this server at specific times</span>
-		</div>
+		<h2 class="collapsible-header" on:click={() => jvmFlagsOpen = !jvmFlagsOpen}>
+			<span>Java Flags (Advanced)</span>
+			<span class="chevron" class:open={jvmFlagsOpen}>&#9654;</span>
+		</h2>
 
-		{#if scheduleEnabled}
-			<div class="field schedule-fields">
-				<label>Start Time</label>
-				<div class="time-input">
-					<select bind:value={scheduledStartHour} class="time-field">
-						{#each Array(24) as _, i}
-							<option value={i}>{i.toString().padStart(2, '0')}</option>
-						{/each}
-					</select>
-					<span class="time-separator">:</span>
-					<select bind:value={scheduledStartMinute} class="time-field">
-						{#each Array(60) as _, i}
-							<option value={i}>{i.toString().padStart(2, '0')}</option>
-						{/each}
-					</select>
-				</div>
+		{#if jvmFlagsOpen}
+			<div class="field">
+				<label>JVM Flags</label>
+				<p class="field-description">
+					Additional JVM flags for garbage collection, memory management, and other optimizations.
+					RAM allocation (-Xmx/-Xms) is controlled by the slider above.
+				</p>
+				<textarea
+					class="jvm-flags-textarea"
+					bind:value={jvmFlags}
+					rows="6"
+					placeholder="e.g., -XX:+UseG1GC -XX:+ParallelRefProcEnabled ..."
+					spellcheck="false"
+				></textarea>
 			</div>
 
-			<div class="field schedule-fields">
-				<label>Stop Time</label>
-				<div class="time-input">
-					<select bind:value={scheduledStopHour} class="time-field">
-						{#each Array(24) as _, i}
-							<option value={i}>{i.toString().padStart(2, '0')}</option>
-						{/each}
-					</select>
-					<span class="time-separator">:</span>
-					<select bind:value={scheduledStopMinute} class="time-field">
-						{#each Array(60) as _, i}
-							<option value={i}>{i.toString().padStart(2, '0')}</option>
-						{/each}
-					</select>
+			{#if server.type === 'nanolimbo'}
+				<div class="field">
+					<span class="hint">No default flags for NanoLimbo. Add custom flags if needed.</span>
 				</div>
-				<span class="hint">24-hour format (00:00 - 23:59)</span>
+			{/if}
+
+			<div class="field">
+				<button class="btn" on:click={resetJVMFlags}>
+					Reset to Defaults
+				</button>
 			</div>
 		{/if}
 	</div>
-
-	<div class="section">
-		<h2>Network</h2>
-		
-		<div class="field">
-			<label for="port">Host Port</label>
-			<input type="number" id="port" value={server.host_port || 'Not exposed'} disabled />
-			<span class="hint">
-				{#if server.host_port}
-					Server is accessible on port {server.host_port}
-				{:else}
-					Server is behind a proxy (not directly exposed)
-				{/if}
-			</span>
-		</div>
-
-		<div class="field">
-			<label for="proxy">Proxy Assignment</label>
-			<input 
-				type="text" 
-				id="proxy" 
-				value={server.proxy_name || 'Standalone (no proxy)'} 
-				disabled 
-			/>
-		</div>
-	</div>
-
-	{#if server.proxy_id}
-		<div class="section">
-			<h2>MiniMOTD Configuration</h2>
-
-			<div class="field">
-				<label for="minimotdLine1">Line 1</label>
-				<input type="text" id="minimotdLine1" bind:value={minimotdLine1} placeholder="e.g., &lt;blue&gt;Welcome!&lt;/blue&gt;" />
-				<span class="hint">MiniMOTD will apply color codes automatically</span>
-			</div>
-
-			<div class="field">
-				<label for="minimotdLine2">Line 2</label>
-				<input type="text" id="minimotdLine2" bind:value={minimotdLine2} placeholder="e.g., &lt;gradient:blue:red&gt;Custom message&lt;/gradient&gt;" />
-				<span class="hint">MiniMOTD will apply color codes automatically</span>
-			</div>
-
-			<div class="field">
-				<div class="info-box">
-					<strong>Note:</strong> Changes to these lines will update the MiniMOTD configuration for this server in the proxy. If you leave both fields blank, the MiniMOTD configuration will be deleted.
-				</div>
-			</div>
-		</div>
-	{/if}
 
 	<div class="section danger">
 		<h2>Danger Zone</h2>
@@ -884,6 +845,59 @@
 	.time-separator {
 		color: var(--text-primary);
 		font-weight: 500;
+	}
+
+	.collapsible-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		cursor: pointer;
+		user-select: none;
+		margin: 0;
+		padding-bottom: 0.75rem;
+		border-bottom: 3px solid var(--border);
+	}
+
+	.collapsible-header .chevron {
+		transition: transform 0.2s;
+		font-size: 0.75rem;
+	}
+
+	.collapsible-header .chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.field-description {
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+		line-height: 1.4;
+		margin: 0 0 0.75rem;
+	}
+
+	.jvm-flags-textarea {
+		width: 100%;
+		max-width: 100%;
+		min-height: 120px;
+		padding: 0.625rem 0.875rem;
+		background-color: var(--bg-primary);
+		border: 3px solid var(--border);
+		border-radius: 0;
+		color: var(--text-primary);
+		font-family: 'Courier New', Courier, monospace;
+		font-size: 0.8125rem;
+		line-height: 1.5;
+		resize: vertical;
+		box-sizing: border-box;
+	}
+
+	.jvm-flags-textarea:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
+
+	.jvm-flags-textarea::placeholder {
+		color: var(--text-secondary);
+		opacity: 0.5;
 	}
 
 	.mobile .settings {

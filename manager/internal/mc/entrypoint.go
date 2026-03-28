@@ -1,8 +1,10 @@
 package mc
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func WriteEntrypointScript(serverPath string) error {
@@ -14,6 +16,20 @@ func GetEntrypointScriptContent() string {
 	return startShScript
 }
 
+func WriteUserJVMArgs(serverPath string, ramMB int, jvmFlags string) error {
+	argsPath := filepath.Join(serverPath, "user_jvm_args.txt")
+	var lines []string
+	lines = append(lines, "# Xmx and Xms set by DemiMine")
+	lines = append(lines, fmt.Sprintf("-Xmx%dM", ramMB))
+	lines = append(lines, fmt.Sprintf("-Xms%dM", ramMB))
+	if strings.TrimSpace(jvmFlags) != "" {
+		for _, arg := range strings.Fields(jvmFlags) {
+			lines = append(lines, arg)
+		}
+	}
+	return os.WriteFile(argsPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
+}
+
 const startShScript = `#!/bin/sh
 set -e
 
@@ -21,6 +37,7 @@ cd /server
 
 RAM_MB="${RAM_MB:-2048}"
 JAVA_ARGS="-Xmx${RAM_MB}M -Xms${RAM_MB}M"
+JVM_FLAGS="${JVM_FLAGS:-}"
 
 log_info() {
     echo "[DemiMine] $1"
@@ -78,21 +95,38 @@ run_installer_if_needed() {
     esac
 }
 
+write_user_jvm_args() {
+    log_info "Writing user_jvm_args.txt with JVM flags..."
+    echo "# Xmx and Xms set by DemiMine" > user_jvm_args.txt
+    echo "-Xmx${RAM_MB}M" >> user_jvm_args.txt
+    echo "-Xms${RAM_MB}M" >> user_jvm_args.txt
+    if [ -n "$JVM_FLAGS" ]; then
+        for arg in $JVM_FLAGS; do
+            echo "$arg" >> user_jvm_args.txt
+        done
+    fi
+}
+
 start_server() {
     log_info "Starting server..."
     
     case "$SERVER_TYPE" in
         fabric)
-            exec java $JAVA_ARGS -jar fabric-server-launch.jar nogui
+            exec java $JAVA_ARGS $JVM_FLAGS -jar fabric-server-launch.jar nogui
             ;;
         neoforge|forge)
+            write_user_jvm_args
             exec sh run.sh nogui
             ;;
         nanolimbo)
-            exec java -jar server.jar
+            if [ -n "$JVM_FLAGS" ]; then
+                exec java $JVM_FLAGS -jar server.jar
+            else
+                exec java -jar server.jar
+            fi
             ;;
         paper|purpur|*)
-            exec java $JAVA_ARGS -jar server.jar nogui
+            exec java $JAVA_ARGS $JVM_FLAGS -jar server.jar nogui
             ;;
         *)
             echo "[DemiMine] ERROR: Unknown server type: $SERVER_TYPE"

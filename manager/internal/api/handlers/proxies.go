@@ -52,7 +52,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.motd_line1, p.motd_line2, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop,
+		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.motd_line1, p.motd_line2, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop, p.jvm_flags,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -83,9 +83,10 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var scheduledStart sql.NullString
 		var scheduledStop sql.NullString
 		var serverName sql.NullString
+		var jvmFlags sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &motdLine1, &motdLine2, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &serverName,
+			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &motdLine1, &motdLine2, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &jvmFlags, &serverName,
 		)
 		if err != nil {
 			continue
@@ -124,6 +125,9 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 			if scheduledStop.Valid {
 				proxy.ScheduledStop = &scheduledStop.String
+			}
+			if jvmFlags.Valid {
+				proxy.JVMFlags = &jvmFlags.String
 			}
 			proxyMap[proxyID] = proxy
 			proxyOrder = append(proxyOrder, proxyID)
@@ -254,6 +258,11 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := h.db.Exec("UPDATE proxies SET jar_version = ?, jar_build = ? WHERE id = ?", jarVersion, jarBuild, id); err != nil {
 		fmt.Printf("Failed to update jar_version/jar_build for proxy %d: %v\n", id, err)
+	}
+
+	defaultFlags := mc.GetDefaultProxyJVMFlags()
+	if _, err := h.db.Exec("UPDATE proxies SET jvm_flags = ? WHERE id = ?", defaultFlags, id); err != nil {
+		fmt.Printf("Failed to set default JVM flags for proxy %d: %v\n", id, err)
 	}
 
 	if err := mc.WriteForwardingSecret(proxyPath, forwardingSecret); err != nil {
@@ -408,11 +417,12 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var scheduledStop sql.NullString
 	var motdLine1 sql.NullString
 	var motdLine2 sql.NullString
+	var jvmFlags sql.NullString
 
 	err = h.db.QueryRow(`
-		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop
+		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop, jvm_flags
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &motdLine1, &motdLine2, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop)
+	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &motdLine1, &motdLine2, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop, &jvmFlags)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -450,6 +460,10 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	if scheduledStop.Valid {
 		p.ScheduledStop = &scheduledStop.String
+	}
+
+	if jvmFlags.Valid {
+		p.JVMFlags = &jvmFlags.String
 	}
 
 	serverRows, err := h.db.Query("SELECT name FROM servers WHERE proxy_id = ?", p.ID)
@@ -532,6 +546,7 @@ type UpdateProxyRequest struct {
 	CanvasY        *int    `json:"canvas_y"`
 	MotdLine1      *string `json:"motd_line1"`
 	MotdLine2      *string `json:"motd_line2"`
+	JVMFlags       *string `json:"jvm_flags"`
 	StartOnBoot    *int    `json:"start_on_boot"`
 	ScheduledStart *string `json:"scheduled_start"`
 	ScheduledStop  *string `json:"scheduled_stop"`
@@ -584,6 +599,9 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledStop != nil {
 		h.db.Exec("UPDATE proxies SET scheduled_stop = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.ScheduledStop, id)
+	}
+	if req.JVMFlags != nil {
+		h.db.Exec("UPDATE proxies SET jvm_flags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.JVMFlags, id)
 	}
 
 	if req.MotdLine1 != nil || req.MotdLine2 != nil {
@@ -647,12 +665,18 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 
 	var name string
 	var hostPort, ramMB int
-	err = h.db.QueryRow("SELECT name, host_port, COALESCE(ram_mb, 512) FROM proxies WHERE id = ?", id).Scan(&name, &hostPort, &ramMB)
+	var jvmFlags sql.NullString
+	err = h.db.QueryRow("SELECT name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?", id).Scan(&name, &hostPort, &ramMB, &jvmFlags)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "proxy not found"})
 		return
+	}
+
+	jvmFlagsStr := ""
+	if jvmFlags.Valid {
+		jvmFlagsStr = jvmFlags.String
 	}
 
 	cfg := &docker.ProxyContainerConfig{
@@ -661,6 +685,7 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
+		JVMFlags:    jvmFlagsStr,
 	}
 
 	ctx := context.Background()
@@ -732,7 +757,8 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 
 	var name string
 	var hostPort, ramMB int
-	err = h.db.QueryRow("SELECT name, host_port, COALESCE(ram_mb, 512) FROM proxies WHERE id = ?", id).Scan(&name, &hostPort, &ramMB)
+	var jvmFlags sql.NullString
+	err = h.db.QueryRow("SELECT name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?", id).Scan(&name, &hostPort, &ramMB, &jvmFlags)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -762,12 +788,18 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	jvmFlagsStr := ""
+	if jvmFlags.Valid {
+		jvmFlagsStr = jvmFlags.String
+	}
+
 	cfg := &docker.ProxyContainerConfig{
 		Name:        name,
 		HostPort:    hostPort,
 		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
+		JVMFlags:    jvmFlagsStr,
 	}
 
 	if err := h.docker.StartProxyContainer(ctx, name, cfg); err != nil {
@@ -1649,11 +1681,17 @@ func (h *ProxyHandler) StopByID(id int64) error {
 func (h *ProxyHandler) StartByID(id int64) error {
 	var name string
 	var hostPort, ramMB int
+	var jvmFlags sql.NullString
 	err := h.db.QueryRow(`
-		SELECT name, host_port, ram_mb FROM proxies WHERE id = ?`, id).
-		Scan(&name, &hostPort, &ramMB)
+		SELECT name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?`, id).
+		Scan(&name, &hostPort, &ramMB, &jvmFlags)
 	if err != nil {
 		return err
+	}
+
+	jvmFlagsStr := ""
+	if jvmFlags.Valid {
+		jvmFlagsStr = jvmFlags.String
 	}
 
 	cfg := docker.ProxyContainerConfig{
@@ -1662,6 +1700,7 @@ func (h *ProxyHandler) StartByID(id int64) error {
 		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
+		JVMFlags:    jvmFlagsStr,
 	}
 
 	ctx := context.Background()

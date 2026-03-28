@@ -21,12 +21,22 @@
 	let iconPreview: string | null = proxy.icon_path || null;
 	let iconError = '';
 	let iconUploading = false;
+	let jvmFlags = proxy.jvm_flags || '';
+	let jvmFlagsOpen = false;
 
 	let updateInfo: JarUpdateInfo | null = null;
 	let checkingUpdate = false;
 	let updatingJar = false;
 
 	const dispatch = createEventDispatcher();
+
+	function getDefaultProxyJVMFlags(): string {
+		return '-XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:MaxInlineLevel=15';
+	}
+
+	function resetJVMFlags() {
+		jvmFlags = getDefaultProxyJVMFlags();
+	}
 
 	async function checkJarUpdate() {
 		checkingUpdate = true;
@@ -92,6 +102,10 @@
 				body.scheduled_stop = null;
 			}
 
+			if (jvmFlags !== (proxy.jvm_flags || '')) {
+				body.jvm_flags = jvmFlags;
+			}
+
 			await api.patch(`/api/proxies/${proxy.id}`, body);
 			
 			success = 'Settings saved successfully';
@@ -102,7 +116,8 @@
 					ram_mb: ramMB,
 					start_on_boot: startOnBoot ? 1 : 0,
 					scheduled_start: scheduleEnabled ? `${scheduledStartHour.toString().padStart(2, '0')}:${scheduledStartMinute.toString().padStart(2, '0')}` : null,
-					scheduled_stop: scheduleEnabled ? `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}` : null
+					scheduled_stop: scheduleEnabled ? `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}` : null,
+					jvm_flags: jvmFlags
 				} : p)
 			);
 			
@@ -435,6 +450,35 @@
 			</div>
 		{:else}
 			<p class="no-servers">No servers connected to this proxy.</p>
+		{/if}
+	</div>
+
+	<div class="section">
+		<h2 class="collapsible-header" on:click={() => jvmFlagsOpen = !jvmFlagsOpen}>
+			<span>Java Flags (Advanced)</span>
+			<span class="chevron" class:open={jvmFlagsOpen}>&#9654;</span>
+		</h2>
+
+		{#if jvmFlagsOpen}
+			<div class="field">
+				<label>JVM Flags</label>
+				<p class="field-description">
+					Additional JVM flags for the Velocity proxy. RAM allocation (-Xmx/-Xms) is controlled by the memory setting above.
+				</p>
+				<textarea
+					class="jvm-flags-textarea"
+					bind:value={jvmFlags}
+					rows="4"
+					placeholder="e.g., -XX:+UseG1GC -XX:G1HeapRegionSize=4M ..."
+					spellcheck="false"
+				></textarea>
+			</div>
+
+			<div class="field">
+				<button class="btn" on:click={resetJVMFlags}>
+					Reset to Defaults
+				</button>
+			</div>
 		{/if}
 	</div>
 
@@ -811,6 +855,59 @@
 	.time-separator {
 		color: var(--text-primary);
 		font-weight: 500;
+	}
+
+	.collapsible-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		cursor: pointer;
+		user-select: none;
+		margin: 0;
+		padding-bottom: 0.75rem;
+		border-bottom: 3px solid var(--border);
+	}
+
+	.collapsible-header .chevron {
+		transition: transform 0.2s;
+		font-size: 0.75rem;
+	}
+
+	.collapsible-header .chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.field-description {
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+		line-height: 1.4;
+		margin: 0 0 0.75rem;
+	}
+
+	.jvm-flags-textarea {
+		width: 100%;
+		max-width: 100%;
+		min-height: 80px;
+		padding: 0.625rem 0.875rem;
+		background-color: var(--bg-primary);
+		border: 3px solid var(--border);
+		border-radius: 0;
+		color: var(--text-primary);
+		font-family: 'Courier New', Courier, monospace;
+		font-size: 0.8125rem;
+		line-height: 1.5;
+		resize: vertical;
+		box-sizing: border-box;
+	}
+
+	.jvm-flags-textarea:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
+
+	.jvm-flags-textarea::placeholder {
+		color: var(--text-secondary);
+		opacity: 0.5;
 	}
 
 	.save-bar {

@@ -13,6 +13,7 @@ type Proxy struct {
 	CanvasY          int       `json:"canvas_y"`
 	MotdLine1        *string   `json:"motd_line1"`
 	MotdLine2        *string   `json:"motd_line2"`
+	JVMFlags         *string   `json:"jvm_flags"`
 	StartOnBoot      int       `json:"start_on_boot"`
 	ScheduledStart   *string   `json:"scheduled_start"`
 	ScheduledStop    *string   `json:"scheduled_stop"`
@@ -36,6 +37,7 @@ type Server struct {
 	Status              string    `json:"status"`
 	CanvasX             int       `json:"canvas_x"`
 	CanvasY             int       `json:"canvas_y"`
+	JVMFlags            *string   `json:"jvm_flags"`
 	StartOnBoot         int       `json:"start_on_boot"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
@@ -117,6 +119,7 @@ type ServerResponse struct {
 	CanvasX             int     `json:"canvas_x"`
 	CanvasY             int     `json:"canvas_y"`
 	StartOnBoot         int     `json:"start_on_boot"`
+	JVMFlags            *string `json:"jvm_flags"`
 	IconPath            *string `json:"icon_path"`
 	MinimotdLine1       *string `json:"minimotd_line1"`
 	MinimotdLine2       *string `json:"minimotd_line2"`
@@ -137,6 +140,7 @@ type ProxyResponse struct {
 	CanvasY          int      `json:"canvas_y"`
 	MotdLine1        *string  `json:"motd_line1"`
 	MotdLine2        *string  `json:"motd_line2"`
+	JVMFlags         *string  `json:"jvm_flags"`
 	StartOnBoot      int      `json:"start_on_boot"`
 	ScheduledStart   *string  `json:"scheduled_start"`
 	ScheduledStop    *string  `json:"scheduled_stop"`
