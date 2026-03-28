@@ -230,6 +230,36 @@ func TestFunctional_ScheduledBackupLogic(t *testing.T) {
 		t.Error("Should run backup when most recent backup is 4 days old (interval=3)")
 	}
 
+	t.Run("same calendar day should not trigger", func(t *testing.T) {
+		db.Exec("DELETE FROM backups")
+		_, err := db.Exec("INSERT INTO backups (created_at, size_bytes, archive_path, status) VALUES (?, ?, ?, 'complete')",
+			time.Now().Add(-1*time.Hour), 1000, filepath.Join(backupDir, "test-same-day.tar.zst"))
+		if err != nil {
+			t.Fatalf("Failed to insert backup record: %v", err)
+		}
+		if manager.ShouldRunBackup() {
+			t.Error("Should NOT run backup when last backup was earlier today (interval=3)")
+		}
+	})
+
+	t.Run("yesterday late evening with interval=1", func(t *testing.T) {
+		db.Exec("DELETE FROM backups")
+		_, err := db.Exec("INSERT INTO settings (key, value) VALUES ('backup_interval_days', '1')")
+		if err != nil {
+			t.Fatalf("Failed to set interval: %v", err)
+		}
+		yesterday := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day()-1, 23, 0, 0, 0, time.Now().Location())
+		_, err = db.Exec("INSERT INTO backups (created_at, size_bytes, archive_path, status) VALUES (?, ?, ?, 'complete')",
+			yesterday, 1000, filepath.Join(backupDir, "test-yesterday.tar.zst"))
+		if err != nil {
+			t.Fatalf("Failed to insert backup record: %v", err)
+		}
+		if !manager.ShouldRunBackup() {
+			t.Error("Should run backup when last backup was yesterday even if <24h ago (interval=1)")
+		}
+		db.Exec("DELETE FROM settings WHERE key = 'backup_interval_days'")
+	})
+
 	if manager.AlreadyCheckedToday() {
 		t.Error("Should NOT have checked today yet")
 	}

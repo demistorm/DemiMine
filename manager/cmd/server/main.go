@@ -24,10 +24,19 @@ import (
 	"github.com/demimine/manager/internal/spark"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+)
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Config validation failed: %v", err)
 	}
 
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
@@ -41,6 +50,10 @@ func main() {
 	}
 	if err := os.MkdirAll(cfg.JavaDir, 0755); err != nil {
 		log.Fatalf("Failed to create java directory: %v", err)
+	}
+
+	if os.Getenv("RCON_PASSWORD") == "" {
+		log.Fatal("RCON_PASSWORD environment variable is required")
 	}
 
 	database, err := db.Connect(cfg.DatabaseURL)

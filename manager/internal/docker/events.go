@@ -100,7 +100,7 @@ func (em *EventManager) broadcastStatusChange(serverID int64, action events.Acti
 	switch action {
 	case "start":
 		status = "running"
-	case "die", "stop", "kill":
+	case "die", "stop", "kill", "destroy":
 		status = "stopped"
 	case "pause":
 		status = "paused"
@@ -135,7 +135,7 @@ func (em *EventManager) broadcastProxyStatusChange(proxyID int64, action events.
 	switch action {
 	case "start":
 		status = "running"
-	case "die", "stop", "kill":
+	case "die", "stop", "kill", "destroy":
 		status = "stopped"
 	case "pause":
 		status = "paused"

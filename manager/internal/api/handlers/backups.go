@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/demimine/manager/internal/api/middleware"
 	"github.com/demimine/manager/internal/backup"
 	"github.com/demimine/manager/internal/docker"
 	"github.com/demimine/manager/internal/websocket"
@@ -68,7 +69,7 @@ type BackupResponse struct {
 func (h *BackupsHandler) List(w http.ResponseWriter, r *http.Request) {
 	backups, err := h.manager.ListBackups()
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"failed to list backups: %v"}`, err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to list backups")
 		return
 	}
 
@@ -91,7 +92,7 @@ func (h *BackupsHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *BackupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	pending, err := h.manager.CreatePendingBackup()
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"failed to create backup: %v"}`, err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to create backup")
 		return
 	}
 
@@ -114,28 +115,28 @@ func (h *BackupsHandler) Download(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Error(w, `{"error":"invalid backup id"}`, http.StatusBadRequest)
+		middleware.WriteJSONError(w, http.StatusBadRequest, "invalid backup id")
 		return
 	}
 
-	backup, err := h.manager.GetBackup(id)
+	bk, err := h.manager.GetBackup(id)
 	if err != nil {
-		http.Error(w, `{"error":"backup not found"}`, http.StatusNotFound)
+		middleware.WriteJSONError(w, http.StatusNotFound, "backup not found")
 		return
 	}
 
-	http.ServeFile(w, r, backup.ArchivePath)
+	http.ServeFile(w, r, bk.ArchivePath)
 }
 
 func (h *BackupsHandler) RestoreFromUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		middleware.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	file, _, err := r.FormFile("backup")
 	if err != nil {
-		http.Error(w, `{"error":"no backup file provided"}`, http.StatusBadRequest)
+		middleware.WriteJSONError(w, http.StatusBadRequest, "no backup file provided")
 		return
 	}
 	defer file.Close()
@@ -143,7 +144,7 @@ func (h *BackupsHandler) RestoreFromUpload(w http.ResponseWriter, r *http.Reques
 	tempPath := fmt.Sprintf("/tmp/demimine-restore-%d.tar.zst", time.Now().Unix())
 	tempFile, err := createTempFile(tempPath, file)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"failed to save uploaded file: %v"}`, err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to save uploaded file")
 		return
 	}
 	tempFile.Close()
@@ -166,20 +167,20 @@ func (h *BackupsHandler) RestoreFromUpload(w http.ResponseWriter, r *http.Reques
 
 func (h *BackupsHandler) RestoreFromDisk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		middleware.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Error(w, `{"error":"invalid backup id"}`, http.StatusBadRequest)
+		middleware.WriteJSONError(w, http.StatusBadRequest, "invalid backup id")
 		return
 	}
 
 	bk, err := h.manager.GetBackup(id)
 	if err != nil {
-		http.Error(w, `{"error":"backup not found"}`, http.StatusNotFound)
+		middleware.WriteJSONError(w, http.StatusNotFound, "backup not found")
 		return
 	}
 
@@ -200,19 +201,19 @@ func (h *BackupsHandler) RestoreFromDisk(w http.ResponseWriter, r *http.Request)
 
 func (h *BackupsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		middleware.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		http.Error(w, `{"error":"invalid backup id"}`, http.StatusBadRequest)
+		middleware.WriteJSONError(w, http.StatusBadRequest, "invalid backup id")
 		return
 	}
 
 	if err := h.manager.DeleteBackup(id); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"failed to delete backup: %v"}`, err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to delete backup")
 		return
 	}
 

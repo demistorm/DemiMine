@@ -11,7 +11,7 @@ import (
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
 	"github.com/demimine/manager/internal/websocket"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/demimine/manager/pkg/auth"
 	gws "github.com/gorilla/websocket"
 )
 
@@ -61,10 +61,7 @@ func (h *WSHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := jwt.MapClaims{}
-	_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(h.cfg.JWTSecret), nil
-	})
+	_, err := auth.ValidateToken(token, h.cfg.JWTSecret)
 	if err != nil {
 		log.Printf("WebSocket rejected: invalid token: %v", err)
 		w.Header().Set("Content-Type", "application/json")

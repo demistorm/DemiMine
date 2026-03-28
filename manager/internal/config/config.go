@@ -3,7 +3,9 @@ package config
 import (
 	crand "crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -89,6 +91,22 @@ func Get() *Config {
 		panic("config not loaded")
 	}
 	return cfg
+}
+
+func (c *Config) Validate() error {
+	if _, err := strconv.Atoi(c.Port); err != nil {
+		return fmt.Errorf("DEMIMINE_PORT must be a valid number, got %q", c.Port)
+	}
+	if c.HostServersDir == "" {
+		return fmt.Errorf("DEMIMINE_HOST_SERVERS_DIR is required")
+	}
+	if c.NetworkName == "" {
+		return fmt.Errorf("DEMIMINE_NETWORK is required")
+	}
+	if c.MaxRAMMB < 0 {
+		return fmt.Errorf("DEMIMINE_MAX_RAM_MB must be >= 0, got %d", c.MaxRAMMB)
+	}
+	return nil
 }
 
 func generateRandomString(length int) string {

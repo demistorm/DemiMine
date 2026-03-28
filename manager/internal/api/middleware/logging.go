@@ -4,6 +4,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 func Logging(next http.Handler) http.Handler {
@@ -14,10 +16,11 @@ func Logging(next http.Handler) http.Handler {
 
 		next.ServeHTTP(wrapped, r)
 
-		log.Printf("[%s] %s %s %d %dms",
+		log.Printf("[%s] %s %s %s %d %dms",
 			r.Method,
 			r.URL.Path,
 			r.RemoteAddr,
+			middleware.GetReqID(r.Context()),
 			wrapped.statusCode,
 			time.Since(start).Milliseconds(),
 		)

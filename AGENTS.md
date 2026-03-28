@@ -13,91 +13,70 @@ DemiMine manages multiple Minecraft backend servers (Paper, Purpur, Fabric, NeoF
 ### ✅ Implemented
 
 **Core Server Management:**
-- Web UI accessible over LAN for headless server management
-- Full CRUD operations for servers (create, read, update, delete)
-- Dynamic server start/stop/restart via Docker
-- Console log streaming with ANSI coloring
-- Command execution with command history
-- Full file browser with drag-drop upload, multi-file/folder support
-- Code editor with syntax highlighting (Ace Editor)
-- Image viewer for server files
-- Icon upload for servers
-- Backend servers on internal Docker network (not exposed to host)
-- Port conflict detection with override option
-- EULA auto-accepted on server creation
-
-**Proxy System:**
-- Multiple Velocity proxies supported (each in own container)
-- CRUD operations for proxies
-- Proxy console and file access
-- Proxy icon upload
-- Automatic velocity.toml sync when servers assigned/removed
-- MiniMOTD integration for server list customization
-- Plugin management for proxies
-
-**Plugin Ecosystem:**
-- Modrinth API integration
-- Plugin search, install, update, uninstall
-- Plugin version checking
-- Plugin MC version filtering (global settings)
-
-**File Operations:**
-- Directory listing with breadcrumb navigation
-- File content read/write
-- File download
-- File rename/delete
-- Drag-and-drop upload with progress tracking
-- Gzip decompression support
-- Folder upload support
-
-**Authentication & Security:**
 - Admin setup on first launch
-- JWT-based authentication
+- JWT-based authentication with proper algorithm validation
 - Session management
-- API key management
-- Rate limiting (500 req/15min)
+- API key management (used by DemiDynamic plugin)
+- Rate limiting (500 req/15min) with IP spoofing protection
+- Path exclusions from rate limiting (/health, /api/ws, /api/system/resources)
 - CORS handling
+- RCON password required at startup
+- Config validation at startup
 
 **Database:**
 - SQLite with WAL mode
-- Automatic migrations
-- Connection pooling
+- Versioned automatic migrations with error logging
+- Connection pooling (5min lifetime for WAL checkpointing)
 - Comprehensive schema for servers, proxies, players, backups, plugins, command history, crash logs, API keys
 
 **Docker Integration:**
-- Multi-stage build process
+- Multi-stage build process with HEALTHCHECK
 - Container lifecycle management
 - Log streaming from containers
-- Docker event monitoring
+- Docker event monitoring (start, stop, die, destroy, pause, unpause)
 - Java runtime lazy-loading (versions 8, 17, 21, 25 from Adoptium)
 - Automatic Java version detection based on MC version
+- Configurable timezone via TZ env var
 
 **Real-time Communication:**
 - WebSocket hub for real-time updates
 - Live console log streaming
 - Server state updates
-
-### ⏳ In Progress
-
-**Auto-shutdown:**
-- Auto-shutdown timer configuration in server settings
-- Idle shutdown logic (configurable, 15-min default)
-- Player activity tracking infrastructure in place
-
-### 📋 Planned (Phases 5-6)
+- Backup progress notifications
 
 **Backup System:**
-- Backup creation (scheduled and manual)
-- Backup restoration
-- Backup retention policy
-- Backup storage management
+- Full-system backup (data + servers, optional java)
+- Configurable schedule and retention policy
+- Restore from disk or upload
+- Backup management UI (settings page)
 
 **Advanced Features:**
-- Scheduled start/stop
-- Server duplication for safe version updates
-- Server JAR update action (maintains MC version)
-- Custom Velocity auth plugin
-- Dynamic server registration plugin
+- Scheduled server start/stop
+- JAR update system (Paper/Purpur/NanoLimbo/Velocity)
+- Spark profiler integration
+- Graceful shutdown with SIGTERM handling
+
+## Project Status
+
+**Production-ready.** Phases 1-6 are complete and fully functional.
+
+### Completed (Phases 1-6):
+- ✅ Foundation: Go backend, SQLite, Auth, Middleware
+- ✅ Server Management: Version fetching, JAR download, Docker containers, console, files
+- ✅ Web UI: SvelteKit frontend with TypeScript and Tailwind, full feature integration
+- ✅ Proxy System: Velocity containers, proxy management, MiniMOTD integration
+- ✅ Advanced Features: Scheduled start/stop, JAR updates, Spark profiler, auto-shutdown
+- ✅ Backup System: Full-system backup/restore with scheduling and retention
+- ✅ Production Hardening: HEALTHCHECK, config validation, migration versioning, error handling
+
+### Statistics:
+- **Backend**: 10,800+ lines of Go code
+- **Frontend**: SvelteKit 2.0, TypeScript 5.0, Tailwind 3.4
+- **API Endpoints**: 10+ handlers covering all features
+- **Database**: 10 tables with versioned automatic migrations
+- **Docker**: Multi-stage build with Alpine runtime and HEALTHCHECK
+- **Tests**: 770+ lines of unit tests
+- **Git**: 45+ commits, actively developed
 
 ## Architecture
 
@@ -241,7 +220,7 @@ Unit tests exist for core functionality:
 
 ```bash
 cd manager
-go test ./internal/mc/... -v
+go test ./internal/... -v
 ```
 
 Test coverage:
@@ -250,37 +229,11 @@ Test coverage:
 - Mock API testing for Paper, Purpur, Fabric
 - Supported/unsupported type testing
 - Properties generation and manipulation
-
-Total: 452 lines of tests covering critical mc package functions
+- Backup creation and restore logic
 
 ## Git Workflow
 
 **IMPORTANT:** Only make git commits when the user explicitly requests it. Do not automatically commit changes.
-
-## Project Status
-
-**Production-ready foundation.** Phases 1-4 are complete and fully functional.
-
-### Completed (Phases 1-4):
-- ✅ Foundation: Go backend, SQLite, Auth, Middleware
-- ✅ Server Management: Version fetching, JAR download, Docker containers, console, files
-- ✅ Web UI: SvelteKit frontend with TypeScript and Tailwind, full feature integration
-- ✅ Proxy System: Velocity containers, proxy management, MiniMOTD integration
-
-### In Progress (Phase 5):
-- ⏳ Backup System: Infrastructure exists, needs implementation
-
-### Planned (Phase 6):
-- 📋 Advanced Features: Scheduled operations, server duplication, JAR updates, custom plugins
-
-### Statistics:
-- **Backend**: 10,568 lines of Go code
-- **Frontend**: SvelteKit 2.0, TypeScript 5.0, Tailwind 3.4
-- **API Endpoints**: 10 handlers covering all features
-- **Database**: 9 tables with automatic migrations
-- **Docker**: Multi-stage build with Alpine runtime
-- **Tests**: 452 lines of unit tests
-- **Git**: 44 commits, actively developed
 
 ## Code Style & Conventions
 

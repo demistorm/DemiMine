@@ -22,6 +22,13 @@ import (
 	"github.com/demimine/manager/internal/java"
 )
 
+func getTZ() string {
+	if tz := os.Getenv("TZ"); tz != "" {
+		return tz
+	}
+	return "America/Chicago"
+}
+
 type ServerContainerConfig struct {
 	Name        string
 	ServerType  string
@@ -80,7 +87,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 
 	env := []string{
 		"TERM=xterm",
-		"TZ=America/Chicago",
+		fmt.Sprintf("TZ=%s", getTZ()),
 		fmt.Sprintf("SERVER_TYPE=%s", cfg.ServerType),
 		fmt.Sprintf("MC_VERSION=%s", cfg.Version),
 		fmt.Sprintf("RAM_MB=%d", cfg.RAMMB),

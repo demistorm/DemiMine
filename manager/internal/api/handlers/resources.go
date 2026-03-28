@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/demimine/manager/internal/api/middleware"
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/docker"
 	"github.com/docker/docker/api/types"
@@ -23,6 +24,38 @@ type ResourceHandler struct {
 
 func NewResourceHandler(db *sql.DB, dockerClient *docker.Client, cfg *config.Config) *ResourceHandler {
 	return &ResourceHandler{db: db, docker: dockerClient, cfg: cfg}
+}
+
+func (h *ResourceHandler) Health(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+	status := "ok"
+	httpStatus := http.StatusOK
+	checks := map[string]string{}
+
+	if err := h.db.PingContext(ctx); err != nil {
+		status = "unhealthy"
+		httpStatus = http.StatusServiceUnavailable
+		checks["database"] = "unreachable"
+	} else {
+		checks["database"] = "ok"
+	}
+
+	if h.docker != nil {
+		if err := h.docker.Ping(ctx); err != nil {
+			status = "unhealthy"
+			httpStatus = http.StatusServiceUnavailable
+			checks["docker"] = "unreachable"
+		} else {
+			checks["docker"] = "ok"
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatus)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": status,
+		"checks": checks,
+	})
 }
 
 type ContainerResource struct {
@@ -74,9 +107,7 @@ func (h *ResourceHandler) CanStartServer(w http.ResponseWriter, r *http.Request)
 	ctx := context.Background()
 	currentUsage, err := h.docker.GetTotalDemimineMemoryUsage(ctx)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to get memory usage: %v", err)})
+		middleware.WriteJSONInternalError(w, err, "failed to get memory usage")
 		return
 	}
 
@@ -197,9 +228,7 @@ func (h *ResourceHandler) WaitForContainerRemoval(w http.ResponseWriter, r *http
 
 	err := h.docker.WaitForContainerRemoval(ctx, serverName, timeout)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to wait for container removal: %v", err)})
+		middleware.WriteJSONInternalError(w, err, "failed to wait for container removal")
 		return
 	}
 

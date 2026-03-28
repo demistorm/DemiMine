@@ -46,6 +46,11 @@ func (c *Client) Close() error {
 	return nil
 }
 
+func (c *Client) Ping(ctx context.Context) error {
+	_, err := c.cli.Ping(ctx)
+	return err
+}
+
 func (c *Client) StreamLogs(ctx context.Context, containerName string, logChan chan<- string) error {
 	containerName = strings.TrimPrefix(containerName, "/")
 	if !strings.HasPrefix(containerName, "demimine-") {

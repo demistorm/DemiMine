@@ -65,7 +65,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 
 	env := []string{
 		"TERM=xterm",
-		"TZ=America/Chicago",
+		fmt.Sprintf("TZ=%s", getTZ()),
 		fmt.Sprintf("RCON_PASSWORD=%s", os.Getenv("RCON_PASSWORD")),
 	}
 

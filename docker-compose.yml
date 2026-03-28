@@ -35,5 +35,10 @@ services:
     labels:
       - "demimine.managed=true"
       - "demimine.type=manager"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - demimine_internal

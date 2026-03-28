@@ -515,16 +515,6 @@ POST /api/servers/:id/stop
 POST /api/servers/:id/restart
   Response: { "success": true }
 
-POST /api/servers/:id/duplicate
-  Body: {
-    "name": string,           -- New server name
-    "host_port": number | null,  -- For standalone servers
-    "ram_mb": number,
-    "proxy_id": number | null
-  }
-  Response: { "id": number }
-  Notes: Copies server files, plugins, worlds. Does not copy version (uses same as source).
-
 POST /api/servers/:id/update-jar
   Response: { "success": true, "old_build": string, "new_build": string }
   Notes: Downloads latest server jar for the same MC version/type. Server must be stopped.
@@ -1188,14 +1178,7 @@ max-tick-time=60000
 **Rationale**:
 - Version updates typically require plugin updates
 - World format changes may need conversion
-- Allows testing on duplicated servers first
-
-**Workflow**:
-1. Duplicate the server (copies all files)
-2. Manually update the new server's jar and plugins
-3. Test the new server
-4. Switch players to the new server when ready
-5. Delete old server when no longer needed
+- The JAR update endpoint (`update-jar`) handles downloading the latest build for the same MC version
 
 ### Container Naming Convention
 

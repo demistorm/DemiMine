@@ -29,7 +29,11 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	r.Use(middleware.Logging)
 	r.Use(middleware.CORS([]string{"*"}))
 
-	rateLimiter := middleware.NewRateLimiter(500, 15*time.Minute)
+	rateLimiter := middleware.NewRateLimiter(500, 15*time.Minute, []string{
+		"/health",
+		"/api/ws",
+		"/api/system/resources",
+	})
 	r.Use(rateLimiter.Middleware)
 
 	pluginMgr := plugin.NewManager(database, cfg.ServersDir)
@@ -110,6 +114,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 		})
 
 		r.Route("/players", func(r chi.Router) {
+			r.Use(middleware.Auth(database, cfg.JWTSecret))
 			r.Post("/join", playerHandler.Join)
 			r.Post("/leave", playerHandler.Leave)
 		})
@@ -131,17 +136,17 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 			r.Delete("/{id}", backupsHandler.Delete)
 		})
 
-		r.Get("/servers/auto-shutdown", playerHandler.GetAutoShutdownServers)
-		r.Get("/servers/{name}/status", playerHandler.GetServerStatus)
-		r.Post("/servers/{name}/start-by-name", playerHandler.StartServerByName)
-		r.Post("/servers/{name}/stop-by-name", playerHandler.StopServerByName)
-		r.Post("/servers/{name}/can-start", resourceHandler.CanStartServer)
-		r.Post("/servers/{name}/wait-for-removal", resourceHandler.WaitForContainerRemoval)
-
 		r.Get("/system/resources", resourceHandler.GetSystemResources)
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(database, cfg.JWTSecret))
+
+			r.Get("/servers/auto-shutdown", playerHandler.GetAutoShutdownServers)
+			r.Get("/servers/{name}/status", playerHandler.GetServerStatus)
+			r.Post("/servers/{name}/start-by-name", playerHandler.StartServerByName)
+			r.Post("/servers/{name}/stop-by-name", playerHandler.StopServerByName)
+			r.Post("/servers/{name}/can-start", resourceHandler.CanStartServer)
+			r.Post("/servers/{name}/wait-for-removal", resourceHandler.WaitForContainerRemoval)
 
 			r.Route("/servers", func(r chi.Router) {
 				r.Get("/", serverHandler.List)
@@ -221,10 +226,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	r.Get("/api/servers/{id}/icon", serverHandler.GetIcon)
 	r.Get("/api/proxies/{id}/icon", proxyHandler.GetIcon)
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok"}`))
-	})
+	r.Get("/health", resourceHandler.Health)
 
 	webuiPath := "/app/webui/build"
 	if _, err := os.Stat(webuiPath); err == nil {

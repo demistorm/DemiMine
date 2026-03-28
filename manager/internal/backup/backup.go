@@ -365,7 +365,10 @@ func (m *Manager) ShouldRunBackup() bool {
 		return true
 	}
 
-	daysSince := int(time.Since(lastTime).Hours() / 24)
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	lastBackupDay := time.Date(lastTime.Year(), lastTime.Month(), lastTime.Day(), 0, 0, 0, 0, now.Location())
+	daysSince := int(today.Sub(lastBackupDay).Hours() / 24)
 	return daysSince >= interval
 }
 

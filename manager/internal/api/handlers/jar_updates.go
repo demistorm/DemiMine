@@ -3,12 +3,12 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/demimine/manager/internal/api/middleware"
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/mc"
 
@@ -35,7 +35,7 @@ func (h *JarUpdateHandler) CheckServerJarUpdate(w http.ResponseWriter, r *http.R
 		serverID,
 	).Scan(&serverType, &serverVersion, &jarBuild)
 	if err != nil {
-		http.Error(w, "Server not found", http.StatusNotFound)
+		middleware.WriteJSONError(w, http.StatusNotFound, "server not found")
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *JarUpdateHandler) CheckServerJarUpdate(w http.ResponseWriter, r *http.R
 	}
 
 	if checkErr != nil {
-		http.Error(w, fmt.Sprintf("Failed to check for updates: %v", checkErr), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, checkErr, "failed to check for updates")
 		return
 	}
 
@@ -94,18 +94,18 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 		serverID,
 	).Scan(&serverType, &serverVersion, &serverName, &status)
 	if err != nil {
-		http.Error(w, "Server not found", http.StatusNotFound)
+		middleware.WriteJSONError(w, http.StatusNotFound, "server not found")
 		return
 	}
 
 	if status == "running" {
-		http.Error(w, "Server must be stopped before updating", http.StatusConflict)
+		middleware.WriteJSONError(w, http.StatusConflict, "server must be stopped before updating")
 		return
 	}
 
 	serverPath := filepath.Join(h.cfg.ServersDir, serverName)
 	if err := os.MkdirAll(serverPath, 0755); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create server directory: %v", err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to create server directory")
 		return
 	}
 	jarPath := filepath.Join(serverPath, "server.jar")
@@ -118,33 +118,33 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 	case "paper":
 		build, hash, err = mc.DownloadPaperJar(serverVersion, jarPath)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to download JAR: %v", err), http.StatusInternalServerError)
+			middleware.WriteJSONInternalError(w, err, "failed to download JAR")
 			return
 		}
 	case "purpur":
 		build, hash, err = mc.DownloadPurpurJar(serverVersion, jarPath)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to download JAR: %v", err), http.StatusInternalServerError)
+			middleware.WriteJSONInternalError(w, err, "failed to download JAR")
 			return
 		}
 	case "nanolimbo":
 		updateInfo, checkErr := mc.CheckNanoLimboUpdate(serverVersion)
 		if checkErr != nil {
-			http.Error(w, fmt.Sprintf("Failed to check for latest version: %v", checkErr), http.StatusInternalServerError)
+			middleware.WriteJSONInternalError(w, checkErr, "failed to check for latest version")
 			return
 		}
 		if !updateInfo.HasUpdate {
-			http.Error(w, "No update available", http.StatusBadRequest)
+			middleware.WriteJSONError(w, http.StatusBadRequest, "no update available")
 			return
 		}
 		nanolimboLatestVersion = updateInfo.LatestVersion
 		build, hash, err = mc.DownloadNanoLimboJar(nanolimboLatestVersion, jarPath)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to download JAR: %v", err), http.StatusInternalServerError)
+			middleware.WriteJSONInternalError(w, err, "failed to download JAR")
 			return
 		}
 	default:
-		http.Error(w, "JAR updates not supported for this server type", http.StatusBadRequest)
+		middleware.WriteJSONError(w, http.StatusBadRequest, "JAR updates not supported for this server type")
 		return
 	}
 
@@ -170,7 +170,7 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to update database: %v", err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to update database")
 		return
 	}
 
@@ -198,7 +198,7 @@ func (h *JarUpdateHandler) CheckProxyJarUpdate(w http.ResponseWriter, r *http.Re
 			jarBuild.Int64 = 0
 			jarBuild.Valid = true
 		} else {
-			http.Error(w, "Proxy not found", http.StatusNotFound)
+			middleware.WriteJSONError(w, http.StatusNotFound, "proxy not found")
 			return
 		}
 	}
@@ -214,7 +214,7 @@ func (h *JarUpdateHandler) CheckProxyJarUpdate(w http.ResponseWriter, r *http.Re
 
 	updateInfo, err := mc.CheckVelocityUpdate(version, build)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to check for updates: %v", err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to check for updates")
 		return
 	}
 
@@ -232,25 +232,25 @@ func (h *JarUpdateHandler) UpdateProxyJar(w http.ResponseWriter, r *http.Request
 		proxyID,
 	).Scan(&status, &proxyName)
 	if err != nil {
-		http.Error(w, "Proxy not found", http.StatusNotFound)
+		middleware.WriteJSONError(w, http.StatusNotFound, "proxy not found")
 		return
 	}
 
 	if status == "running" {
-		http.Error(w, "Proxy must be stopped before updating", http.StatusConflict)
+		middleware.WriteJSONError(w, http.StatusConflict, "proxy must be stopped before updating")
 		return
 	}
 
 	proxyPath := filepath.Join(h.cfg.ServersDir, proxyName)
 	if err := os.MkdirAll(proxyPath, 0755); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create proxy directory: %v", err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to create proxy directory")
 		return
 	}
 	jarPath := filepath.Join(proxyPath, "velocity.jar")
 
 	version, build, err := mc.DownloadVelocityJar(jarPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to download JAR: %v", err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to download JAR")
 		return
 	}
 
@@ -259,7 +259,7 @@ func (h *JarUpdateHandler) UpdateProxyJar(w http.ResponseWriter, r *http.Request
 		version, build, proxyID,
 	)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to update database: %v", err), http.StatusInternalServerError)
+		middleware.WriteJSONInternalError(w, err, "failed to update database")
 		return
 	}
 

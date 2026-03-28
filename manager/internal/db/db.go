@@ -3,7 +3,9 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"sync"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -27,7 +29,7 @@ func Connect(databaseURL string) (*sql.DB, error) {
 
 		db.SetMaxOpenConns(5)
 		db.SetMaxIdleConns(2)
-		db.SetConnMaxLifetime(0)
+		db.SetConnMaxLifetime(5 * time.Minute)
 
 		if err = db.Ping(); err != nil {
 			return
@@ -165,68 +167,106 @@ func RunMigrations(db *sql.DB) error {
 		}
 	}
 
-	alterMigrations := []string{
-		`ALTER TABLE proxies ADD COLUMN forwarding_secret TEXT`,
-		`ALTER TABLE proxies ADD COLUMN canvas_x INTEGER DEFAULT 0`,
-		`ALTER TABLE proxies ADD COLUMN canvas_y INTEGER DEFAULT 0`,
-		`ALTER TABLE proxies ADD COLUMN ram_mb INTEGER DEFAULT 512`,
-		`ALTER TABLE proxies ADD COLUMN plugin_mc_version TEXT DEFAULT '1.21.11'`,
-		`ALTER TABLE proxies ADD COLUMN jar_version TEXT`,
-		`ALTER TABLE proxies ADD COLUMN jar_build INTEGER DEFAULT 0`,
-		`ALTER TABLE proxies ADD COLUMN start_on_boot INTEGER DEFAULT 0`,
-		`ALTER TABLE proxies ADD COLUMN scheduled_start TEXT`,
-		`ALTER TABLE proxies ADD COLUMN scheduled_stop TEXT`,
-		`ALTER TABLE proxies ADD COLUMN jvm_flags TEXT`,
-		`ALTER TABLE proxies ADD COLUMN motd_line1 TEXT`,
-		`ALTER TABLE proxies ADD COLUMN motd_line2 TEXT`,
-		`ALTER TABLE servers ADD COLUMN minimotd_line1 TEXT`,
-		`ALTER TABLE servers ADD COLUMN minimotd_line2 TEXT`,
-		`ALTER TABLE servers ADD COLUMN jar_build INTEGER DEFAULT 0`,
-		`ALTER TABLE servers ADD COLUMN jar_hash TEXT`,
-		`ALTER TABLE servers ADD COLUMN start_on_boot INTEGER DEFAULT 0`,
-		`ALTER TABLE servers ADD COLUMN jvm_flags TEXT`,
-		`ALTER TABLE installed_plugins ADD COLUMN loader_type TEXT DEFAULT ''`,
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (
+		version INTEGER PRIMARY KEY,
+		applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`); err != nil {
+		return fmt.Errorf("failed to create schema_version table: %w", err)
 	}
 
-	recreateMigrations := []struct {
+	currentVersion := getSchemaVersion(db)
+
+	alterMigrations := map[int][]struct {
+		sql  string
+		desc string
+	}{
+		1: {
+			{`ALTER TABLE proxies ADD COLUMN forwarding_secret TEXT`, "add proxies.forwarding_secret"},
+			{`ALTER TABLE proxies ADD COLUMN canvas_x INTEGER DEFAULT 0`, "add proxies.canvas_x"},
+			{`ALTER TABLE proxies ADD COLUMN canvas_y INTEGER DEFAULT 0`, "add proxies.canvas_y"},
+			{`ALTER TABLE proxies ADD COLUMN ram_mb INTEGER DEFAULT 512`, "add proxies.ram_mb"},
+			{`ALTER TABLE proxies ADD COLUMN plugin_mc_version TEXT DEFAULT '1.21.11'`, "add proxies.plugin_mc_version"},
+			{`ALTER TABLE proxies ADD COLUMN jar_version TEXT`, "add proxies.jar_version"},
+			{`ALTER TABLE proxies ADD COLUMN jar_build INTEGER DEFAULT 0`, "add proxies.jar_build"},
+			{`ALTER TABLE proxies ADD COLUMN start_on_boot INTEGER DEFAULT 0`, "add proxies.start_on_boot"},
+			{`ALTER TABLE proxies ADD COLUMN scheduled_start TEXT`, "add proxies.scheduled_start"},
+			{`ALTER TABLE proxies ADD COLUMN scheduled_stop TEXT`, "add proxies.scheduled_stop"},
+			{`ALTER TABLE proxies ADD COLUMN jvm_flags TEXT`, "add proxies.jvm_flags"},
+			{`ALTER TABLE proxies ADD COLUMN motd_line1 TEXT`, "add proxies.motd_line1"},
+			{`ALTER TABLE proxies ADD COLUMN motd_line2 TEXT`, "add proxies.motd_line2"},
+			{`ALTER TABLE servers ADD COLUMN minimotd_line1 TEXT`, "add servers.minimotd_line1"},
+			{`ALTER TABLE servers ADD COLUMN minimotd_line2 TEXT`, "add servers.minimotd_line2"},
+			{`ALTER TABLE servers ADD COLUMN jar_build INTEGER DEFAULT 0`, "add servers.jar_build"},
+			{`ALTER TABLE servers ADD COLUMN jar_hash TEXT`, "add servers.jar_hash"},
+			{`ALTER TABLE servers ADD COLUMN start_on_boot INTEGER DEFAULT 0`, "add servers.start_on_boot"},
+			{`ALTER TABLE servers ADD COLUMN jvm_flags TEXT`, "add servers.jvm_flags"},
+			{`ALTER TABLE installed_plugins ADD COLUMN loader_type TEXT DEFAULT ''`, "add installed_plugins.loader_type"},
+		},
+	}
+
+	for version, alters := range alterMigrations {
+		if currentVersion >= version {
+			continue
+		}
+
+		var applied bool
+		for _, alter := range alters {
+			if _, err := db.Exec(alter.sql); err != nil {
+				log.Printf("Migration v%d [%s]: %v (skipping)", version, alter.desc, err)
+			} else {
+				applied = true
+			}
+		}
+
+		if applied {
+			setSchemaVersion(db, version)
+			currentVersion = version
+		}
+	}
+
+	recreateMigrations := map[int]struct {
 		name      string
 		oldTable  string
 		newTable  string
 		createDDL string
 		copyData  string
 	}{
-		{
+		2: {
 			name:     "add_unique_constraint_to_players_uuid",
 			oldTable: "players",
 			newTable: "players_new",
 			createDDL: `CREATE TABLE players_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            uuid TEXT NOT NULL UNIQUE,
-            server_id INTEGER NOT NULL,
-            joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
-        )`,
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				name TEXT NOT NULL,
+				uuid TEXT NOT NULL UNIQUE,
+				server_id INTEGER NOT NULL,
+				joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+			)`,
 			copyData: `INSERT INTO players_new (id, name, uuid, server_id, joined_at) 
-                   SELECT id, name, uuid, server_id, joined_at FROM players`,
+				SELECT id, name, uuid, server_id, joined_at FROM players`,
 		},
-		{
+		3: {
 			name:     "update_backups_table_schema",
 			oldTable: "backups",
 			newTable: "backups_new",
 			createDDL: `CREATE TABLE backups_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            size_bytes INTEGER NOT NULL,
-            archive_path TEXT NOT NULL,
-            status TEXT DEFAULT 'complete'
-        )`,
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				size_bytes INTEGER NOT NULL,
+				archive_path TEXT NOT NULL,
+				status TEXT DEFAULT 'complete'
+			)`,
 			copyData: `INSERT INTO backups_new (id, created_at, size_bytes, archive_path, status) 
-                   SELECT id, created_at, size_bytes, '', 'complete' FROM backups`,
+				SELECT id, created_at, size_bytes, '', 'complete' FROM backups`,
 		},
 	}
 
-	for _, rm := range recreateMigrations {
+	for version, rm := range recreateMigrations {
+		if currentVersion >= version {
+			continue
+		}
+
 		var shouldMigrate bool
 
 		if rm.name == "add_unique_constraint_to_players_uuid" {
@@ -244,25 +284,36 @@ func RunMigrations(db *sql.DB) error {
 		}
 
 		if !shouldMigrate {
+			setSchemaVersion(db, version)
 			continue
 		}
 
 		if _, err := db.Exec(rm.createDDL); err != nil {
+			log.Printf("Migration v%d [%s]: failed to create new table: %v", version, rm.name, err)
 			continue
 		}
 
 		if _, err := db.Exec(rm.copyData); err != nil {
-			db.Exec(fmt.Sprintf("DROP TABLE %s", rm.newTable))
+			log.Printf("Migration v%d [%s]: failed to copy data: %v", version, rm.name, err)
+			db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s", rm.newTable))
 			continue
 		}
 
-		db.Exec(fmt.Sprintf("DROP TABLE %s", rm.oldTable))
-		db.Exec(fmt.Sprintf("ALTER TABLE %s RENAME TO %s", rm.newTable, rm.oldTable))
-		db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_players_server ON %s(server_id)", rm.oldTable))
-	}
+		if _, err := db.Exec(fmt.Sprintf("DROP TABLE %s", rm.oldTable)); err != nil {
+			log.Printf("Migration v%d [%s]: failed to drop old table: %v", version, rm.name, err)
+			continue
+		}
 
-	for _, alter := range alterMigrations {
-		db.Exec(alter)
+		if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s RENAME TO %s", rm.newTable, rm.oldTable)); err != nil {
+			log.Printf("Migration v%d [%s]: failed to rename table: %v", version, rm.name, err)
+			continue
+		}
+
+		if rm.oldTable == "players" {
+			db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_players_server ON %s(server_id)", rm.oldTable))
+		}
+
+		setSchemaVersion(db, version)
 	}
 
 	db.Exec(`UPDATE installed_plugins SET loader_type = '' WHERE loader_type IS NULL`)
@@ -287,4 +338,18 @@ func RunMigrations(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func getSchemaVersion(db *sql.DB) int {
+	var version int
+	err := db.QueryRow("SELECT COALESCE(MAX(version), 0) FROM schema_version").Scan(&version)
+	if err != nil {
+		return 0
+	}
+	return version
+}
+
+func setSchemaVersion(db *sql.DB, version int) {
+	db.Exec("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", version)
+	log.Printf("Schema migration v%d applied", version)
 }

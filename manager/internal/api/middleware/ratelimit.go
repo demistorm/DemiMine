@@ -3,15 +3,17 @@ package middleware
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
 
 type RateLimiter struct {
-	attempts map[string]*Attempt
-	mu       sync.Mutex
-	limit    int
-	window   time.Duration
+	attempts  map[string]*Attempt
+	skipPaths map[string]bool
+	mu        sync.Mutex
+	limit     int
+	window    time.Duration
 }
 
 type Attempt struct {
@@ -19,11 +21,15 @@ type Attempt struct {
 	FirstSeen time.Time
 }
 
-func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+func NewRateLimiter(limit int, window time.Duration, skipPaths []string) *RateLimiter {
 	rl := &RateLimiter{
-		attempts: make(map[string]*Attempt),
-		limit:    limit,
-		window:   window,
+		attempts:  make(map[string]*Attempt),
+		limit:     limit,
+		window:    window,
+		skipPaths: make(map[string]bool),
+	}
+	for _, p := range skipPaths {
+		rl.skipPaths[p] = true
 	}
 
 	go rl.cleanup()
@@ -47,6 +53,11 @@ func (rl *RateLimiter) cleanup() {
 
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if rl.skipPaths[r.URL.Path] {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		ip := getIP(r)
 
 		rl.mu.Lock()
@@ -75,7 +86,8 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 
 func getIP(r *http.Request) string {
 	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		return forwarded
+		parts := strings.SplitN(forwarded, ",", 2)
+		return strings.TrimSpace(parts[0])
 	}
 	return r.RemoteAddr
 }
