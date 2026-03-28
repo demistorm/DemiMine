@@ -1,7 +1,28 @@
 ARG VERSION=dev
 ARG COMMIT=none
 
-# Stage 1: Build Go backend
+# Stage 1: Build Velocity plugins (DemiAuth + DemiDynamic)
+FROM eclipse-temurin:21-jdk-alpine AS plugin-builder
+
+WORKDIR /plugins
+
+COPY DemiAuth/build.gradle DemiAuth/gradle.properties DemiAuth/settings.gradle* DemiAuth/
+COPY DemiAuth/gradle/wrapper DemiAuth/gradle/wrapper/
+COPY DemiAuth/gradlew DemiAuth/
+COPY DemiAuth/src DemiAuth/src/
+
+COPY DemiDynamic/build.gradle DemiDynamic/gradle.properties DemiDynamic/settings.gradle* DemiDynamic/
+COPY DemiDynamic/gradle/wrapper DemiDynamic/gradle/wrapper/
+COPY DemiDynamic/gradlew DemiDynamic/
+COPY DemiDynamic/src DemiDynamic/src/
+
+RUN cd DemiAuth && chmod +x gradlew && ./gradlew shadowJar --no-daemon && \
+    cd /plugins/DemiDynamic && chmod +x gradlew && ./gradlew shadowJar --no-daemon && \
+    mkdir -p /output && \
+    cp /plugins/DemiAuth/build/libs/DemiAuth-*.jar /output/DemiAuth.jar && \
+    cp /plugins/DemiDynamic/build/libs/DemiDynamic-*.jar /output/DemiDynamic.jar
+
+# Stage 2: Build Go backend
 FROM golang:1.24-alpine AS backend-builder
 
 ARG VERSION
@@ -15,14 +36,15 @@ RUN go mod download
 
 COPY manager/ ./
 
-COPY DemiAuth/build/libs/DemiAuth-1.0.0.jar manager/resources/
-COPY DemiDynamic/build/libs/DemiDynamic-1.0.3.jar manager/resources/
+RUN mkdir -p resources
+COPY --from=plugin-builder /output/DemiAuth.jar resources/DemiAuth.jar
+COPY --from=plugin-builder /output/DemiDynamic.jar resources/DemiDynamic.jar
 
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT" \
     -o /demimine ./cmd/server
 
-# Stage 2: Build SvelteKit frontend
+# Stage 3: Build SvelteKit frontend
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /build
@@ -42,7 +64,7 @@ COPY webui/static ./static
 
 RUN npm run build
 
-# Stage 3: Final runtime image
+# Stage 4: Final runtime image
 FROM alpine:3.19
 
 LABEL maintainer="demimine"
