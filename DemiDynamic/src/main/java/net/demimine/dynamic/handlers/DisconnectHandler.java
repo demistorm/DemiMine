@@ -12,8 +12,6 @@ import org.slf4j.Logger;
 
 import java.util.Optional;
 
-import java.util.Optional;
-
 public class DisconnectHandler {
     private final ProxyServer server;
     private final Config config;
@@ -42,7 +40,7 @@ public class DisconnectHandler {
                 apiClient.reportPlayerLeave(player.getUniqueId().toString(), serverName);
 
                 ApiClient.ServerStatus status = apiClient.getServerStatus(serverName);
-                if (status != null && status.auto_shutdown_minutes > 0 && autoStopManager.isServerEmpty(serverName) && !config.configVar.excludedServers.contains(serverName)) {
+                if (status != null && status.auto_shutdown_minutes > 0 && autoStopManager.isServerEmpty(serverName) && !config.configVar.excludedServers.contains(serverName) && !serverName.equals(config.configVar.loginServer)) {
                     autoStopManager.scheduleStopTimer(serverName);
                 }
             }

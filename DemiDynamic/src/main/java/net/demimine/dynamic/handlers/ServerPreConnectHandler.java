@@ -49,7 +49,7 @@ public class ServerPreConnectHandler {
 
             logger.info(player.getUsername() + " attempting to connect to " + serverName);
 
-            if (!hasPermission(player)) {
+            if (!serverName.equals(config.configVar.loginServer) && !hasPermission(player)) {
                 MiniMessage mm = MiniMessage.miniMessage();
                 player.sendMessage(mm.deserialize("<red>You must authenticate first! Please reconnect and complete authentication."));
                 event.setResult(ServerPreConnectEvent.ServerResult.denied());

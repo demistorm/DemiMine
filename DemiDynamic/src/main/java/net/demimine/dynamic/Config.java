@@ -45,6 +45,7 @@ public class Config {
         configVar.managerUrl = fileConfig.getOrElse("manager_url", "http://demimine-manager:8080");
         configVar.apiKey = fileConfig.getOrElse("api_key", "");
         configVar.authPermission = fileConfig.getOrElse("auth_permission", "demimine.authenticated");
+        configVar.loginServer = fileConfig.getOrElse("login_server", "login");
         configVar.queueServer = fileConfig.getOrElse("queue_server", "nexus");
         configVar.hubServer = fileConfig.getOrElse("hub_server", "nexus");
         configVar.useHubQueue = fileConfig.getOrElse("use_hub_queue", true);
@@ -73,8 +74,9 @@ public class Config {
                "# Automatically starts/stops servers based on player activity\n\n" +
                "manager_url = \"http://demimine-manager:8080\"\n" +
                "api_key = \"\"\n\n" +
-               "auth_permission = \"demimine.authenticated\"\n\n" +
-               "queue_server = \"nexus\"\n" +
+                "auth_permission = \"demimine.authenticated\"\n" +
+                "login_server = \"login\"\n\n" +
+                "queue_server = \"nexus\"\n" +
                "hub_server = \"nexus\"\n" +
                "use_hub_queue = true\n\n" +
                "check_interval_seconds = 1\n" +
@@ -100,6 +102,7 @@ public class Config {
         public String managerUrl;
         public String apiKey;
         public String authPermission;
+        public String loginServer;
         public String queueServer;
         public String hubServer;
         public boolean useHubQueue;
