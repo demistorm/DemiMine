@@ -64,7 +64,9 @@ public class PlayerConnection {
             if (configVar.oneTimeLogin && configVar.pluginGrantsBypass && server.getPluginManager().isLoaded("luckperms")) {
                 grantBypassPermission(player);
             }
-            transferToHub(player);
+            server.getScheduler().buildTask(plugin, () -> transferToHub(player))
+                .delay(500, TimeUnit.MILLISECONDS)
+                .schedule();
             playerAttempts.remove(player.getUniqueId());
         } else {
             int attempts = playerAttempts.getOrDefault(player.getUniqueId(), 0) + 1;
@@ -104,10 +106,13 @@ public class PlayerConnection {
     
     private void transferToHub(Player player) {
         Optional<RegisteredServer> connectToServer = server.getServer(configVar.hubServer);
-        if (connectToServer.isPresent()) {
-            player.createConnectionRequest(connectToServer.get()).connectWithIndication();
-            logger.info("Player {} has authenticated", player.getUsername());
+        if (connectToServer.isEmpty()) {
+            player.sendMessage(Component.text("Hub server not found. Please contact an admin.", NamedTextColor.RED));
+            logger.error("Hub server '{}' not found in proxy configuration", configVar.hubServer);
+            return;
         }
+        player.createConnectionRequest(connectToServer.get()).connectWithIndication();
+        logger.info("Player {} has authenticated", player.getUsername());
     }
 
     @Subscribe
@@ -147,16 +152,8 @@ public class PlayerConnection {
                 return;
             }
             
-            try {
-                event.setResult(ServerPreConnectEvent.ServerResult.denied());
-                player.sendMessage(Component.text("Unable to connect to login server, transferring you to the hub server...", NamedTextColor.GREEN));
-                connectToServer.get().ping().get();
-                player.createConnectionRequest(connectToServer.get()).connectWithIndication();
-            } catch (InterruptedException | ExecutionException e) {
-                player.sendMessage(Component.text("Error connecting to hub server. Please try reconnecting later or contact an admin.", NamedTextColor.RED));
-                logger.error("Error pinging hub server: {}", e.getMessage());
-                logger.error("Make sure the hub server is online");
-            }
+            event.setResult(ServerPreConnectEvent.ServerResult.allowed(connectToServer.get()));
+            player.sendMessage(Component.text("Transferring you to the hub server...", NamedTextColor.GREEN));
         } else if (isLoginServer && player.hasPermission(configVar.bypassNode) && configVar.bypasserLoginExitMethod.equals("deny-entry")) {
             event.setResult(ServerPreConnectEvent.ServerResult.denied());
             player.sendMessage(Component.text("Cannot connect to the login server, try connecting to a different server", NamedTextColor.RED));

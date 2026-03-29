@@ -10,6 +10,8 @@ DemiMine manages multiple Minecraft backend servers (Paper, Purpur, Fabric, NeoF
 ### 1. Create a docker-compose.yml
 
 ```yaml
+name: demimine
+
 networks:
   demimine_internal:
     driver: bridge
