@@ -1,4 +1,5 @@
 # DemiMine
+NOTE: This is not some fancy production what have you, this was "vibecoded" by me for my personal use being specifically suited for Minecraft servers and networks running on home computers. It may fit a large variety of usecases and I hope it can be helpful for somebody :) For all intents and purposes, this is just uploaded here for my convienence and if it is helpful for somebody, awesome! Much of the README was also written by AI but at a glance it looks accurate enough. Anyways, there's my "warning" haha. 
 
 A fully-isolated Minecraft proxy and server manager with a web UI, deployed via Docker Compose.
 
@@ -15,7 +16,7 @@ networks:
 
 services:
   manager:
-    image: ghcr.io/YOUR_GITHUB_USERNAME/demimine:main
+    image: ghcr.io/demistorm/demimine:main
     container_name: demimine-manager
     restart: unless-stopped
     stop_grace_period: 60s
@@ -70,10 +71,9 @@ Go to `http://localhost:8025` and set up your admin username and password.
 | `RCON_PASSWORD` | *(required)* | Password for RCON access to all servers. Must be set. |
 | `DEMIMINE_HOST_SERVERS_DIR` | `/servers` | Absolute path on host where server data is stored |
 | `DEMIMINE_NETWORK` | `demimine_internal` | Docker network name for internal communication |
-| `DEMIMINE_MAX_RAM_MB` | `16384` | Maximum total RAM for all Minecraft servers combined |
+| `DEMIMINE_MAX_RAM_MB` | `16384` | Maximum total RAM for all Minecraft servers combined (this only applies if DemiDynamic is used) |
 | `DEMIMINE_PORT` | `8080` | Port the web UI listens on inside the container |
 | `TZ` | `America/Chicago` | Timezone for server containers |
-| `DEMIMINE_API_SECRET` | *(auto-generated)* | Secret for plugin API authentication. Auto-generated if not set. |
 
 ### Port Mapping
 
@@ -88,7 +88,7 @@ The Velocity proxy port (default `25565`) is set when creating a proxy in the we
 | `/data` | `./data` | SQLite database and settings |
 | `/servers` | `./servers` | Server files, configs, worlds |
 | `/backups` | `./backups` | Server backup archives |
-| `/java` | `./java` | Lazy-loaded Java runtimes |
+| `/java` | `./java` | Java runtimes |
 
 ## Building from Source
 
