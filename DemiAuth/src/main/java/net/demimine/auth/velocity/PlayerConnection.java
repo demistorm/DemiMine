@@ -20,7 +20,6 @@ import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.node.Node;
 import org.slf4j.Logger;
 
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -33,7 +32,7 @@ public class PlayerConnection {
     private final ProxyServer server;
     private final Object plugin;
     private final Logger logger;
-    static Map<Integer, String> hashScheduledPlayerTask = new HashMap<>();
+    static Map<UUID, ScheduledTask> scheduledKicks = new HashMap<>();
     static Map<UUID, Integer> playerAttempts = new HashMap<>();
 
     public PlayerConnection(ProxyServer server, Object plugin, Logger logger) {
@@ -166,8 +165,11 @@ public class PlayerConnection {
         RegisteredServer connectedServer = event.getServer();
  
         if (connectedServer.getServerInfo().getName().equals(configVar.loginServer) && !player.hasPermission(configVar.bypassNode)) {
-            ScheduledTask task = server.getScheduler().buildTask(plugin, () -> player.disconnect(Component.text(configVar.kickMessage))).delay(configVar.kickTimeout, TimeUnit.SECONDS).schedule();
-            hashScheduledPlayerTask.put(player.getUniqueId().hashCode(), String.valueOf(task.toString().hashCode()));
+            ScheduledTask task = server.getScheduler().buildTask(plugin, () -> {
+                player.disconnect(Component.text(configVar.kickMessage));
+                scheduledKicks.remove(player.getUniqueId());
+            }).delay(configVar.kickTimeout, TimeUnit.SECONDS).schedule();
+            scheduledKicks.put(player.getUniqueId(), task);
         }
         if (connectedServer.getServerInfo().getName().equals(configVar.loginServer) && player.hasPermission(configVar.bypassNode)) {
             player.sendMessage(Component.text("Type the password in chat to continue", NamedTextColor.YELLOW));
@@ -183,16 +185,10 @@ public class PlayerConnection {
             return;
         }
         if (connectedServer.getServerInfo().getName().equals(configVar.hubServer) && Objects.equals(transferServer.get().getServerInfo().getName(), configVar.loginServer)) {
-            server.getScheduler().buildTask(plugin, () -> {
-                Collection<ScheduledTask> tasks = server.getScheduler().tasksByPlugin(plugin);
-                for (ScheduledTask cancelTask : tasks) {
-                    if (hashScheduledPlayerTask.containsKey(player.getUniqueId().hashCode())) {
-                        if (!cancelTask.status().toString().equals("FINISHED")) {
-                            cancelTask.cancel();
-                        }
-                    }
-                }
-            }).delay(1, TimeUnit.SECONDS).schedule();
+            ScheduledTask task = scheduledKicks.remove(player.getUniqueId());
+            if (task != null) {
+                task.cancel();
+            }
         }
     }
  
