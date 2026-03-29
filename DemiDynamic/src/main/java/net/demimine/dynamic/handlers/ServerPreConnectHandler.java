@@ -152,6 +152,18 @@ public class ServerPreConnectHandler {
     private void startServerAndQueue(Player player, String serverName, String currentServerName, boolean inHub) {
         ApiClient.CanStartResponse canStart = apiClient.canStartServer(serverName);
 
+        if (canStart == null) {
+            MiniMessage mm = MiniMessage.miniMessage();
+            String message = "<red>Server manager is unavailable. Please try again later.";
+            if (inHub) {
+                player.sendMessage(mm.deserialize(message));
+            } else {
+                player.disconnect(mm.deserialize(message));
+            }
+            queueManager.removeFromQueue(player);
+            return;
+        }
+
         if (!canStart.can_start) {
             List<String> toStop = autoStopManager.getServersWithPendingStopTimers();
             if (!toStop.isEmpty()) {
@@ -171,7 +183,7 @@ public class ServerPreConnectHandler {
             }
         }
 
-        if (canStart.can_start) {
+        if (canStart != null && canStart.can_start) {
             boolean started = apiClient.startServer(serverName);
             if (started) {
                 waitForServerReady(player, serverName, currentServerName, inHub);

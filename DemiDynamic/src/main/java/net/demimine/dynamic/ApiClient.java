@@ -206,6 +206,7 @@ public class ApiClient {
                 List<AutoShutdownServer> servers = gson.fromJson(body, listType);
                 return servers;
             }
+            logger.warn("Failed to get auto-shutdown servers: HTTP " + response.statusCode() + " - " + response.body());
         } catch (IOException | InterruptedException e) {
             logger.warn("Error getting auto-shutdown servers", e);
             Thread.currentThread().interrupt();
@@ -228,6 +229,7 @@ public class ApiClient {
                 String body = response.body();
                 return gson.fromJson(body, ServerStatus.class);
             }
+            logger.warn("Failed to get server status for " + serverName + ": HTTP " + response.statusCode() + " - " + response.body());
         } catch (IOException | InterruptedException e) {
             logger.warn("Error getting server status for " + serverName, e);
             Thread.currentThread().interrupt();
@@ -250,8 +252,9 @@ public class ApiClient {
                 String body = response.body();
                 return gson.fromJson(body, CanStartResponse.class);
             }
+            logger.error("Failed to check can-start for " + serverName + ": HTTP " + response.statusCode() + " - " + response.body());
         } catch (IOException | InterruptedException e) {
-            logger.warn("Error checking if server can start: " + serverName, e);
+            logger.error("Error checking if server can start: " + serverName, e);
             Thread.currentThread().interrupt();
         }
         return null;
