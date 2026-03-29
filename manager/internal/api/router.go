@@ -29,10 +29,15 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	r.Use(middleware.Logging)
 	r.Use(middleware.CORS([]string{"*"}))
 
-	rateLimiter := middleware.NewRateLimiter(500, 15*time.Minute, []string{
+	rateLimiter := middleware.NewRateLimiter(5000, 15*time.Minute, []string{
 		"/health",
 		"/api/ws",
 		"/api/system/resources",
+		"/api/auth/setup",
+		"/api/auth/login",
+		"/api/auth/status",
+		"/api/versions",
+		"/api/java",
 	})
 	r.Use(rateLimiter.Middleware)
 
