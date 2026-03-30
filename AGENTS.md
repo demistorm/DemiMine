@@ -157,7 +157,7 @@ docker compose up -d
 ## Project Structure
 
 ```
-DemiMine/
+DemiMine_Dev/
 ├── manager/                    # Go backend
 │   ├── cmd/server/            # Entry point
 │   └── internal/
