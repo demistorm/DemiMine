@@ -17,6 +17,9 @@
 	let creating = false;
 	let successMessage = '';
 	let errorMessage = '';
+	let newKey: string | null = null;
+	let showKeyModal = false;
+	let copiedKey = false;
 
 	onMount(async () => {
 		await loadGlobalSettings();
@@ -44,8 +47,9 @@
 			const result = await api.post<APIKey>('/api/api-keys', { name: newName });
 			apiKeys = [result, ...apiKeys];
 			newName = '';
-			successMessage = 'API key created successfully!';
-			setTimeout(() => successMessage = '', 3000);
+			newKey = result.key;
+			showKeyModal = true;
+			copiedKey = false;
 		} catch (err: any) {
 			errorMessage = 'Failed to create API key: ' + (err.message || 'Unknown error');
 		} finally {
@@ -66,10 +70,17 @@
 		}
 	}
 
-	function copyToClipboard(key: string) {
-		navigator.clipboard.writeText(key);
-		successMessage = 'API key copied to clipboard!';
-		setTimeout(() => successMessage = '', 3000);
+	function copyNewKey() {
+		if (!newKey) return;
+		navigator.clipboard.writeText(newKey);
+		copiedKey = true;
+		setTimeout(() => copiedKey = false, 2000);
+	}
+
+	function closeKeyModal() {
+		showKeyModal = false;
+		newKey = null;
+		copiedKey = false;
 	}
 </script>
 
@@ -116,7 +127,6 @@
 							</div>
 						</div>
 						<div class="api-key-actions">
-							<button class="btn btn-sm" on:click={() => copyToClipboard(key.key)}>📋 Copy Key</button>
 							<button class="btn btn-sm btn-danger" on:click={() => deleteAPIKey(key.id, key.name)}>🗑 Delete</button>
 						</div>
 					</div>
@@ -139,6 +149,26 @@
 				<button class="btn primary" on:click={createAPIKey} disabled={creating || !newName.trim()}>
 					{creating ? 'Creating...' : 'Generate API Key'}
 				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if showKeyModal && newKey}
+		<!-- svelte-ignore a11y-click-events-have-key-events -->
+		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<div class="modal-overlay" on:click={closeKeyModal}>
+			<div class="modal-content" on:click|stopPropagation>
+				<h3>API Key Created</h3>
+				<p class="modal-warning">Copy this key now. It will not be shown again.</p>
+				<div class="key-display">
+					<code>{newKey}</code>
+				</div>
+				<div class="modal-actions">
+					<button class="btn primary" on:click={copyNewKey}>
+						{copiedKey ? '✓ Copied!' : '📋 Copy Key'}
+					</button>
+					<button class="btn" on:click={closeKeyModal}>Done</button>
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -336,5 +366,57 @@
 
 	.btn-danger:hover {
 		background-color: #e53935;
+	}
+
+	.modal-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.7);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+	}
+
+	.modal-content {
+		background: var(--bg-secondary);
+		border: 3px solid var(--border);
+		padding: 2rem;
+		max-width: 600px;
+		width: 90%;
+	}
+
+	.modal-content h3 {
+		color: var(--text-primary);
+		font-size: 1.25rem;
+		margin: 0 0 0.75rem;
+	}
+
+	.modal-warning {
+		color: var(--error);
+		font-weight: 600;
+		margin: 0 0 1.5rem;
+		font-size: 0.9375rem;
+	}
+
+	.key-display {
+		background: var(--bg-primary);
+		border: 3px solid var(--border);
+		padding: 1rem;
+		margin-bottom: 1.5rem;
+		overflow-x: auto;
+	}
+
+	.key-display code {
+		font-family: monospace;
+		font-size: 0.875rem;
+		word-break: break-all;
+		color: var(--text-primary);
+	}
+
+	.modal-actions {
+		display: flex;
+		gap: 0.75rem;
+		justify-content: flex-end;
 	}
 </style>
