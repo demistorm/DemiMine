@@ -1,5 +1,5 @@
 # DemiMine
-NOTE: This is not some fancy production what have you, this was "vibecoded" by me for my personal use being specifically suited for Minecraft servers and networks running on home computers. It may fit a large variety of usecases and I hope it can be helpful for somebody :) For all intents and purposes, this is just uploaded here for my convienence and if it is helpful for somebody, awesome! Much of the README was also written by AI but at a glance it looks accurate enough. Anyways, there's my "warning" haha. 
+**NOTE: This is not some fancy production what have you, this was "vibecoded" by me for my personal use being specifically suited for Minecraft servers and networks running on home computers. It may fit a large variety of usecases and I hope it can be helpful for somebody :) For all intents and purposes, this is just uploaded here for my convienence and if it is helpful for somebody, awesome! Much of the README was also written by AI but at a glance it looks accurate enough. Anyways, there's my "warning" haha.**
 
 A fully-isolated Minecraft proxy and server manager with a web UI, deployed via Docker Compose.
 
