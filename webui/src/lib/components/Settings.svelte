@@ -430,6 +430,113 @@
 	</div>
 
 	<div class="section">
+		<h2>Automation</h2>
+		
+		<div class="field">
+			<label class="checkbox-label">
+				<input type="checkbox" bind:checked={startOnBoot} />
+				<span>Start on boot</span>
+			</label>
+			<span class="hint">Automatically start this server when the manager starts</span>
+		</div>
+		
+		<div class="field">
+			<label class="checkbox-label">
+				<input type="checkbox" bind:checked={scheduleEnabled} />
+				<span>Enable scheduled start/stop</span>
+			</label>
+			<span class="hint">Automatically start and stop this server at specific times</span>
+		</div>
+
+		{#if scheduleEnabled}
+			<div class="field schedule-fields">
+				<label>Start Time</label>
+				<div class="time-input">
+					<select bind:value={scheduledStartHour} class="time-field">
+						{#each Array(24) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+					<span class="time-separator">:</span>
+					<select bind:value={scheduledStartMinute} class="time-field">
+						{#each Array(60) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+
+			<div class="field schedule-fields">
+				<label>Stop Time</label>
+				<div class="time-input">
+					<select bind:value={scheduledStopHour} class="time-field">
+						{#each Array(24) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+					<span class="time-separator">:</span>
+					<select bind:value={scheduledStopMinute} class="time-field">
+						{#each Array(60) as _, i}
+							<option value={i}>{i.toString().padStart(2, '0')}</option>
+						{/each}
+					</select>
+				</div>
+				<span class="hint">24-hour format (00:00 - 23:59)</span>
+			</div>
+		{/if}
+	</div>
+
+	<div class="section">
+		<h2>Network</h2>
+		
+		<div class="field">
+			<label for="port">Host Port</label>
+			<input type="number" id="port" value={server.host_port || 'Not exposed'} disabled />
+			<span class="hint">
+				{#if server.host_port}
+					Server is accessible on port {server.host_port}
+				{:else}
+					Server is behind a proxy (not directly exposed)
+				{/if}
+			</span>
+		</div>
+
+		<div class="field">
+			<label for="proxy">Proxy Assignment</label>
+			<input 
+				type="text" 
+				id="proxy" 
+				value={server.proxy_name || 'Standalone (no proxy)'} 
+				disabled 
+			/>
+		</div>
+	</div>
+
+	{#if server.proxy_id}
+		<div class="section">
+			<h2>MiniMOTD Configuration</h2>
+
+			<div class="field">
+				<label for="minimotdLine1">Line 1</label>
+				<input type="text" id="minimotdLine1" bind:value={minimotdLine1} placeholder="e.g., &lt;blue&gt;Welcome!&lt;/blue&gt;" />
+				<span class="hint">MiniMOTD will apply color codes automatically</span>
+			</div>
+
+			<div class="field">
+				<label for="minimotdLine2">Line 2</label>
+				<input type="text" id="minimotdLine2" bind:value={minimotdLine2} placeholder="e.g., &lt;gradient:blue:red&gt;Custom message&lt;/gradient&gt;" />
+				<span class="hint">MiniMOTD will apply color codes automatically</span>
+			</div>
+
+			<div class="field">
+				<div class="info-box">
+					<strong>Note:</strong> Changes to these lines will update the MiniMOTD configuration for this server in the proxy. If you leave both fields blank, the MiniMOTD configuration will be deleted.
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<div class="section">
 		<h2 class="collapsible-header" on:click={() => jvmFlagsOpen = !jvmFlagsOpen}>
 			<span>Java Flags (Advanced)</span>
 			<span class="chevron" class:open={jvmFlagsOpen}>&#9654;</span>

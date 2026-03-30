@@ -4,6 +4,7 @@
 #   Example: ./data:/data  →  /mnt/nas/demimine-data:/data
 # - If you change ./servers, also update DEMIMINE_HOST_SERVERS_DIR below
 # - The right side (/data, /servers, etc.) must stay the same, these are fixed container paths
+name: demimine
 
 networks:
   demimine_internal:
