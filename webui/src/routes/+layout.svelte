@@ -5,7 +5,7 @@
 	import { page } from '$app/stores';
 	import { token } from '$lib/stores/auth';
 	import { resourcesApi, type SystemResources, getToken } from '$lib/api';
-	import { backupStatus, isBackupRunning, backupOperationLabel } from '$lib/stores/servers';
+	import { backupStatus, isBackupRunning, backupOperationLabel, updateProxyStatus } from '$lib/stores/servers';
 	import { ws } from '$lib/websocket';
 	import { inputMode } from '$lib/stores/inputMode';
 	import { settingsApi } from '$lib/api';
@@ -59,6 +59,14 @@
 		});
 	}
 
+	function setupProxyStatusHandler() {
+		ws.on('proxy_status', (message: any) => {
+			if (message.proxy_id && message.status) {
+				updateProxyStatus(message.proxy_id, message.status);
+			}
+		});
+	}
+
 	async function connectWebSocket() {
 		if (wsSetup) return;
 		const authToken = getToken();
@@ -68,6 +76,7 @@
 			ws.disconnect();
 			await ws.connect();
 			setupBackupStatusHandler();
+			setupProxyStatusHandler();
 			wsSetup = true;
 		} catch (e) {
 			console.error('WebSocket connection failed:', e);

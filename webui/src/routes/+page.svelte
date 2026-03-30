@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { servers, proxies, loadServers, loadProxies, updateServerPosition, updateServerStatus, deleteServerFromStore, updateProxyPosition, deleteProxyFromStore } from '$lib/stores/servers';
+	import { servers, proxies, loadServers, loadProxies, updateServerPosition, updateServerStatus, deleteServerFromStore, updateProxyPosition, deleteProxyFromStore, updateProxyStatus } from '$lib/stores/servers';
 	import { dragPositions } from '$lib/stores/dragPositions';
 	import { backgroundTextureUrl, serverTileTextureUrl, proxyTileTextureUrl, globalSettings, loadBackgroundTexture, loadServerTileTexture, loadProxyTileTexture, loadGlobalSettings } from '$lib/stores/settings';
 	import { api, type Server, type Proxy } from '$lib/api';
@@ -271,21 +271,23 @@
         }
     }
 
-    async function handleProxyStart(proxy: Proxy) {
-        try {
-            await api.post(`/api/proxies/${proxy.id}/start`);
-        } catch (err) {
-            console.error('Failed to start proxy:', err);
-        }
-    }
+	async function handleProxyStart(proxy: Proxy) {
+		try {
+			await api.post(`/api/proxies/${proxy.id}/start`);
+			updateProxyStatus(proxy.id, 'running');
+		} catch (err) {
+			console.error('Failed to start proxy:', err);
+		}
+	}
 
-    async function handleProxyStop(proxy: Proxy) {
-        try {
-            await api.post(`/api/proxies/${proxy.id}/stop`);
-        } catch (err) {
-            console.error('Failed to stop proxy:', err);
-        }
-    }
+	async function handleProxyStop(proxy: Proxy) {
+		try {
+			await api.post(`/api/proxies/${proxy.id}/stop`);
+			updateProxyStatus(proxy.id, 'stopped');
+		} catch (err) {
+			console.error('Failed to stop proxy:', err);
+		}
+	}
 
     async function handleProxyDelete(proxy: Proxy) {
         try {

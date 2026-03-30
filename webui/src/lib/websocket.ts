@@ -1,6 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-type MessageType = 'subscribe' | 'unsubscribe' | 'command' | 'proxy_command' | 'server_status' | 'player_join' | 'player_leave' | 'log' | 'crash' | 'backup_status';
+type MessageType = 'subscribe' | 'unsubscribe' | 'command' | 'proxy_command' | 'server_status' | 'proxy_status' | 'player_join' | 'player_leave' | 'log' | 'crash' | 'backup_status';
 
 interface Message {
 	type: MessageType;
