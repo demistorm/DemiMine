@@ -30,14 +30,15 @@ func getTZ() string {
 }
 
 type ServerContainerConfig struct {
-	Name        string
-	ServerType  string
-	Version     string
-	RAMMB       int
-	JVMFlags    string
-	ServerPath  string
-	NetworkName string
-	HostPort    int
+	Name         string
+	ServerType   string
+	Version      string
+	RAMMB        int
+	JVMFlags     string
+	JavaOverride string
+	ServerPath   string
+	NetworkName  string
+	HostPort     int
 }
 
 func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerConfig) (string, error) {
@@ -65,6 +66,9 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 	}
 
 	javaVersion := java.GetRequiredJavaVersionForServerType(cfg.ServerType, cfg.Version)
+	if cfg.JavaOverride != "" {
+		javaVersion = cfg.JavaOverride
+	}
 	javaImage := "eclipse-temurin:21-jre-alpine"
 	switch javaVersion {
 	case "8":

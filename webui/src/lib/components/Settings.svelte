@@ -26,6 +26,16 @@
 	let scheduledStopMinute = server.scheduled_stop ? parseInt(server.scheduled_stop.split(':')[1]) : 0;
 	let jvmFlags = server.jvm_flags || '';
 	let jvmFlagsOpen = false;
+	let javaOverride = server.java_override || '';
+	let detectedJavaVersion = '';
+
+	const javaVersions = [
+		{ value: '', label: 'Auto (detected)' },
+		{ value: '8', label: 'Java 8' },
+		{ value: '17', label: 'Java 17' },
+		{ value: '21', label: 'Java 21' },
+		{ value: '25', label: 'Java 25' },
+	];
 
 	let updateInfo: JarUpdateInfo | null = null;
 	let checkingUpdate = false;
@@ -100,8 +110,14 @@
 		}
 	}
 
-	onMount(() => {
+	onMount(async () => {
 		checkJarUpdate();
+		try {
+			const res = await api.get<{ java_version: string }>(`/api/java/required?mc_version=${encodeURIComponent(server.version)}&server_type=${encodeURIComponent(server.type)}`);
+			detectedJavaVersion = res.java_version;
+		} catch (e) {
+			console.error('Failed to detect Java version:', e);
+		}
 	});
 
 	async function saveChanges() {
@@ -135,6 +151,10 @@
 
 			if (jvmFlags !== (server.jvm_flags || '')) {
 				body.jvm_flags = jvmFlags;
+			}
+
+			if (javaOverride !== (server.java_override || '')) {
+				body.java_override = javaOverride || null;
 			}
 
 			await api.patch(`/api/servers/${server.id}`, body);
@@ -535,6 +555,19 @@
 			</div>
 		</div>
 	{/if}
+
+	<div class="section">
+		<h2>Java Version</h2>
+		<div class="field">
+			<label for="javaOverride">Java Runtime</label>
+			<select id="javaOverride" bind:value={javaOverride}>
+				{#each javaVersions as jv}
+					<option value={jv.value}>{jv.value === '' && detectedJavaVersion ? `${jv.label}: Java ${detectedJavaVersion}` : jv.label}</option>
+				{/each}
+			</select>
+			<span class="hint">Override the auto-detected Java version used to run this server. Requires a restart to take effect.</span>
+		</div>
+	</div>
 
 	<div class="section">
 		<h2 class="collapsible-header" on:click={() => jvmFlagsOpen = !jvmFlagsOpen}>
@@ -1032,6 +1065,27 @@
 
 	.mobile .time-input {
 		max-width: 100%;
+	}
+
+	.field select {
+		width: 100%;
+		padding: 0.625rem 0.875rem;
+		background-color: var(--bg-primary);
+		border: 3px solid var(--border);
+		border-radius: 0;
+		color: var(--text-primary);
+		font-size: 0.9375rem;
+		color-scheme: dark;
+	}
+
+	.field select:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
+
+	.field select option {
+		background-color: var(--bg-primary);
+		color: var(--text-primary);
 	}
 
 	.mobile .save-bar {

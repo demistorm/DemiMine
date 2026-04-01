@@ -82,9 +82,11 @@ type NeoForgeVersionResponse struct {
 	Versions []string `json:"versions"`
 }
 
-func GetPaperVersions() ([]VersionInfo, error) {
-	if versions, ok := paperCache.get(); ok {
-		return versions, nil
+func GetPaperVersions(includeAll bool) ([]VersionInfo, error) {
+	if !includeAll {
+		if versions, ok := paperCache.get(); ok {
+			return versions, nil
+		}
 	}
 
 	resp, err := httpClient.Get("https://api.papermc.io/v2/projects/paper")
@@ -133,7 +135,9 @@ func GetPaperVersions() ([]VersionInfo, error) {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
-	versions = filterSupersededPreReleases(versions)
+	if !includeAll {
+		versions = filterSupersededPreReleases(versions)
+	}
 
 	paperCache.set(versions)
 	return versions, nil
@@ -172,9 +176,11 @@ func GetPurpurVersions() ([]VersionInfo, error) {
 	return versions, nil
 }
 
-func GetFabricVersions() ([]VersionInfo, error) {
-	if versions, ok := fabricCache.get(); ok {
-		return versions, nil
+func GetFabricVersions(includeAll bool) ([]VersionInfo, error) {
+	if !includeAll {
+		if versions, ok := fabricCache.get(); ok {
+			return versions, nil
+		}
 	}
 
 	resp, err := httpClient.Get("https://meta.fabricmc.net/v2/versions/game")
@@ -193,7 +199,7 @@ func GetFabricVersions() ([]VersionInfo, error) {
 
 	var versions []VersionInfo
 	for _, v := range data {
-		if isOldStyleWeeklySnapshot(v.Version) || strings.Contains(v.Version, "_unobfuscated") {
+		if !includeAll && (isOldStyleWeeklySnapshot(v.Version) || strings.Contains(v.Version, "_unobfuscated")) {
 			continue
 		}
 		versions = append(versions, VersionInfo{
@@ -207,15 +213,19 @@ func GetFabricVersions() ([]VersionInfo, error) {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
-	versions = filterSupersededPreReleases(versions)
+	if !includeAll {
+		versions = filterSupersededPreReleases(versions)
+	}
 
 	fabricCache.set(versions)
 	return versions, nil
 }
 
-func GetNeoForgeVersions() ([]VersionInfo, error) {
-	if versions, ok := neoforgeCache.get(); ok {
-		return versions, nil
+func GetNeoForgeVersions(includeAll bool) ([]VersionInfo, error) {
+	if !includeAll {
+		if versions, ok := neoforgeCache.get(); ok {
+			return versions, nil
+		}
 	}
 
 	resp, err := httpClient.Get("https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge")
@@ -256,7 +266,9 @@ func GetNeoForgeVersions() ([]VersionInfo, error) {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
 	})
 
-	versions = filterSupersededPreReleases(versions)
+	if !includeAll {
+		versions = filterSupersededPreReleases(versions)
+	}
 
 	neoforgeCache.set(versions)
 	return versions, nil
@@ -305,16 +317,16 @@ func GetForgeVersions() ([]VersionInfo, error) {
 	return versions, nil
 }
 
-func GetVersions(serverType string) ([]VersionInfo, error) {
+func GetVersions(serverType string, includeAll bool) ([]VersionInfo, error) {
 	switch strings.ToLower(serverType) {
 	case "paper":
-		return GetPaperVersions()
+		return GetPaperVersions(includeAll)
 	case "purpur":
 		return GetPurpurVersions()
 	case "fabric":
-		return GetFabricVersions()
+		return GetFabricVersions(includeAll)
 	case "neoforge":
-		return GetNeoForgeVersions()
+		return GetNeoForgeVersions(includeAll)
 	case "forge":
 		return GetForgeVersions()
 	case "nanolimbo":

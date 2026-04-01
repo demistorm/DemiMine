@@ -2,6 +2,7 @@ package mc
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -69,25 +70,25 @@ func ConfigureFabricProxy(serverPath, mcVersion, forwardingSecret string) error 
 
 	fabricAPIFilename, err := GetModrinthModFilename("fabric-api", mcVersion, "fabric")
 	if err != nil {
-		return fmt.Errorf("failed to get Fabric API filename: %w", err)
-	}
-
-	fabricAPIModPath := filepath.Join(modsDir, fabricAPIFilename)
-	if _, err := os.Stat(fabricAPIModPath); os.IsNotExist(err) {
-		if err := DownloadModrinthMod("fabric-api", mcVersion, "fabric", fabricAPIModPath); err != nil {
-			return fmt.Errorf("failed to download Fabric API: %w", err)
+		log.Printf("Warning: Fabric API not available for %s (%v), skipping auto-install", mcVersion, err)
+	} else {
+		fabricAPIModPath := filepath.Join(modsDir, fabricAPIFilename)
+		if _, err := os.Stat(fabricAPIModPath); os.IsNotExist(err) {
+			if err := DownloadModrinthMod("fabric-api", mcVersion, "fabric", fabricAPIModPath); err != nil {
+				log.Printf("Warning: Failed to download Fabric API: %v", err)
+			}
 		}
 	}
 
 	filename, err := GetModrinthModFilename("fabricproxy-lite", mcVersion, "fabric")
 	if err != nil {
-		return fmt.Errorf("failed to get FabricProxy-Lite filename: %w", err)
-	}
-
-	modPath := filepath.Join(modsDir, filename)
-	if _, err := os.Stat(modPath); os.IsNotExist(err) {
-		if err := DownloadModrinthMod("fabricproxy-lite", mcVersion, "fabric", modPath); err != nil {
-			return fmt.Errorf("failed to download FabricProxy-Lite: %w", err)
+		log.Printf("Warning: FabricProxy-Lite not available for %s (%v), skipping auto-install", mcVersion, err)
+	} else {
+		modPath := filepath.Join(modsDir, filename)
+		if _, err := os.Stat(modPath); os.IsNotExist(err) {
+			if err := DownloadModrinthMod("fabricproxy-lite", mcVersion, "fabric", modPath); err != nil {
+				log.Printf("Warning: Failed to download FabricProxy-Lite: %v", err)
+			}
 		}
 	}
 

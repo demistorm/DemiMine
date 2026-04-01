@@ -256,6 +256,7 @@ export interface Server {
 	minimotd_line1: string | null;
 	minimotd_line2: string | null;
 	jvm_flags: string | null;
+	java_override: string | null;
 	start_on_boot: number;
 	created_at: string;
 	jar_build: number;

@@ -202,6 +202,9 @@ func RunMigrations(db *sql.DB) error {
 			{`ALTER TABLE servers ADD COLUMN jvm_flags TEXT`, "add servers.jvm_flags"},
 			{`ALTER TABLE installed_plugins ADD COLUMN loader_type TEXT DEFAULT ''`, "add installed_plugins.loader_type"},
 		},
+		4: {
+			{`ALTER TABLE servers ADD COLUMN java_override TEXT`, "add servers.java_override"},
+		},
 	}
 
 	for version, alters := range alterMigrations {

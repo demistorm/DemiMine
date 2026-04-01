@@ -17,8 +17,9 @@ func NewVersionsHandler() *VersionsHandler {
 
 func (h *VersionsHandler) List(w http.ResponseWriter, r *http.Request) {
 	serverType := chi.URLParam(r, "type")
+	includeAll := r.URL.Query().Get("all") == "true"
 
-	versions, err := mc.GetVersions(serverType)
+	versions, err := mc.GetVersions(serverType, includeAll)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)

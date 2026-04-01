@@ -14,6 +14,19 @@
 	let versions: string[] = [];
 	let versionsLoading = false;
 	let versionDropdownOpen = false;
+	let showSnapshots = false;
+
+	$: {
+		if (showSnapshots !== undefined && type && step === 1) {
+			loadVersions(showSnapshots);
+		}
+	}
+
+	$: {
+		if (show && $proxies.length === 0) {
+			loadProxies();
+		}
+	}
 
 	let name = '';
 	let type = 'paper';
@@ -39,7 +52,8 @@
 
 	$: {
 		if (type && step === 1) {
-			loadVersions();
+			showSnapshots = false;
+			loadVersions(false);
 		}
 	}
 
@@ -49,14 +63,19 @@
 		}
 	}
 
-	async function loadVersions() {
+	async function loadVersions(includeAll: boolean) {
 		versionsLoading = true;
 		try {
-			const response = await api.get<{ versions: ({ version: string } | string)[] }>(`/api/versions/${type}`);
+			const query = includeAll ? '?all=true' : '';
+			const response = await api.get<{ versions: ({ version: string; stable?: boolean } | string)[] }>(`/api/versions/${type}${query}`);
 			const rawVersions = response.versions || [];
-			versions = rawVersions.map(v => typeof v === 'string' ? v : v.version);
+			versions = rawVersions.map(v => ({
+				version: typeof v === 'string' ? v : v.version,
+				stable: typeof v === 'string' ? true : (v.stable !== false)
+			}));
 			if (versions.length > 0) {
-				version = versions[0];
+				const firstStable = versions.find(v => v.stable);
+				version = (firstStable || versions[0]).version;
 			}
 		} catch (err) {
 			console.error('Failed to load versions:', err);
@@ -202,6 +221,7 @@
         proxyId = null;
         domain = '';
         portConflictUsedBy = null;
+        showSnapshots = false;
         clearIcon();
         minimotdLine1 = '';
         minimotdLine2 = '';
@@ -292,17 +312,23 @@
 												class="version-option"
 												class:selected={v === version}
 												on:click|stopPropagation={() => {
-													version = v;
+													version = v.version;
 													versionDropdownOpen = false;
 												}}
 											>
-												{v}
+												{v.version}
 											</li>
 										{/each}
 									</ul>
 								{/if}
 							</div>
 						{/if}
+						<div class="checkbox-group">
+							<label class="checkbox-label">
+								<input type="checkbox" bind:checked={showSnapshots} />
+								<span>Show snapshot versions</span>
+							</label>
+						</div>
 					</div>
 
 					<div class="actions">
@@ -723,6 +749,23 @@
 	.version-option.selected {
 		background-color: var(--accent);
 		color: white;
+	}
+
+	.checkbox-group {
+		margin-top: 0.5rem;
+	}
+
+	.checkbox-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: var(--text-secondary);
+		font-size: 0.8125rem;
+		cursor: pointer;
+	}
+
+	.checkbox-label input[type="checkbox"] {
+		width: auto;
 	}
 
 	.radio-group {

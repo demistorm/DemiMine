@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestCompareVersions(t *testing.T) {
@@ -77,7 +78,7 @@ func TestExtractMCVersionFromNeoForge(t *testing.T) {
 }
 
 func TestGetVersionsUnsupported(t *testing.T) {
-	_, err := GetVersions("unsupported")
+	_, err := GetVersions("unsupported", false)
 	if err == nil {
 		t.Error("GetVersions should return error for unsupported type")
 	}
@@ -86,7 +87,7 @@ func TestGetVersionsUnsupported(t *testing.T) {
 func TestGetVersionsSupportedTypes(t *testing.T) {
 	types := []string{"paper", "purpur", "fabric", "neoforge", "forge"}
 	for _, serverType := range types {
-		_, err := GetVersions(serverType)
+		_, err := GetVersions(serverType, false)
 		if err != nil {
 			t.Logf("GetVersions(%q) error (may be network): %v", serverType, err)
 		}
@@ -112,6 +113,8 @@ func TestVersionInfoStruct(t *testing.T) {
 }
 
 func TestGetPaperVersionsMock(t *testing.T) {
+	paperCache.versions = nil
+	paperCache.fetchedAt = time.Time{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/projects/paper":
@@ -142,7 +145,7 @@ func TestGetPaperVersionsMock(t *testing.T) {
 	}
 	defer func() { httpClient = oldClient }()
 
-	versions, err := GetPaperVersions()
+	versions, err := GetPaperVersions(false)
 	if err != nil {
 		t.Fatalf("GetPaperVersions() error = %v", err)
 	}
@@ -174,6 +177,8 @@ func TestGetPaperVersionsMock(t *testing.T) {
 }
 
 func TestGetPurpurVersionsMock(t *testing.T) {
+	purpurCache.versions = nil
+	purpurCache.fetchedAt = time.Time{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v2/purpur" {
 			w.Header().Set("Content-Type", "application/json")
@@ -206,6 +211,8 @@ func TestGetPurpurVersionsMock(t *testing.T) {
 }
 
 func TestGetFabricVersionsMock(t *testing.T) {
+	fabricCache.versions = nil
+	fabricCache.fetchedAt = time.Time{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v2/versions/game" {
 			w.Header().Set("Content-Type", "application/json")
@@ -231,7 +238,7 @@ func TestGetFabricVersionsMock(t *testing.T) {
 	}
 	defer func() { httpClient = oldClient }()
 
-	versions, err := GetFabricVersions()
+	versions, err := GetFabricVersions(false)
 	if err != nil {
 		t.Fatalf("GetFabricVersions() error = %v", err)
 	}
@@ -257,6 +264,102 @@ func TestGetFabricVersionsMock(t *testing.T) {
 	for _, unexpected := range []string{"22w20a", "25w46a", "1.21.2-pre1"} {
 		if versionSet[unexpected] {
 			t.Errorf("Expected version %q to be filtered out", unexpected)
+		}
+	}
+}
+
+func TestGetFabricVersionsIncludeAll(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/versions/game" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`[
+				{"version":"1.21.3","stable":true},
+				{"version":"1.21.2","stable":true},
+				{"version":"1.21.2-pre1","stable":false},
+				{"version":"1.20.4","stable":true},
+				{"version":"25w14craftmine","stable":false},
+				{"version":"25w46a","stable":false},
+				{"version":"22w20a","stable":false},
+				{"version":"22w18a_unobfuscated","stable":false}
+			]`))
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	oldClient := httpClient
+	httpClient = &http.Client{
+		Transport: &testTransport{server.URL},
+	}
+	defer func() { httpClient = oldClient }()
+
+	versions, err := GetFabricVersions(true)
+	if err != nil {
+		t.Fatalf("GetFabricVersions(true) error = %v", err)
+	}
+
+	versionSet := make(map[string]bool)
+	for _, v := range versions {
+		versionSet[v.Version] = true
+	}
+
+	for _, expected := range []string{"1.21.3", "1.21.2", "1.21.2-pre1", "1.20.4", "25w14craftmine", "25w46a", "22w20a", "22w18a_unobfuscated"} {
+		if !versionSet[expected] {
+			t.Errorf("GetFabricVersions(true): expected version %q to be present", expected)
+		}
+	}
+}
+
+func TestGetPaperVersionsIncludeAll(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/projects/paper":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"project_id":"paper","project_name":"Paper","versions":["1.21.3","1.21.2","1.21.2-pre1","1.20.4"]}`))
+		case "/v2/projects/paper/versions/1.21.3":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"project_id":"paper","version":"1.21.3","builds":[80,81,82,83]}`))
+		case "/v2/projects/paper/versions/1.21.2":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"project_id":"paper","version":"1.21.2","builds":[100,101]}`))
+		case "/v2/projects/paper/versions/1.21.2-pre1":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"project_id":"paper","version":"1.21.2-pre1","builds":[50]}`))
+		case "/v2/projects/paper/versions/1.20.4":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"project_id":"paper","version":"1.20.4","builds":[200]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	oldClient := httpClient
+	httpClient = &http.Client{
+		Transport: &testTransport{server.URL},
+	}
+	defer func() { httpClient = oldClient }()
+
+	versions, err := GetPaperVersions(true)
+	if err != nil {
+		t.Fatalf("GetPaperVersions(true) error = %v", err)
+	}
+
+	versionSet := make(map[string]bool)
+	for _, v := range versions {
+		versionSet[v.Version] = true
+	}
+
+	for _, expected := range []string{"1.21.3", "1.21.2", "1.21.2-pre1", "1.20.4"} {
+		if !versionSet[expected] {
+			t.Errorf("GetPaperVersions(true): expected version %q to be present", expected)
 		}
 	}
 }

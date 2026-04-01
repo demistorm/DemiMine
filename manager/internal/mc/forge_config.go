@@ -2,6 +2,7 @@ package mc
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -67,13 +68,13 @@ func ConfigureForgeProxy(serverPath, mcVersion, loader, forwardingSecret string)
 
 	filename, err := GetModrinthModFilename("proxy-compatible-forge", mcVersion, loader)
 	if err != nil {
-		return fmt.Errorf("failed to get ProxyCompatibleForge filename: %w", err)
-	}
-
-	modPath := filepath.Join(modsDir, filename)
-	if _, err := os.Stat(modPath); os.IsNotExist(err) {
-		if err := DownloadModrinthMod("proxy-compatible-forge", mcVersion, loader, modPath); err != nil {
-			return fmt.Errorf("failed to download ProxyCompatibleForge: %w", err)
+		log.Printf("Warning: ProxyCompatibleForge not available for %s/%s (%v), skipping auto-install", mcVersion, loader, err)
+	} else {
+		modPath := filepath.Join(modsDir, filename)
+		if _, err := os.Stat(modPath); os.IsNotExist(err) {
+			if err := DownloadModrinthMod("proxy-compatible-forge", mcVersion, loader, modPath); err != nil {
+				log.Printf("Warning: Failed to download ProxyCompatibleForge: %v", err)
+			}
 		}
 	}
 

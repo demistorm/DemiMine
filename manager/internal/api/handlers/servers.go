@@ -62,7 +62,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2, s.start_on_boot,
-		       s.jvm_flags
+		       s.jvm_flags, s.java_override
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
 		LEFT JOIN (SELECT server_id, COUNT(*) as cnt FROM players GROUP BY server_id) pc ON pc.server_id = s.id
@@ -88,13 +88,14 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		var minimotdLine1 sql.NullString
 		var minimotdLine2 sql.NullString
 		var jvmFlags sql.NullString
+		var javaOverride sql.NullString
 
 		err := rows.Scan(
 			&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 			&minimotdLine1, &minimotdLine2, &s.StartOnBoot,
-			&jvmFlags,
+			&jvmFlags, &javaOverride,
 		)
 		if err != nil {
 			continue
@@ -116,6 +117,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		s.MinimotdLine1 = nullStringToPtr(minimotdLine1)
 		s.MinimotdLine2 = nullStringToPtr(minimotdLine2)
 		s.JVMFlags = nullStringToPtr(jvmFlags)
+		s.JavaOverride = nullStringToPtr(javaOverride)
 
 		servers = append(servers, s)
 	}
@@ -432,6 +434,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var minimotdLine1 sql.NullString
 	var minimotdLine2 sql.NullString
 	var jvmFlags sql.NullString
+	var javaOverride sql.NullString
 
 	err = h.db.QueryRow(`
 		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
@@ -439,7 +442,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		       s.start_on_boot,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count,
-		       s.minimotd_line1, s.minimotd_line2, s.jvm_flags
+		       s.minimotd_line1, s.minimotd_line2, s.jvm_flags, s.java_override
 		FROM servers s
 		LEFT JOIN proxies p ON s.proxy_id = p.id
 		WHERE s.id = ?
@@ -448,7 +451,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 		&s.StartOnBoot,
 		&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
-		&minimotdLine1, &minimotdLine2, &jvmFlags,
+		&minimotdLine1, &minimotdLine2, &jvmFlags, &javaOverride,
 	)
 
 	if err == sql.ErrNoRows {
@@ -479,6 +482,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	s.IconPath = h.getIconPath(s.ID, s.Name)
 	s.JVMFlags = nullStringToPtr(jvmFlags)
+	s.JavaOverride = nullStringToPtr(javaOverride)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s)
@@ -567,6 +571,7 @@ type UpdateServerRequest struct {
 	MinimotdLine1       *string `json:"minimotd_line1"`
 	MinimotdLine2       *string `json:"minimotd_line2"`
 	JVMFlags            *string `json:"jvm_flags"`
+	JavaOverride        *string `json:"java_override"`
 	StartOnBoot         *int    `json:"start_on_boot"`
 }
 
@@ -674,6 +679,9 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.JVMFlags != nil {
 		h.db.Exec("UPDATE servers SET jvm_flags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.JVMFlags, id)
+	}
+	if req.JavaOverride != nil {
+		h.db.Exec("UPDATE servers SET java_override = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.JavaOverride, id)
 	}
 
 	// write user_jvm_args.txt for Forge/NeoForge when RAM or JVM flags change
@@ -851,9 +859,10 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 	var ramMB int
 	var hostPort sql.NullInt64
 	var jvmFlags sql.NullString
+	var javaOverride sql.NullString
 	err = h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port, jvm_flags FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags)
+		SELECT name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -871,15 +880,21 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		jvmFlagsStr = jvmFlags.String
 	}
 
+	javaOverrideStr := ""
+	if javaOverride.Valid {
+		javaOverrideStr = javaOverride.String
+	}
+
 	cfg := &docker.ServerContainerConfig{
-		Name:        name,
-		ServerType:  serverType,
-		Version:     version,
-		RAMMB:       ramMB,
-		JVMFlags:    jvmFlagsStr,
-		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
-		NetworkName: h.cfg.NetworkName,
-		HostPort:    port,
+		Name:         name,
+		ServerType:   serverType,
+		Version:      version,
+		RAMMB:        ramMB,
+		JVMFlags:     jvmFlagsStr,
+		JavaOverride: javaOverrideStr,
+		ServerPath:   filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName:  h.cfg.NetworkName,
+		HostPort:     port,
 	}
 
 	ctx := context.Background()
@@ -953,9 +968,10 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	var ramMB int
 	var hostPort sql.NullInt64
 	var jvmFlags sql.NullString
+	var javaOverride sql.NullString
 	err = h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port, jvm_flags FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags)
+		SELECT name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -995,15 +1011,21 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		jvmFlagsStr = jvmFlags.String
 	}
 
+	javaOverrideStr := ""
+	if javaOverride.Valid {
+		javaOverrideStr = javaOverride.String
+	}
+
 	cfg := &docker.ServerContainerConfig{
-		Name:        name,
-		ServerType:  serverType,
-		Version:     version,
-		RAMMB:       ramMB,
-		JVMFlags:    jvmFlagsStr,
-		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
-		NetworkName: h.cfg.NetworkName,
-		HostPort:    port,
+		Name:         name,
+		ServerType:   serverType,
+		Version:      version,
+		RAMMB:        ramMB,
+		JVMFlags:     jvmFlagsStr,
+		JavaOverride: javaOverrideStr,
+		ServerPath:   filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName:  h.cfg.NetworkName,
+		HostPort:     port,
 	}
 
 	if err := h.docker.StartContainer(ctx, name, cfg); err != nil {
@@ -1880,9 +1902,10 @@ func (h *ServerHandler) StartByID(id int64) error {
 	var ramMB int
 	var hostPort sql.NullInt64
 	var jvmFlags sql.NullString
+	var javaOverride sql.NullString
 	err := h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port, jvm_flags FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags)
+		SELECT name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
 	if err != nil {
 		return err
 	}
@@ -1897,15 +1920,21 @@ func (h *ServerHandler) StartByID(id int64) error {
 		jvmFlagsStr = jvmFlags.String
 	}
 
+	javaOverrideStr := ""
+	if javaOverride.Valid {
+		javaOverrideStr = javaOverride.String
+	}
+
 	cfg := &docker.ServerContainerConfig{
-		Name:        name,
-		ServerType:  serverType,
-		Version:     version,
-		RAMMB:       ramMB,
-		JVMFlags:    jvmFlagsStr,
-		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
-		NetworkName: h.cfg.NetworkName,
-		HostPort:    port,
+		Name:         name,
+		ServerType:   serverType,
+		Version:      version,
+		RAMMB:        ramMB,
+		JVMFlags:     jvmFlagsStr,
+		JavaOverride: javaOverrideStr,
+		ServerPath:   filepath.Join(h.cfg.HostServersDir, name),
+		NetworkName:  h.cfg.NetworkName,
+		HostPort:     port,
 	}
 
 	ctx := context.Background()
