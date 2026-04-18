@@ -321,12 +321,12 @@
 			{:else if updateInfo}
 				<div class="field">
 					<label>Current Version</label>
-					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${server.version}`} disabled />
+					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${server.version}${server.jar_build > 0 ? ` (build ${server.jar_build})` : ''}`} disabled />
 				</div>
 
 				<div class="field">
 					<label>Latest Version</label>
-					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${updateInfo.latest_version}`} disabled />
+					<input type="text" value={`${server.type.charAt(0).toUpperCase() + server.type.slice(1)} ${updateInfo.latest_version}${updateInfo.latest_build > 0 ? ` (build ${updateInfo.latest_build})` : ''}`} disabled />
 				</div>
 
 				{#if updateInfo.has_update}
@@ -339,7 +339,7 @@
 					{:else}
 						<div class="field">
 							<button class="btn primary" on:click={updateJar} disabled={updatingJar}>
-								{updatingJar ? 'Updating...' : `Update to ${updateInfo.latest_version}`}
+								{updatingJar ? 'Updating...' : `Update to build ${updateInfo.latest_build}`}
 							</button>
 						</div>
 					{/if}

@@ -19,3 +19,4 @@ docker-compose.yml
 .DS_Store
 *.swp
 *.swo
+*.kate-swp
