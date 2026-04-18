@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api';
 	import { getAceMode } from '$lib/utils/ace-utils';
 	import { formatDate } from '$lib/utils';
@@ -34,6 +34,7 @@
 	let renameOldPath = '';
 	let renameNewName = '';
 	let isDragging = false;
+	let dragCounter = 0;
 	let uploadLoading = false;
 	let error = '';
 	let isGzipped = false;
@@ -42,7 +43,25 @@
 
 	onMount(() => {
 		loadFiles();
+		window.addEventListener('dragend', resetDrag);
+		window.addEventListener('dragleave', handleWindowDragLeave);
 	});
+
+	onDestroy(() => {
+		window.removeEventListener('dragend', resetDrag);
+		window.removeEventListener('dragleave', handleWindowDragLeave);
+	});
+
+	function resetDrag() {
+		dragCounter = 0;
+		isDragging = false;
+	}
+
+	function handleWindowDragLeave(e: DragEvent) {
+		if (e.relatedTarget === null && e.clientX === 0 && e.clientY === 0) {
+			resetDrag();
+		}
+	}
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
@@ -204,12 +223,21 @@
 
 	function handleDragOver(e: DragEvent) {
 		e.preventDefault();
+	}
+
+	function handleDragEnter(e: DragEvent) {
+		e.preventDefault();
+		dragCounter++;
 		isDragging = true;
 	}
 
 	function handleDragLeave(e: DragEvent) {
 		e.preventDefault();
-		isDragging = false;
+		dragCounter--;
+		if (dragCounter <= 0) {
+			dragCounter = 0;
+			isDragging = false;
+		}
 	}
 
 	interface UploadItem {
@@ -219,6 +247,7 @@
 
 	async function handleDrop(e: DragEvent) {
 		e.preventDefault();
+		dragCounter = 0;
 		isDragging = false;
 
 		const dataTransfer = e.dataTransfer;
@@ -401,6 +430,7 @@
 		class="file-browser"
 		class:mobile={$inputMode === 'mobile'}
 		class:dragging={isDragging}
+		on:dragenter={handleDragEnter}
 		on:dragover={handleDragOver}
 		on:dragleave={handleDragLeave}
 		on:drop={handleDrop}
@@ -706,6 +736,7 @@
 		font-size: 1.25rem;
 		color: var(--accent);
 		z-index: 10;
+		pointer-events: none;
 	}
 
 	.editor-container {
