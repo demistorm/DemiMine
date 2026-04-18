@@ -43,7 +43,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 
 	pluginMgr := plugin.NewManager(database, cfg.ServersDir)
 	minimotdMgr := minimotd.NewManager(cfg.ServersDir)
-	sparkInstaller := spark.NewInstaller(pluginMgr, cfg.ServersDir)
+	sparkInstaller := spark.NewInstaller(pluginMgr, cfg.ServersDir, database)
 
 	authHandler := handlers.NewAuthHandler(database, cfg.JWTSecret)
 	serverHandler := handlers.NewServerHandler(database, dockerClient, consoleManager, cfg, minimotdMgr, sparkInstaller)

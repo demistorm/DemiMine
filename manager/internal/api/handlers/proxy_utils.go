@@ -11,15 +11,15 @@ import (
 )
 
 func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir string) (int, error) {
-	var serverName, serverType, mcVersion string
-	err := db.QueryRow("SELECT name, type, version FROM servers WHERE id = ?", serverID).Scan(&serverName, &serverType, &mcVersion)
+	var serverName, serverSanitizedName, serverType, mcVersion string
+	err := db.QueryRow("SELECT name, sanitized_name, type, version FROM servers WHERE id = ?", serverID).Scan(&serverName, &serverSanitizedName, &serverType, &mcVersion)
 	if err != nil {
 		return 0, fmt.Errorf("server not found: %w", err)
 	}
 
-	var proxyName string
+	var proxyName, proxySanitizedName string
 	var forwardingSecret string
-	err = db.QueryRow("SELECT name, forwarding_secret FROM proxies WHERE id = ?", proxyID).Scan(&proxyName, &forwardingSecret)
+	err = db.QueryRow("SELECT name, sanitized_name, forwarding_secret FROM proxies WHERE id = ?", proxyID).Scan(&proxyName, &proxySanitizedName, &forwardingSecret)
 	if err != nil {
 		return 0, fmt.Errorf("proxy not found: %w", err)
 	}
@@ -41,7 +41,7 @@ func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir s
 		return 0, fmt.Errorf("failed to update server: %w", err)
 	}
 
-	serverPath := filepath.Join(serversDir, serverName)
+	serverPath := filepath.Join(serversDir, serverSanitizedName)
 	props, err := mc.ReadServerProperties(filepath.Join(serverPath, "server.properties"))
 	if err != nil {
 		props = mc.DefaultServerProperties()
@@ -63,8 +63,8 @@ func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir s
 	}
 
 	if isAuthServer(serverName, serverType) {
-		proxyPath := filepath.Join(serversDir, proxyName)
-		if err := updateDemiAuthLoginServer(proxyPath, serverName); err != nil {
+		proxyPath := filepath.Join(serversDir, proxySanitizedName)
+		if err := updateDemiAuthLoginServer(proxyPath, serverSanitizedName); err != nil {
 			fmt.Printf("Warning: failed to update DemiAuth config: %v\n", err)
 		}
 	}
@@ -73,9 +73,9 @@ func AssignServerToProxy(db *sql.DB, serverID int64, proxyID int64, serversDir s
 }
 
 func RemoveServerFromProxy(db *sql.DB, serverID int64, serversDir string) error {
-	var serverName, serverType, mcVersion string
+	var serverName, serverSanitizedName, serverType, mcVersion string
 	var proxyID sql.NullInt64
-	err := db.QueryRow("SELECT name, type, version, proxy_id FROM servers WHERE id = ?", serverID).Scan(&serverName, &serverType, &mcVersion, &proxyID)
+	err := db.QueryRow("SELECT name, sanitized_name, type, version, proxy_id FROM servers WHERE id = ?", serverID).Scan(&serverName, &serverSanitizedName, &serverType, &mcVersion, &proxyID)
 	if err != nil {
 		return fmt.Errorf("server not found: %w", err)
 	}
@@ -94,7 +94,7 @@ func RemoveServerFromProxy(db *sql.DB, serverID int64, serversDir string) error 
 		return fmt.Errorf("failed to update server: %w", err)
 	}
 
-	serverPath := filepath.Join(serversDir, serverName)
+	serverPath := filepath.Join(serversDir, serverSanitizedName)
 	props, err := mc.ReadServerProperties(filepath.Join(serverPath, "server.properties"))
 	if err != nil {
 		props = mc.DefaultServerProperties()
@@ -115,16 +115,16 @@ func RemoveServerFromProxy(db *sql.DB, serverID int64, serversDir string) error 
 }
 
 func SyncProxyConfig(db *sql.DB, proxyID int64, serversDir string) error {
-	var proxyName string
+	var proxySanitizedName string
 	var hostPort int
 	var forwardingSecret string
-	err := db.QueryRow("SELECT name, host_port, forwarding_secret FROM proxies WHERE id = ?", proxyID).Scan(&proxyName, &hostPort, &forwardingSecret)
+	err := db.QueryRow("SELECT sanitized_name, host_port, forwarding_secret FROM proxies WHERE id = ?", proxyID).Scan(&proxySanitizedName, &hostPort, &forwardingSecret)
 	if err != nil {
 		return fmt.Errorf("proxy not found: %w", err)
 	}
 
 	rows, err := db.Query(`
-		SELECT name, domain, host_port FROM servers WHERE proxy_id = ? ORDER BY id
+		SELECT sanitized_name, domain, host_port FROM servers WHERE proxy_id = ? ORDER BY id
 	`, proxyID)
 	if err != nil {
 		return fmt.Errorf("failed to query servers: %w", err)
@@ -136,48 +136,32 @@ func SyncProxyConfig(db *sql.DB, proxyID int64, serversDir string) error {
 	var tryServers []string
 
 	for rows.Next() {
-		var name string
+		var sanitizedName string
 		var domain sql.NullString
 		var hostPort int
-		if err := rows.Scan(&name, &domain, &hostPort); err != nil {
+		if err := rows.Scan(&sanitizedName, &domain, &hostPort); err != nil {
 			continue
 		}
 
-		containerName := "demimine-" + sanitizeNameForProxy(name)
-		servers[name] = fmt.Sprintf("%s:%d", containerName, hostPort)
+		containerName := "demimine-" + sanitizedName
+		servers[sanitizedName] = fmt.Sprintf("%s:%d", containerName, hostPort)
 
 		if domain.Valid && domain.String != "" {
-			forcedHosts[domain.String] = []string{name}
+			forcedHosts[domain.String] = []string{sanitizedName}
 		}
 
 		if len(tryServers) == 0 {
-			tryServers = append(tryServers, name)
+			tryServers = append(tryServers, sanitizedName)
 		}
 	}
 
-	proxyPath := filepath.Join(serversDir, proxyName)
+	proxyPath := filepath.Join(serversDir, proxySanitizedName)
 	config := mc.DefaultVelocityConfig(hostPort, forwardingSecret)
 	config.Servers = servers
 	config.Try = tryServers
 	config.ForcedHosts = forcedHosts
 
 	return config.WriteToFile(filepath.Join(proxyPath, "velocity.toml"))
-}
-
-func sanitizeNameForProxy(name string) string {
-	result := make([]byte, 0, len(name))
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
-			if c >= 'A' && c <= 'Z' {
-				c = c + 32
-			}
-			result = append(result, c)
-		} else if c == ' ' {
-			result = append(result, '-')
-		}
-	}
-	return string(result)
 }
 
 func ConfigureServerProxy(serverPath, serverType, mcVersion, forwardingSecret string) error {

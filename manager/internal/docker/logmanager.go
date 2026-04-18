@@ -53,7 +53,7 @@ func NewLogManager(dockerClient *Client, db *sql.DB, hub *websocket.Hub) *LogMan
 func (lm *LogManager) StartContainerStreaming(ctx context.Context, serverID int64, name string) error {
 	if name == "" {
 		var n string
-		err := lm.db.QueryRow("SELECT name FROM servers WHERE id = ?", serverID).Scan(&n)
+		err := lm.db.QueryRow("SELECT sanitized_name FROM servers WHERE id = ?", serverID).Scan(&n)
 		if err != nil {
 			return fmt.Errorf("failed to get server name: %w", err)
 		}
@@ -67,7 +67,7 @@ func (lm *LogManager) StartContainerStreaming(ctx context.Context, serverID int6
 		return fmt.Errorf("stream already exists for server %d", serverID)
 	}
 
-	var containerName = "demimine-" + SanitizeName(name)
+	var containerName = "demimine-" + name
 	lm.serverIDs[containerName] = serverID
 
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -206,12 +206,12 @@ func (lm *LogManager) StopContainerStreaming(serverID int64) {
 
 func (lm *LogManager) StartStreamingForRunningContainers(ctx context.Context, db *sql.DB) error {
 	type ServerInfo struct {
-		ID   int64
-		Name string
+		ID            int64
+		SanitizedName string
 	}
 
 	var servers []ServerInfo
-	rows, err := db.Query("SELECT id, name FROM servers WHERE status = 'running'")
+	rows, err := db.Query("SELECT id, sanitized_name FROM servers WHERE status = 'running'")
 	if err != nil {
 		return fmt.Errorf("failed to query running servers: %w", err)
 	}
@@ -219,7 +219,7 @@ func (lm *LogManager) StartStreamingForRunningContainers(ctx context.Context, db
 
 	for rows.Next() {
 		var s ServerInfo
-		if err := rows.Scan(&s.ID, &s.Name); err != nil {
+		if err := rows.Scan(&s.ID, &s.SanitizedName); err != nil {
 			log.Printf("Failed to scan server: %v", err)
 			continue
 		}
@@ -227,8 +227,8 @@ func (lm *LogManager) StartStreamingForRunningContainers(ctx context.Context, db
 	}
 
 	for _, s := range servers {
-		log.Printf("Starting log streaming for running server %d (%s)", s.ID, s.Name)
-		if err := lm.StartContainerStreamingByContainer(ctx, s.ID, s.Name, "demimine-"+SanitizeName(s.Name)); err != nil {
+		log.Printf("Starting log streaming for running server %d (%s)", s.ID, s.SanitizedName)
+		if err := lm.StartContainerStreamingByContainer(ctx, s.ID, s.SanitizedName, "demimine-"+s.SanitizedName); err != nil {
 			log.Printf("Failed to start log streaming for server %d: %v", s.ID, err)
 		}
 	}
@@ -257,10 +257,7 @@ func (lm *LogManager) HandleContainerEvent(event events.Message) {
 
 	if !exists {
 		var id int64
-		err := lm.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverName).Scan(&id)
-		if err == sql.ErrNoRows {
-			err = lm.db.QueryRow("SELECT id FROM servers WHERE name = ? COLLATE NOCASE", serverName).Scan(&id)
-		}
+		err := lm.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", serverName).Scan(&id)
 		if err != nil {
 			log.Printf("Failed to find server ID for container %s (name=%s): %v", containerName, serverName, err)
 			return
@@ -287,10 +284,7 @@ func (lm *LogManager) handleProxyContainerEvent(event events.Message, containerN
 
 	if !exists {
 		var id int64
-		err := lm.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyName).Scan(&id)
-		if err == sql.ErrNoRows {
-			err = lm.db.QueryRow("SELECT id FROM proxies WHERE name = ? COLLATE NOCASE", proxyName).Scan(&id)
-		}
+		err := lm.db.QueryRow("SELECT id FROM proxies WHERE sanitized_name = ?", proxyName).Scan(&id)
 		if err != nil {
 			log.Printf("Failed to find proxy ID for container %s (name=%s): %v", containerName, proxyName, err)
 			return
@@ -309,7 +303,7 @@ func (lm *LogManager) handleProxyContainerEvent(event events.Message, containerN
 func (lm *LogManager) StartProxyLogStreaming(ctx context.Context, proxyID int64, name string) error {
 	if name == "" {
 		var n string
-		err := lm.db.QueryRow("SELECT name FROM proxies WHERE id = ?", proxyID).Scan(&n)
+		err := lm.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", proxyID).Scan(&n)
 		if err != nil {
 			return fmt.Errorf("failed to get proxy name: %w", err)
 		}
@@ -323,7 +317,7 @@ func (lm *LogManager) StartProxyLogStreaming(ctx context.Context, proxyID int64,
 		return fmt.Errorf("stream already exists for proxy %d", proxyID)
 	}
 
-	containerName := "demimine-proxy-" + SanitizeName(name)
+	containerName := "demimine-proxy-" + name
 	containerName = strings.TrimPrefix(containerName, "/")
 	lm.proxyIDs[containerName] = proxyID
 
@@ -455,19 +449,19 @@ func (lm *LogManager) BroadcastProxyLog(proxyID int64, logLine string) error {
 
 func (lm *LogManager) StartStreamingForRunningProxies(ctx context.Context) error {
 	type ProxyInfo struct {
-		ID   int64
-		Name string
+		ID            int64
+		SanitizedName string
 	}
 
 	var proxies []ProxyInfo
-	rows, err := lm.db.Query("SELECT id, name FROM proxies WHERE status = 'running'")
+	rows, err := lm.db.Query("SELECT id, sanitized_name FROM proxies WHERE status = 'running'")
 	if err != nil {
 		return fmt.Errorf("failed to query running proxies: %w", err)
 	}
 
 	for rows.Next() {
 		var p ProxyInfo
-		if err := rows.Scan(&p.ID, &p.Name); err != nil {
+		if err := rows.Scan(&p.ID, &p.SanitizedName); err != nil {
 			log.Printf("Failed to scan proxy: %v", err)
 			continue
 		}
@@ -476,8 +470,8 @@ func (lm *LogManager) StartStreamingForRunningProxies(ctx context.Context) error
 	rows.Close()
 
 	for _, p := range proxies {
-		log.Printf("Starting log streaming for running proxy %d (%s)", p.ID, p.Name)
-		if err := lm.StartProxyLogStreaming(ctx, p.ID, p.Name); err != nil {
+		log.Printf("Starting log streaming for running proxy %d (%s)", p.ID, p.SanitizedName)
+		if err := lm.StartProxyLogStreaming(ctx, p.ID, p.SanitizedName); err != nil {
 			log.Printf("Failed to start log streaming for proxy %d: %v", p.ID, err)
 		}
 	}

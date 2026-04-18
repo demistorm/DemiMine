@@ -162,7 +162,7 @@ func gracefulShutdown(database *sql.DB, dockerClient *docker.Client, ctx context
 
 	var wg sync.WaitGroup
 
-	rows, err := database.Query("SELECT id, name FROM servers WHERE status = 'running'")
+	rows, err := database.Query("SELECT id, sanitized_name FROM servers WHERE status = 'running'")
 	if err != nil {
 		log.Printf("Error querying running servers: %v", err)
 	} else {
@@ -170,25 +170,25 @@ func gracefulShutdown(database *sql.DB, dockerClient *docker.Client, ctx context
 
 		for rows.Next() {
 			var id int64
-			var name string
-			if err := rows.Scan(&id, &name); err == nil {
+			var sanitizedName string
+			if err := rows.Scan(&id, &sanitizedName); err == nil {
 				wg.Add(1)
-				go func(serverID int64, serverName string) {
+				go func(serverID int64, serverSanitizedName string) {
 					defer wg.Done()
-					log.Printf("Stopping server: %s", serverName)
-					if err := dockerClient.StopContainer(ctx, serverName, nil); err != nil {
-						log.Printf("Failed to stop server %s: %v", serverName, err)
+					log.Printf("Stopping server: %s", serverSanitizedName)
+					if err := dockerClient.StopContainer(ctx, serverSanitizedName, nil); err != nil {
+						log.Printf("Failed to stop server %s: %v", serverSanitizedName, err)
 					} else {
 						if _, err := database.Exec("UPDATE servers SET status = 'stopped' WHERE id = ?", serverID); err != nil {
-							log.Printf("Failed to update server %s status: %v", serverName, err)
+							log.Printf("Failed to update server %s status: %v", serverSanitizedName, err)
 						}
 					}
-				}(id, name)
+				}(id, sanitizedName)
 			}
 		}
 	}
 
-	proxyRows, err := database.Query("SELECT id, name FROM proxies WHERE status = 'running'")
+	proxyRows, err := database.Query("SELECT id, sanitized_name FROM proxies WHERE status = 'running'")
 	if err != nil {
 		log.Printf("Error querying running proxies: %v", err)
 	} else {
@@ -196,20 +196,20 @@ func gracefulShutdown(database *sql.DB, dockerClient *docker.Client, ctx context
 
 		for proxyRows.Next() {
 			var id int64
-			var name string
-			if err := proxyRows.Scan(&id, &name); err == nil {
+			var sanitizedName string
+			if err := proxyRows.Scan(&id, &sanitizedName); err == nil {
 				wg.Add(1)
-				go func(proxyID int64, proxyName string) {
+				go func(proxyID int64, proxySanitizedName string) {
 					defer wg.Done()
-					log.Printf("Stopping proxy: %s", proxyName)
-					if err := dockerClient.StopProxyContainer(ctx, proxyName, nil); err != nil {
-						log.Printf("Failed to stop proxy %s: %v", proxyName, err)
+					log.Printf("Stopping proxy: %s", proxySanitizedName)
+					if err := dockerClient.StopProxyContainer(ctx, proxySanitizedName, nil); err != nil {
+						log.Printf("Failed to stop proxy %s: %v", proxySanitizedName, err)
 					} else {
 						if _, err := database.Exec("UPDATE proxies SET status = 'stopped' WHERE id = ?", proxyID); err != nil {
-							log.Printf("Failed to update proxy %s status: %v", proxyName, err)
+							log.Printf("Failed to update proxy %s status: %v", proxySanitizedName, err)
 						}
 					}
-				}(id, name)
+				}(id, sanitizedName)
 			}
 		}
 	}
@@ -224,20 +224,20 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 	var wg sync.WaitGroup
 
 	proxyRows, err := database.Query(
-		"SELECT id, name, host_port, COALESCE(ram_mb, 512) FROM proxies WHERE start_on_boot = 1")
+		"SELECT id, sanitized_name, host_port, COALESCE(ram_mb, 512) FROM proxies WHERE start_on_boot = 1")
 	if err != nil {
 		log.Printf("Error querying start_on_boot proxies: %v", err)
 	} else {
 		type proxyInfo struct {
-			id       int64
-			name     string
-			hostPort int
-			ramMB    int
+			id            int64
+			sanitizedName string
+			hostPort      int
+			ramMB         int
 		}
 		var proxies []proxyInfo
 		for proxyRows.Next() {
 			var p proxyInfo
-			if err := proxyRows.Scan(&p.id, &p.name, &p.hostPort, &p.ramMB); err != nil {
+			if err := proxyRows.Scan(&p.id, &p.sanitizedName, &p.hostPort, &p.ramMB); err != nil {
 				log.Printf("Failed to scan proxy row: %v", err)
 				continue
 			}
@@ -249,16 +249,16 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 			wg.Add(1)
 			go func(p proxyInfo) {
 				defer wg.Done()
-				log.Printf("Starting proxy: %s", p.name)
+				log.Printf("Starting proxy: %s", p.sanitizedName)
 				proxyCfg := &docker.ProxyContainerConfig{
-					Name:        p.name,
+					Name:        p.sanitizedName,
 					HostPort:    p.hostPort,
-					ProxyPath:   filepath.Join(cfg.HostServersDir, p.name),
+					ProxyPath:   filepath.Join(cfg.HostServersDir, p.sanitizedName),
 					NetworkName: cfg.NetworkName,
 					RAMMB:       p.ramMB,
 				}
-				if err := dockerClient.StartProxyContainer(context.Background(), p.name, proxyCfg); err != nil {
-					log.Printf("Failed to start proxy %s: %v", p.name, err)
+				if err := dockerClient.StartProxyContainer(context.Background(), p.sanitizedName, proxyCfg); err != nil {
+					log.Printf("Failed to start proxy %s: %v", p.sanitizedName, err)
 				} else {
 					database.Exec("UPDATE proxies SET status = 'running' WHERE id = ?", p.id)
 				}
@@ -269,22 +269,22 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 	wg.Wait()
 
 	serverRows, err := database.Query(
-		"SELECT id, name, type, version, ram_mb, host_port FROM servers WHERE start_on_boot = 1")
+		"SELECT id, sanitized_name, type, version, ram_mb, host_port FROM servers WHERE start_on_boot = 1")
 	if err != nil {
 		log.Printf("Error querying start_on_boot servers: %v", err)
 	} else {
 		type serverInfo struct {
-			id         int64
-			name       string
-			serverType string
-			version    string
-			ramMB      int
-			hostPort   sql.NullInt64
+			id            int64
+			sanitizedName string
+			serverType    string
+			version       string
+			ramMB         int
+			hostPort      sql.NullInt64
 		}
 		var servers []serverInfo
 		for serverRows.Next() {
 			var s serverInfo
-			if err := serverRows.Scan(&s.id, &s.name, &s.serverType, &s.version, &s.ramMB, &s.hostPort); err != nil {
+			if err := serverRows.Scan(&s.id, &s.sanitizedName, &s.serverType, &s.version, &s.ramMB, &s.hostPort); err != nil {
 				log.Printf("Failed to scan server row: %v", err)
 				continue
 			}
@@ -296,22 +296,22 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 			wg.Add(1)
 			go func(s serverInfo) {
 				defer wg.Done()
-				log.Printf("Starting server: %s", s.name)
+				log.Printf("Starting server: %s", s.sanitizedName)
 				port := 0
 				if s.hostPort.Valid {
 					port = int(s.hostPort.Int64)
 				}
 				serverCfg := &docker.ServerContainerConfig{
-					Name:        s.name,
+					Name:        s.sanitizedName,
 					ServerType:  s.serverType,
 					Version:     s.version,
 					RAMMB:       s.ramMB,
-					ServerPath:  filepath.Join(cfg.HostServersDir, s.name),
+					ServerPath:  filepath.Join(cfg.HostServersDir, s.sanitizedName),
 					NetworkName: cfg.NetworkName,
 					HostPort:    port,
 				}
-				if err := dockerClient.StartContainer(context.Background(), s.name, serverCfg); err != nil {
-					log.Printf("Failed to start server %s: %v", s.name, err)
+				if err := dockerClient.StartContainer(context.Background(), s.sanitizedName, serverCfg); err != nil {
+					log.Printf("Failed to start server %s: %v", s.sanitizedName, err)
 				} else {
 					database.Exec("UPDATE servers SET status = 'running' WHERE id = ?", s.id)
 				}

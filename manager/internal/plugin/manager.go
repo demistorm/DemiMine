@@ -234,13 +234,13 @@ func (m *Manager) Uninstall(targetType string, targetID int64, projectID string)
 	var targetName string
 
 	if targetType == "server" {
-		err := m.db.QueryRow("SELECT name FROM servers WHERE id = ?", targetID).Scan(&targetName)
+		err := m.db.QueryRow("SELECT sanitized_name FROM servers WHERE id = ?", targetID).Scan(&targetName)
 		if err != nil {
 			return fmt.Errorf("server not found")
 		}
 		pluginsDir = targetName
 	} else if targetType == "proxy" {
-		err := m.db.QueryRow("SELECT name FROM proxies WHERE id = ?", targetID).Scan(&targetName)
+		err := m.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", targetID).Scan(&targetName)
 		if err != nil {
 			return fmt.Errorf("proxy not found")
 		}
@@ -357,12 +357,12 @@ func (m *Manager) Update(targetType string, targetID int64, projectID string, ga
 
 	var targetName string
 	if targetType == "server" {
-		err := m.db.QueryRow("SELECT name FROM servers WHERE id = ?", targetID).Scan(&targetName)
+		err := m.db.QueryRow("SELECT sanitized_name FROM servers WHERE id = ?", targetID).Scan(&targetName)
 		if err != nil {
 			return nil, fmt.Errorf("server not found")
 		}
 	} else {
-		err := m.db.QueryRow("SELECT name FROM proxies WHERE id = ?", targetID).Scan(&targetName)
+		err := m.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", targetID).Scan(&targetName)
 		if err != nil {
 			return nil, fmt.Errorf("proxy not found")
 		}

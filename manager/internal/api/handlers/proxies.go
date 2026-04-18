@@ -25,6 +25,7 @@ import (
 	"github.com/demimine/manager/internal/models"
 	"github.com/demimine/manager/internal/plugin"
 	"github.com/demimine/manager/internal/spark"
+	"github.com/demimine/manager/internal/util"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -52,7 +53,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.motd_line1, p.motd_line2, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop, p.jvm_flags,
+		SELECT p.id, p.name, p.sanitized_name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.motd_line1, p.motd_line2, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop, p.jvm_flags,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -71,7 +72,7 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var proxyID int64
-		var name, status string
+		var name, sanitizedName, status string
 		var hostPort, ramMB, startOnBoot int
 		var forwardingSecret sql.NullString
 		var canvasX, canvasY int
@@ -86,7 +87,7 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var jvmFlags sql.NullString
 
 		err := rows.Scan(
-			&proxyID, &name, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &motdLine1, &motdLine2, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &jvmFlags, &serverName,
+			&proxyID, &name, &sanitizedName, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &motdLine1, &motdLine2, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &jvmFlags, &serverName,
 		)
 		if err != nil {
 			continue
@@ -106,7 +107,7 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 				JarBuild:         jarBuild,
 				CreatedAt:        createdAt,
 				ConnectedServers: []string{},
-				IconPath:         h.getIconPath(proxyID, name),
+				IconPath:         h.getIconPath(proxyID, sanitizedName),
 			}
 			if forwardingSecret.Valid {
 				proxy.ForwardingSecret = forwardingSecret.String
@@ -175,6 +176,8 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sanitizedName := util.SanitizeName(req.Name)
+
 	force := r.URL.Query().Get("force") == "true"
 
 	if !force {
@@ -205,11 +208,20 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var existingID int
-	err := h.db.QueryRow("SELECT id FROM proxies WHERE name = ?", req.Name).Scan(&existingID)
+	err := h.db.QueryRow("SELECT id FROM proxies WHERE sanitized_name = ?", sanitizedName).Scan(&existingID)
 	if err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": "proxy name already exists"})
+		return
+	}
+
+	var existingServerID int
+	err = h.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", sanitizedName).Scan(&existingServerID)
+	if err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "a server with this name already exists"})
 		return
 	}
 
@@ -227,9 +239,9 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.db.Exec(`
-		INSERT INTO proxies (name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, start_on_boot)
-		VALUES (?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?, ?)
-	`, req.Name, req.HostPort, ramMB, forwardingSecret, req.MotdLine1, req.MotdLine2, req.StartOnBoot)
+		INSERT INTO proxies (name, sanitized_name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, start_on_boot)
+		VALUES (?, ?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?, ?)
+	`, req.Name, sanitizedName, req.HostPort, ramMB, forwardingSecret, req.MotdLine1, req.MotdLine2, req.StartOnBoot)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -239,7 +251,7 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	id, _ := result.LastInsertId()
 
-	proxyPath := filepath.Join(h.cfg.ServersDir, req.Name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	if err := os.MkdirAll(proxyPath, 0755); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -286,13 +298,13 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		TargetID:     id,
 		ProjectID:    "minimotd",
 		Loaders:      []string{"velocity"},
-		ServerName:   req.Name,
+		ServerName:   sanitizedName,
 		TargetSubdir: "plugins",
 	})
 
 	// Install DemiAuth if requested
 	if req.InstallDemiAuth {
-		pluginsDir := filepath.Join(h.cfg.ServersDir, req.Name, "plugins")
+		pluginsDir := filepath.Join(proxyPath, "plugins")
 		if err := os.MkdirAll(pluginsDir, 0755); err != nil {
 			fmt.Printf("Failed to create plugins directory for proxy %d: %v\n", id, err)
 		}
@@ -326,7 +338,7 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Install DemiDynamic if requested
 	if req.InstallDemiDynamic {
-		pluginsDir := filepath.Join(h.cfg.ServersDir, req.Name, "plugins")
+		pluginsDir := filepath.Join(proxyPath, "plugins")
 		if err := os.MkdirAll(pluginsDir, 0755); err != nil {
 			fmt.Printf("Failed to create plugins directory for proxy %d: %v\n", id, err)
 		}
@@ -361,7 +373,7 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 			TargetID:     id,
 			ProjectID:    "Vebnzrzj",
 			Loaders:      []string{"velocity"},
-			ServerName:   req.Name,
+			ServerName:   sanitizedName,
 			TargetSubdir: "plugins",
 		})
 		if err != nil {
@@ -376,21 +388,21 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.MotdLine1 != "" || req.MotdLine2 != "" {
-		iconPath := filepath.Join(h.cfg.ServersDir, req.Name, "icon.png")
+		iconPath := filepath.Join(proxyPath, "icon.png")
 		hasIcon := false
 		if _, err := os.Stat(iconPath); err == nil {
 			hasIcon = true
-			if err := h.minimotdMgr.CopyMainConfigIcon(req.Name, nil); err != nil {
+			if err := h.minimotdMgr.CopyMainConfigIcon(sanitizedName, nil); err != nil {
 				fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
 			} else {
 				if iconData, err := os.ReadFile(iconPath); err == nil {
-					if err := h.minimotdMgr.CopyMainConfigIcon(req.Name, iconData); err != nil {
+					if err := h.minimotdMgr.CopyMainConfigIcon(sanitizedName, iconData); err != nil {
 						fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
 					}
 				}
 			}
 		}
-		if err := h.minimotdMgr.CreateMainConfig(req.Name, req.MotdLine1, req.MotdLine2, hasIcon); err != nil {
+		if err := h.minimotdMgr.CreateMainConfig(sanitizedName, req.MotdLine1, req.MotdLine2, hasIcon); err != nil {
 			fmt.Printf("Failed to create MiniMOTD main config for proxy %d: %v\n", id, err)
 		}
 	}
@@ -418,11 +430,12 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var motdLine1 sql.NullString
 	var motdLine2 sql.NullString
 	var jvmFlags sql.NullString
+	var sanitizedName string
 
 	err = h.db.QueryRow(`
-		SELECT id, name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop, jvm_flags
+		SELECT id, name, sanitized_name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop, jvm_flags
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &motdLine1, &motdLine2, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop, &jvmFlags)
+	`, id).Scan(&p.ID, &p.Name, &sanitizedName, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &motdLine1, &motdLine2, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop, &jvmFlags)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -477,7 +490,7 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 		serverRows.Close()
 	}
 
-	p.IconPath = h.getIconPath(p.ID, p.Name)
+	p.IconPath = h.getIconPath(p.ID, sanitizedName)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(p)
@@ -493,9 +506,9 @@ func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
+	var sanitizedName string
 	var status string
-	err = h.db.QueryRow("SELECT name, status FROM proxies WHERE id = ?", id).Scan(&name, &status)
+	err = h.db.QueryRow("SELECT sanitized_name, status FROM proxies WHERE id = ?", id).Scan(&sanitizedName, &status)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -506,15 +519,15 @@ func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	if status == "running" {
 		timeout := 10
-		_ = h.docker.StopProxyContainer(ctx, name, &timeout)
+		_ = h.docker.StopProxyContainer(ctx, sanitizedName, &timeout)
 	}
 
-	containerName := "demimine-proxy-" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
-	if exists, _ := h.docker.ContainerExists(ctx, "proxy-"+name); exists {
+	containerName := "demimine-proxy-" + sanitizedName
+	if exists, _ := h.docker.ContainerExists(ctx, "proxy-"+sanitizedName); exists {
 		_ = h.docker.RemoveContainer(ctx, containerName)
 	}
 
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	_ = os.RemoveAll(proxyPath)
 
 	h.db.Exec("UPDATE servers SET proxy_id = NULL WHERE proxy_id = ?", id)
@@ -571,7 +584,8 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var exists bool
-	err = h.db.QueryRow("SELECT 1 FROM proxies WHERE id = ?", id).Scan(&exists)
+	var currentSanitizedName string
+	err = h.db.QueryRow("SELECT 1, COALESCE(sanitized_name, '') FROM proxies WHERE id = ?", id).Scan(&exists, &currentSanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -580,7 +594,48 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Name != nil {
-		h.db.Exec("UPDATE proxies SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, id)
+		newSanitizedName := util.SanitizeName(*req.Name)
+
+		var existingID int
+		err := h.db.QueryRow("SELECT id FROM proxies WHERE sanitized_name = ? AND id != ?", newSanitizedName, id).Scan(&existingID)
+		if err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "a proxy with a similar name already exists"})
+			return
+		}
+
+		var existingServerID int
+		err = h.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", newSanitizedName).Scan(&existingServerID)
+		if err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "a server with a similar name already exists"})
+			return
+		}
+
+		if newSanitizedName != currentSanitizedName {
+			oldPath := filepath.Join(h.cfg.ServersDir, currentSanitizedName)
+			newPath := filepath.Join(h.cfg.ServersDir, newSanitizedName)
+
+			if _, err := os.Stat(oldPath); err == nil {
+				if _, err := os.Stat(newPath); err == nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]string{"error": "a proxy directory with this name already exists"})
+					return
+				}
+				if err := os.Rename(oldPath, newPath); err != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusInternalServerError)
+					json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to rename proxy directory: %v", err)})
+					return
+				}
+			}
+		}
+
+		h.db.Exec("UPDATE proxies SET name = ?, sanitized_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, newSanitizedName, id)
+		currentSanitizedName = newSanitizedName
 	}
 	if req.RAMMB != nil {
 		h.db.Exec("UPDATE proxies SET ram_mb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.RAMMB, id)
@@ -630,21 +685,21 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 			h.db.Exec("UPDATE proxies SET motd_line2 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", newLine2, id)
 		}
 
-		proxyIconPath := filepath.Join(h.cfg.ServersDir, name, "icon.png")
+		proxyIconPath := filepath.Join(h.cfg.ServersDir, currentSanitizedName, "icon.png")
 		hasIcon := false
 		if _, err := os.Stat(proxyIconPath); err == nil {
 			hasIcon = true
-			if err := h.minimotdMgr.CopyMainConfigIcon(name, nil); err != nil {
+			if err := h.minimotdMgr.CopyMainConfigIcon(currentSanitizedName, nil); err != nil {
 				fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
 			} else {
 				if iconData, err := os.ReadFile(proxyIconPath); err == nil {
-					if err := h.minimotdMgr.CopyMainConfigIcon(name, iconData); err != nil {
+					if err := h.minimotdMgr.CopyMainConfigIcon(currentSanitizedName, iconData); err != nil {
 						fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
 					}
 				}
 			}
 		}
-		if err := h.minimotdMgr.CreateMainConfig(name, newLine1, newLine2, hasIcon); err != nil {
+		if err := h.minimotdMgr.CreateMainConfig(currentSanitizedName, newLine1, newLine2, hasIcon); err != nil {
 			fmt.Printf("Failed to update MiniMOTD main config for proxy %d: %v\n", id, err)
 		}
 	}
@@ -664,9 +719,10 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
+	var sanitizedName string
 	var hostPort, ramMB int
 	var jvmFlags sql.NullString
-	err = h.db.QueryRow("SELECT name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?", id).Scan(&name, &hostPort, &ramMB, &jvmFlags)
+	err = h.db.QueryRow("SELECT name, sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?", id).Scan(&name, &sanitizedName, &hostPort, &ramMB, &jvmFlags)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -680,16 +736,16 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := &docker.ProxyContainerConfig{
-		Name:        name,
+		Name:        sanitizedName,
 		HostPort:    hostPort,
-		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
+		ProxyPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
 	}
 
 	ctx := context.Background()
-	if err := h.docker.StartProxyContainer(ctx, name, cfg); err != nil {
+	if err := h.docker.StartProxyContainer(ctx, sanitizedName, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to start proxy: %v", err)})
@@ -715,8 +771,8 @@ func (h *ProxyHandler) Stop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -726,7 +782,7 @@ func (h *ProxyHandler) Stop(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	timeout := 30
-	if err := h.docker.StopProxyContainer(ctx, name, &timeout); err != nil {
+	if err := h.docker.StopProxyContainer(ctx, sanitizedName, &timeout); err != nil {
 		if strings.Contains(err.Error(), "No such container") {
 			h.db.Exec("UPDATE proxies SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
 			w.Header().Set("Content-Type", "application/json")
@@ -755,10 +811,10 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
+	var sanitizedName string
 	var hostPort, ramMB int
 	var jvmFlags sql.NullString
-	err = h.db.QueryRow("SELECT name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?", id).Scan(&name, &hostPort, &ramMB, &jvmFlags)
+	err = h.db.QueryRow("SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?", id).Scan(&sanitizedName, &hostPort, &ramMB, &jvmFlags)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -769,7 +825,7 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	timeout := 30
 
-	if err := h.docker.StopProxyContainer(ctx, name, &timeout); err != nil {
+	if err := h.docker.StopProxyContainer(ctx, sanitizedName, &timeout); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to stop proxy: %v", err)})
@@ -778,7 +834,7 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 
 	h.db.Exec("UPDATE proxies SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
 
-	containerID, err := h.docker.GetProxyContainerID(ctx, name)
+	containerID, err := h.docker.GetProxyContainerID(ctx, sanitizedName)
 	if err == nil && containerID != "" {
 		if err := h.docker.WaitForContainer(ctx, containerID, 45*time.Second); err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -794,15 +850,15 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := &docker.ProxyContainerConfig{
-		Name:        name,
+		Name:        sanitizedName,
 		HostPort:    hostPort,
-		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
+		ProxyPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
 	}
 
-	if err := h.docker.StartProxyContainer(ctx, name, cfg); err != nil {
+	if err := h.docker.StartProxyContainer(ctx, sanitizedName, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to restart proxy: %v", err)})
@@ -825,8 +881,8 @@ func (h *ProxyHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -842,7 +898,7 @@ func (h *ProxyHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	logs, err := h.docker.GetProxyContainerLogs(ctx, name, lines)
+	logs, err := h.docker.GetProxyContainerLogs(ctx, sanitizedName, lines)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -865,8 +921,8 @@ func (h *ProxyHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -880,7 +936,7 @@ func (h *ProxyHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(proxyPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, proxyPath) {
@@ -937,8 +993,8 @@ func (h *ProxyHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -955,7 +1011,7 @@ func (h *ProxyHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(proxyPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, proxyPath) {
@@ -1029,8 +1085,8 @@ func (h *ProxyHandler) WriteFileContent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1055,7 +1111,7 @@ func (h *ProxyHandler) WriteFileContent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(proxyPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, proxyPath) {
@@ -1086,8 +1142,8 @@ func (h *ProxyHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1104,7 +1160,7 @@ func (h *ProxyHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(proxyPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, proxyPath) {
@@ -1135,8 +1191,8 @@ func (h *ProxyHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1153,7 +1209,7 @@ func (h *ProxyHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(proxyPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, proxyPath) {
@@ -1214,8 +1270,8 @@ func (h *ProxyHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1238,7 +1294,7 @@ func (h *ProxyHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	oldPath := filepath.Join(proxyPath, filepath.Clean("/"+req.OldPath))
 	newPath := filepath.Join(filepath.Dir(oldPath), req.NewName)
 
@@ -1323,8 +1379,8 @@ func (h *ProxyHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
-func (h *ProxyHandler) getIconPath(id int64, name string) *string {
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+func (h *ProxyHandler) getIconPath(id int64, sanitizedName string) *string {
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	iconPath := filepath.Join(proxyPath, "icon.png")
 
 	if _, err := os.Stat(iconPath); err == nil {
@@ -1345,9 +1401,10 @@ func (h *ProxyHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
+	var sanitizedName string
 	var motdLine1 sql.NullString
 	var motdLine2 sql.NullString
-	err = h.db.QueryRow("SELECT name, motd_line1, motd_line2 FROM proxies WHERE id = ?", id).Scan(&name, &motdLine1, &motdLine2)
+	err = h.db.QueryRow("SELECT name, sanitized_name, motd_line1, motd_line2 FROM proxies WHERE id = ?", id).Scan(&name, &sanitizedName, &motdLine1, &motdLine2)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1393,7 +1450,7 @@ func (h *ProxyHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	iconPath := filepath.Join(proxyPath, "icon.png")
 
 	if err := os.WriteFile(iconPath, content, 0644); err != nil {
@@ -1404,10 +1461,10 @@ func (h *ProxyHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if motdLine1.Valid || motdLine2.Valid {
-		if err := h.minimotdMgr.CopyMainConfigIcon(name, content); err != nil {
+		if err := h.minimotdMgr.CopyMainConfigIcon(sanitizedName, content); err != nil {
 			fmt.Printf("Failed to copy icon to MiniMOTD for proxy %d: %v\n", id, err)
 		}
-		if err := h.minimotdMgr.CreateMainConfig(name, motdLine1.String, motdLine2.String, true); err != nil {
+		if err := h.minimotdMgr.CreateMainConfig(sanitizedName, motdLine1.String, motdLine2.String, true); err != nil {
 			fmt.Printf("Failed to update MiniMOTD main config for proxy %d: %v\n", id, err)
 		}
 	}
@@ -1426,8 +1483,8 @@ func (h *ProxyHandler) GetIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1435,7 +1492,7 @@ func (h *ProxyHandler) GetIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	iconPath := filepath.Join(proxyPath, "icon.png")
 
 	content, err := os.ReadFile(iconPath)
@@ -1462,9 +1519,10 @@ func (h *ProxyHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name string
+	var sanitizedName string
 	var motdLine1 sql.NullString
 	var motdLine2 sql.NullString
-	err = h.db.QueryRow("SELECT name, motd_line1, motd_line2 FROM proxies WHERE id = ?", id).Scan(&name, &motdLine1, &motdLine2)
+	err = h.db.QueryRow("SELECT name, sanitized_name, motd_line1, motd_line2 FROM proxies WHERE id = ?", id).Scan(&name, &sanitizedName, &motdLine1, &motdLine2)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1472,7 +1530,7 @@ func (h *ProxyHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proxyPath := filepath.Join(h.cfg.ServersDir, name)
+	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	iconPath := filepath.Join(proxyPath, "icon.png")
 
 	if _, err := os.Stat(iconPath); os.IsNotExist(err) {
@@ -1490,9 +1548,9 @@ func (h *ProxyHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if motdLine1.Valid || motdLine2.Valid {
-		minimotdIconPath := h.minimotdMgr.GetMainConfigIconPath(name)
+		minimotdIconPath := h.minimotdMgr.GetMainConfigIconPath(sanitizedName)
 		os.Remove(minimotdIconPath)
-		if err := h.minimotdMgr.CreateMainConfig(name, motdLine1.String, motdLine2.String, false); err != nil {
+		if err := h.minimotdMgr.CreateMainConfig(sanitizedName, motdLine1.String, motdLine2.String, false); err != nil {
 			fmt.Printf("Failed to update MiniMOTD main config for proxy %d: %v\n", id, err)
 		}
 	}
@@ -1660,15 +1718,15 @@ func (h *ProxyHandler) ListAll() ([]models.Proxy, error) {
 }
 
 func (h *ProxyHandler) StopByID(id int64) error {
-	var name string
-	err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&name)
+	var sanitizedName string
+	err := h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&sanitizedName)
 	if err != nil {
 		return err
 	}
 
 	ctx := context.Background()
 	timeout := 30
-	if err := h.docker.StopProxyContainer(ctx, name, &timeout); err != nil {
+	if err := h.docker.StopProxyContainer(ctx, sanitizedName, &timeout); err != nil {
 		if !strings.Contains(err.Error(), "No such container") {
 			return err
 		}
@@ -1679,12 +1737,12 @@ func (h *ProxyHandler) StopByID(id int64) error {
 }
 
 func (h *ProxyHandler) StartByID(id int64) error {
-	var name string
+	var sanitizedName string
 	var hostPort, ramMB int
 	var jvmFlags sql.NullString
 	err := h.db.QueryRow(`
-		SELECT name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?`, id).
-		Scan(&name, &hostPort, &ramMB, &jvmFlags)
+		SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?`, id).
+		Scan(&sanitizedName, &hostPort, &ramMB, &jvmFlags)
 	if err != nil {
 		return err
 	}
@@ -1695,16 +1753,16 @@ func (h *ProxyHandler) StartByID(id int64) error {
 	}
 
 	cfg := docker.ProxyContainerConfig{
-		Name:        name,
+		Name:        sanitizedName,
 		HostPort:    hostPort,
-		ProxyPath:   filepath.Join(h.cfg.HostServersDir, name),
+		ProxyPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
 	}
 
 	ctx := context.Background()
-	if err := h.docker.StartProxyContainer(ctx, name, &cfg); err != nil {
+	if err := h.docker.StartProxyContainer(ctx, sanitizedName, &cfg); err != nil {
 		return err
 	}
 

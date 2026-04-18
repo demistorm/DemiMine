@@ -94,7 +94,7 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 
 	if targetType == "server" {
 		var serverType string
-		err := h.db.QueryRow("SELECT type, version, name FROM servers WHERE id = ?", targetID).Scan(&serverType, &gameVersion, &serverName)
+		err := h.db.QueryRow("SELECT type, version, sanitized_name FROM servers WHERE id = ?", targetID).Scan(&serverType, &gameVersion, &serverName)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
@@ -106,7 +106,7 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 		gameVersion = req.GameVersion
 		serverName = "pluginsDir"
 		loaders = []string{"velocity"}
-		err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", targetID).Scan(&serverName)
+		err := h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", targetID).Scan(&serverName)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)

@@ -66,7 +66,7 @@ func (h *PlayerHandler) Join(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var serverID int64
-	err := h.db.QueryRow("SELECT id FROM servers WHERE name = ?", req.ServerName).Scan(&serverID)
+	err := h.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", req.ServerName).Scan(&serverID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			w.Header().Set("Content-Type", "application/json")
@@ -111,7 +111,7 @@ func (h *PlayerHandler) Leave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var serverID int64
-	err := h.db.QueryRow("SELECT id FROM servers WHERE name = ?", req.ServerName).Scan(&serverID)
+	err := h.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", req.ServerName).Scan(&serverID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			w.Header().Set("Content-Type", "application/json")
@@ -219,7 +219,7 @@ func (h *PlayerHandler) GetServerStatus(w http.ResponseWriter, r *http.Request) 
 	err := h.db.QueryRow(`
 		SELECT status, auto_shutdown_minutes, host_port
 		FROM servers
-		WHERE name = ?
+		WHERE sanitized_name = ?
 	`, serverName).Scan(&status, &autoShutdownMinutes, &hostPort)
 
 	if err == sql.ErrNoRows {
@@ -240,7 +240,7 @@ func (h *PlayerHandler) GetServerStatus(w http.ResponseWriter, r *http.Request) 
 	_ = h.db.QueryRow(`
 		SELECT COUNT(*)
 		FROM players
-		WHERE server_id = (SELECT id FROM servers WHERE name = ?)
+		WHERE server_id = (SELECT id FROM servers WHERE sanitized_name = ?)
 	`, serverName).Scan(&playerCount)
 
 	if status == "running" && hostPort.Valid {
@@ -274,7 +274,8 @@ func (h *PlayerHandler) StopServerByName(w http.ResponseWriter, r *http.Request)
 	}
 
 	var serverID string
-	err := h.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverName).Scan(&serverID)
+	var sanitizedName string
+	err := h.db.QueryRow("SELECT id, sanitized_name FROM servers WHERE sanitized_name = ?", serverName).Scan(&serverID, &sanitizedName)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			w.Header().Set("Content-Type", "application/json")
@@ -290,7 +291,7 @@ func (h *PlayerHandler) StopServerByName(w http.ResponseWriter, r *http.Request)
 
 	ctx := context.Background()
 	timeout := 30
-	if err := h.docker.StopContainer(ctx, serverName, &timeout); err != nil {
+	if err := h.docker.StopContainer(ctx, sanitizedName, &timeout); err != nil {
 		if !strings.Contains(err.Error(), "No such container") {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -317,12 +318,12 @@ func (h *PlayerHandler) StartServerByName(w http.ResponseWriter, r *http.Request
 	}
 
 	var id int64
-	var name, serverType, version string
+	var name, sanitizedName, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
 	err := h.db.QueryRow(`
-		SELECT id, name, type, version, ram_mb, host_port FROM servers WHERE name = ?`, serverName).
-		Scan(&id, &name, &serverType, &version, &ramMB, &hostPort)
+		SELECT id, name, sanitized_name, type, version, ram_mb, host_port FROM servers WHERE sanitized_name = ?`, serverName).
+		Scan(&id, &name, &sanitizedName, &serverType, &version, &ramMB, &hostPort)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -342,17 +343,17 @@ func (h *PlayerHandler) StartServerByName(w http.ResponseWriter, r *http.Request
 	}
 
 	cfg := &docker.ServerContainerConfig{
-		Name:        name,
+		Name:        sanitizedName,
 		ServerType:  serverType,
 		Version:     version,
 		RAMMB:       ramMB,
-		ServerPath:  filepath.Join(h.cfg.HostServersDir, name),
+		ServerPath:  filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName: h.cfg.NetworkName,
 		HostPort:    port,
 	}
 
 	ctx := context.Background()
-	if err := h.docker.StartContainer(ctx, name, cfg); err != nil {
+	if err := h.docker.StartContainer(ctx, sanitizedName, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to start server: %v", err)})

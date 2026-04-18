@@ -1,6 +1,7 @@
 package spark
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,12 +31,14 @@ type Installer struct {
 	pluginManager *plugin.Manager
 	httpClient    *http.Client
 	serversDir    string
+	db            *sql.DB
 }
 
-func NewInstaller(pluginManager *plugin.Manager, serversDir string) *Installer {
+func NewInstaller(pluginManager *plugin.Manager, serversDir string, db *sql.DB) *Installer {
 	return &Installer{
 		pluginManager: pluginManager,
 		serversDir:    serversDir,
+		db:            db,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -43,12 +46,17 @@ func NewInstaller(pluginManager *plugin.Manager, serversDir string) *Installer {
 }
 
 func (i *Installer) InstallSparkForServer(serverType, mcVersion, serverName string, serverID int64) error {
+	var sanitizedName string
+	if err := i.db.QueryRow("SELECT sanitized_name FROM servers WHERE id = ?", serverID).Scan(&sanitizedName); err != nil {
+		return fmt.Errorf("failed to get server sanitized name: %w", err)
+	}
+
 	switch serverType {
 	case "paper", "purpur", "nanolimbo":
-		log.Printf("[Spark] Skipping Spark installation for %s server %s (bundled or not applicable)", serverType, serverName)
+		log.Printf("[Spark] Skipping Spark installation for %s server %s (bundled or not applicable)", serverType, sanitizedName)
 		return nil
 	case "fabric", "neoforge", "forge":
-		return i.installSparkViaModrinth(serverType, mcVersion, serverName, serverID)
+		return i.installSparkViaModrinth(serverType, mcVersion, sanitizedName, serverID)
 	default:
 		return fmt.Errorf("unsupported server type for Spark installation: %s", serverType)
 	}
@@ -86,19 +94,24 @@ func (i *Installer) installSparkViaModrinth(serverType, mcVersion, serverName st
 }
 
 func (i *Installer) InstallSparkForProxy(proxyName string, proxyID int64) error {
-	pluginsDir := filepath.Join(i.serversDir, proxyName, "plugins")
+	var sanitizedName string
+	if err := i.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", proxyID).Scan(&sanitizedName); err != nil {
+		return fmt.Errorf("failed to get proxy sanitized name: %w", err)
+	}
+
+	pluginsDir := filepath.Join(i.serversDir, sanitizedName, "plugins")
 	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create plugins directory: %w", err)
 	}
 
-	log.Printf("[Spark] Installing Spark for Velocity proxy %s via Jenkins CI", proxyName)
+	log.Printf("[Spark] Installing Spark for Velocity proxy %s via Jenkins CI", sanitizedName)
 
 	jarPath, err := i.downloadLatestVelocitySpark(pluginsDir)
 	if err != nil {
 		return fmt.Errorf("failed to download Spark for Velocity: %w", err)
 	}
 
-	log.Printf("[Spark] Successfully installed Spark for proxy %s: %s", proxyName, filepath.Base(jarPath))
+	log.Printf("[Spark] Successfully installed Spark for proxy %s: %s", sanitizedName, filepath.Base(jarPath))
 	return nil
 }
 

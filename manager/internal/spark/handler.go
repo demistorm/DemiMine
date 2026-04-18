@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 )
 
 type Handler struct {
@@ -29,13 +28,13 @@ func (h *Handler) getServerContainerName(serverID string) (string, error) {
 		return "", fmt.Errorf("database not initialized")
 	}
 
-	var name string
-	err := h.db.QueryRow("SELECT name FROM servers WHERE id = ?", serverID).Scan(&name)
+	var sanitizedName string
+	err := h.db.QueryRow("SELECT sanitized_name FROM servers WHERE id = ?", serverID).Scan(&sanitizedName)
 	if err != nil {
 		return "", fmt.Errorf("server not found: %w", err)
 	}
 
-	return "demimine-" + sanitizeName(name), nil
+	return "demimine-" + sanitizedName, nil
 }
 
 func (h *Handler) getProxyContainerName(proxyID string) (string, error) {
@@ -43,28 +42,13 @@ func (h *Handler) getProxyContainerName(proxyID string) (string, error) {
 		return "", fmt.Errorf("database not initialized")
 	}
 
-	var name string
-	err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", proxyID).Scan(&name)
+	var sanitizedName string
+	err := h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", proxyID).Scan(&sanitizedName)
 	if err != nil {
 		return "", fmt.Errorf("proxy not found: %w", err)
 	}
 
-	return "demimine-proxy-" + sanitizeName(name), nil
-}
-
-func sanitizeName(name string) string {
-	name = strings.ToLower(name)
-	name = strings.ReplaceAll(name, " ", "-")
-	name = strings.ReplaceAll(name, "_", "-")
-
-	var result strings.Builder
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			result.WriteRune(r)
-		}
-	}
-
-	return strings.Trim(result.String(), "-")
+	return "demimine-proxy-" + sanitizedName, nil
 }
 
 type ProfileStartResponse struct {

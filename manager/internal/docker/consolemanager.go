@@ -44,7 +44,7 @@ func NewConsoleManager(dockerClient *Client, db *sql.DB) *ConsoleManager {
 func (cm *ConsoleManager) StartConsoleStreaming(ctx context.Context, serverID int64, name string) error {
 	if name == "" {
 		var n string
-		err := cm.db.QueryRow("SELECT name FROM servers WHERE id = ?", serverID).Scan(&n)
+		err := cm.db.QueryRow("SELECT sanitized_name FROM servers WHERE id = ?", serverID).Scan(&n)
 		if err != nil {
 			return fmt.Errorf("failed to get server name: %w", err)
 		}
@@ -58,7 +58,7 @@ func (cm *ConsoleManager) StartConsoleStreaming(ctx context.Context, serverID in
 		return fmt.Errorf("console already exists for server %d", serverID)
 	}
 
-	containerName := "demimine-" + SanitizeName(name)
+	containerName := "demimine-" + name
 	containerName = strings.TrimPrefix(containerName, "/")
 	cm.serverIDs[containerName] = serverID
 
@@ -163,10 +163,7 @@ func (cm *ConsoleManager) HandleContainerEvent(containerName string, action stri
 	if !exists {
 		serverName := strings.TrimPrefix(normalizedContainerName, "demimine-")
 		var id int64
-		err := cm.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverName).Scan(&id)
-		if err == sql.ErrNoRows {
-			err = cm.db.QueryRow("SELECT id FROM servers WHERE name = ? COLLATE NOCASE", serverName).Scan(&id)
-		}
+		err := cm.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", serverName).Scan(&id)
 		if err != nil {
 			log.Printf("Failed to find server ID for container %s (name=%s): %v", containerName, serverName, err)
 			return
@@ -189,7 +186,7 @@ func (cm *ConsoleManager) StartConsolesForRunningContainers(ctx context.Context)
 	}
 
 	var servers []ServerInfo
-	rows, err := cm.db.Query("SELECT id, name FROM servers WHERE status = 'running'")
+	rows, err := cm.db.Query("SELECT id, sanitized_name FROM servers WHERE status = 'running'")
 	if err != nil {
 		return fmt.Errorf("failed to query running servers: %w", err)
 	}
@@ -251,7 +248,7 @@ func (cm *ConsoleManager) Close() error {
 func (cm *ConsoleManager) StartProxyConsoleStreaming(ctx context.Context, proxyID int64, name string) error {
 	if name == "" {
 		var n string
-		err := cm.db.QueryRow("SELECT name FROM proxies WHERE id = ?", proxyID).Scan(&n)
+		err := cm.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", proxyID).Scan(&n)
 		if err != nil {
 			return fmt.Errorf("failed to get proxy name: %w", err)
 		}
@@ -265,7 +262,7 @@ func (cm *ConsoleManager) StartProxyConsoleStreaming(ctx context.Context, proxyI
 		return fmt.Errorf("console already exists for proxy %d", proxyID)
 	}
 
-	containerName := "demimine-proxy-" + SanitizeName(name)
+	containerName := "demimine-proxy-" + name
 	containerName = strings.TrimPrefix(containerName, "/")
 	cm.proxyIDs[containerName] = proxyID
 
@@ -365,10 +362,7 @@ func (cm *ConsoleManager) HandleProxyContainerEvent(containerName string, action
 	if !exists {
 		proxyName := strings.TrimPrefix(normalizedContainerName, "demimine-proxy-")
 		var id int64
-		err := cm.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyName).Scan(&id)
-		if err == sql.ErrNoRows {
-			err = cm.db.QueryRow("SELECT id FROM proxies WHERE name = ? COLLATE NOCASE", proxyName).Scan(&id)
-		}
+		err := cm.db.QueryRow("SELECT id FROM proxies WHERE sanitized_name = ?", proxyName).Scan(&id)
 		if err != nil {
 			log.Printf("Failed to find proxy ID for container %s (name=%s): %v", containerName, proxyName, err)
 			return
@@ -391,7 +385,7 @@ func (cm *ConsoleManager) StartConsolesForRunningProxies(ctx context.Context) er
 	}
 
 	var proxies []ProxyInfo
-	rows, err := cm.db.Query("SELECT id, name FROM proxies WHERE status = 'running'")
+	rows, err := cm.db.Query("SELECT id, sanitized_name FROM proxies WHERE status = 'running'")
 	if err != nil {
 		return fmt.Errorf("failed to query running proxies: %w", err)
 	}

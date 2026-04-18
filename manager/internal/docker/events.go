@@ -78,7 +78,7 @@ func (em *EventManager) processEvent(event events.Message) {
 	proxyIDAttr, hasProxy := event.Actor.Attributes["demimine.proxy_id"]
 	if hasProxy {
 		var proxyID int64
-		err := em.db.QueryRow("SELECT id FROM proxies WHERE name = ?", proxyIDAttr).Scan(&proxyID)
+		err := em.db.QueryRow("SELECT id FROM proxies WHERE sanitized_name = ?", proxyIDAttr).Scan(&proxyID)
 		if err == nil {
 			em.broadcastProxyStatusChange(proxyID, event.Action)
 		}
@@ -88,7 +88,7 @@ func (em *EventManager) processEvent(event events.Message) {
 	serverIDAttr, hasServer := event.Actor.Attributes["demimine.server_id"]
 	if hasServer {
 		var serverID int64
-		err := em.db.QueryRow("SELECT id FROM servers WHERE name = ?", serverIDAttr).Scan(&serverID)
+		err := em.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", serverIDAttr).Scan(&serverID)
 		if err == nil {
 			em.broadcastStatusChange(serverID, event.Action)
 		}

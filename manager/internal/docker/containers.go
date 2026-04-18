@@ -20,6 +20,7 @@ import (
 	"github.com/docker/go-connections/nat"
 
 	"github.com/demimine/manager/internal/java"
+	"github.com/demimine/manager/internal/util"
 )
 
 func getTZ() string {
@@ -269,18 +270,7 @@ func (c *Client) GetContainerID(ctx context.Context, name string) (string, error
 }
 
 func SanitizeName(name string) string {
-	name = strings.ToLower(name)
-	name = strings.ReplaceAll(name, " ", "-")
-	name = strings.ReplaceAll(name, "_", "-")
-
-	var result strings.Builder
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			result.WriteRune(r)
-		}
-	}
-
-	return strings.Trim(result.String(), "-")
+	return util.SanitizeName(name)
 }
 
 func (c *Client) CreateServerDirectory(basePath, serverName string) error {
@@ -309,7 +299,7 @@ func (c *Client) WaitForContainer(ctx context.Context, containerID string, timeo
 }
 
 func (c *Client) SyncServerStatus(ctx context.Context, database *sql.DB) {
-	rows, err := database.Query("SELECT id, name FROM servers WHERE status = 'running'")
+	rows, err := database.Query("SELECT id, sanitized_name FROM servers WHERE status = 'running'")
 	if err != nil {
 		log.Printf("Failed to query running servers for status sync: %v", err)
 		return

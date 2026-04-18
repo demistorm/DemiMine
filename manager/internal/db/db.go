@@ -4,10 +4,17 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/demimine/manager/internal/util"
 )
 
 var (
@@ -205,15 +212,25 @@ func RunMigrations(db *sql.DB) error {
 		4: {
 			{`ALTER TABLE servers ADD COLUMN java_override TEXT`, "add servers.java_override"},
 		},
+		5: {
+			{`ALTER TABLE servers ADD COLUMN sanitized_name TEXT`, "add servers.sanitized_name"},
+			{`ALTER TABLE proxies ADD COLUMN sanitized_name TEXT`, "add proxies.sanitized_name"},
+		},
 	}
 
-	for version, alters := range alterMigrations {
+	var alterVersions []int
+	for v := range alterMigrations {
+		alterVersions = append(alterVersions, v)
+	}
+	sort.Ints(alterVersions)
+
+	for _, version := range alterVersions {
 		if currentVersion >= version {
 			continue
 		}
 
 		var applied bool
-		for _, alter := range alters {
+		for _, alter := range alterMigrations[version] {
 			if _, err := db.Exec(alter.sql); err != nil {
 				log.Printf("Migration v%d [%s]: %v (skipping)", version, alter.desc, err)
 			} else {
@@ -265,11 +282,18 @@ func RunMigrations(db *sql.DB) error {
 		},
 	}
 
-	for version, rm := range recreateMigrations {
+	var recreateVersions []int
+	for v := range recreateMigrations {
+		recreateVersions = append(recreateVersions, v)
+	}
+	sort.Ints(recreateVersions)
+
+	for _, version := range recreateVersions {
 		if currentVersion >= version {
 			continue
 		}
 
+		rm := recreateMigrations[version]
 		var shouldMigrate bool
 
 		if rm.name == "add_unique_constraint_to_players_uuid" {
@@ -321,6 +345,8 @@ func RunMigrations(db *sql.DB) error {
 
 	db.Exec(`UPDATE installed_plugins SET loader_type = '' WHERE loader_type IS NULL`)
 
+	migrateSanitizedNames(db)
+
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_proxies_status ON proxies(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status)`,
@@ -355,4 +381,183 @@ func getSchemaVersion(db *sql.DB) int {
 func setSchemaVersion(db *sql.DB, version int) {
 	db.Exec("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", version)
 	log.Printf("Schema migration v%d applied", version)
+}
+
+func migrateSanitizedNames(db *sql.DB) {
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM servers WHERE sanitized_name IS NULL").Scan(&count)
+	if count == 0 {
+		db.QueryRow("SELECT COUNT(*) FROM proxies WHERE sanitized_name IS NULL").Scan(&count)
+	}
+	if count == 0 {
+		return
+	}
+
+	dataDir := resolveServersDir(db)
+	if dataDir != "" {
+		log.Printf("Migrating sanitized names and renaming directories under %s", dataDir)
+	}
+
+	rows, err := db.Query("SELECT id, name FROM servers WHERE sanitized_name IS NULL")
+	if err == nil {
+		for rows.Next() {
+			var id int64
+			var name string
+			if err := rows.Scan(&id, &name); err != nil {
+				continue
+			}
+			sanitized := util.SanitizeName(name)
+			db.Exec("UPDATE servers SET sanitized_name = ? WHERE id = ?", sanitized, id)
+
+			if dataDir != "" && name != sanitized {
+				oldPath := filepath.Join(dataDir, name)
+				newPath := filepath.Join(dataDir, sanitized)
+				if _, err := os.Stat(oldPath); err == nil {
+					if _, err := os.Stat(newPath); err != nil {
+						if err := os.Rename(oldPath, newPath); err != nil {
+							log.Printf("Failed to rename server dir %s -> %s: %v", oldPath, newPath, err)
+						} else {
+							log.Printf("Renamed server dir: %s -> %s", name, sanitized)
+						}
+					}
+				}
+			}
+		}
+		rows.Close()
+	}
+
+	proxyRows, err := db.Query("SELECT id, name FROM proxies WHERE sanitized_name IS NULL")
+	if err == nil {
+		for proxyRows.Next() {
+			var id int64
+			var name string
+			if err := proxyRows.Scan(&id, &name); err != nil {
+				continue
+			}
+			sanitized := util.SanitizeName(name)
+			db.Exec("UPDATE proxies SET sanitized_name = ? WHERE id = ?", sanitized, id)
+
+			if dataDir != "" && name != sanitized {
+				oldPath := filepath.Join(dataDir, name)
+				newPath := filepath.Join(dataDir, sanitized)
+				if _, err := os.Stat(oldPath); err == nil {
+					if _, err := os.Stat(newPath); err != nil {
+						if err := os.Rename(oldPath, newPath); err != nil {
+							log.Printf("Failed to rename proxy dir %s -> %s: %v", oldPath, newPath, err)
+						} else {
+							log.Printf("Renamed proxy dir: %s -> %s", name, sanitized)
+						}
+					}
+				}
+			}
+		}
+		proxyRows.Close()
+	}
+
+	migrateProxyConfigs(db, dataDir)
+
+	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_servers_sanitized_name ON servers(sanitized_name)")
+	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_proxies_sanitized_name ON proxies(sanitized_name)")
+
+	log.Println("Sanitized name migration complete")
+}
+
+func resolveServersDir(db *sql.DB) string {
+	val := os.Getenv("DEMIMINE_SERVERS_DIR")
+	if val != "" {
+		return val
+	}
+
+	for _, candidate := range []string{"/servers", "/data/servers", "./servers"} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func migrateProxyConfigs(db *sql.DB, dataDir string) {
+	if dataDir == "" {
+		return
+	}
+
+	rows, err := db.Query(`
+		SELECT p.id, p.name, p.sanitized_name
+		FROM proxies p
+		WHERE p.sanitized_name IS NOT NULL
+	`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var proxyID int64
+		var proxyName, proxySanitized string
+		if err := rows.Scan(&proxyID, &proxyName, &proxySanitized); err != nil {
+			continue
+		}
+
+		proxyPath := filepath.Join(dataDir, proxySanitized)
+		configPath := filepath.Join(proxyPath, "plugins", "demiauth", "config.toml")
+		if content, err := os.ReadFile(configPath); err == nil {
+			oldEntry := fmt.Sprintf(`loginServer = "%s"`, proxyName)
+			newEntry := fmt.Sprintf(`loginServer = "%s"`, proxySanitized)
+			updated := strings.ReplaceAll(string(content), oldEntry, newEntry)
+
+			re := regexp.MustCompile(`loginServer\s*=\s*"[^"]*"`)
+			updated = re.ReplaceAllString(updated, newEntry)
+
+			if updated != string(content) {
+				os.WriteFile(configPath, []byte(updated), 0644)
+				log.Printf("Updated DemiAuth config for proxy %s", proxyName)
+			}
+		}
+
+		velocityPath := filepath.Join(proxyPath, "velocity.toml")
+		migrateVelocityConfig(db, velocityPath, proxyID)
+	}
+}
+
+func migrateVelocityConfig(db *sql.DB, velocityPath string, proxyID int64) {
+	content, err := os.ReadFile(velocityPath)
+	if err != nil {
+		return
+	}
+
+	serverRows, err := db.Query(`
+		SELECT s.name, s.sanitized_name
+		FROM servers s
+		WHERE s.proxy_id = ? AND s.sanitized_name IS NOT NULL
+	`, proxyID)
+	if err != nil {
+		return
+	}
+
+	nameMap := make(map[string]string)
+	for serverRows.Next() {
+		var displayName, sanitized string
+		if err := serverRows.Scan(&displayName, &sanitized); err != nil {
+			continue
+		}
+		if displayName != sanitized {
+			nameMap[displayName] = sanitized
+		}
+	}
+	serverRows.Close()
+
+	if len(nameMap) == 0 {
+		return
+	}
+
+	updated := string(content)
+	for oldName, newName := range nameMap {
+		updated = strings.ReplaceAll(updated, oldName+" = ", newName+" = ")
+		updated = strings.ReplaceAll(updated, fmt.Sprintf(`"%s"`, oldName), fmt.Sprintf(`"%s"`, newName))
+	}
+
+	if updated != string(content) {
+		os.WriteFile(velocityPath, []byte(updated), 0644)
+		log.Printf("Updated velocity.toml server names for proxy %d", proxyID)
+	}
 }

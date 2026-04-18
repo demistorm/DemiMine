@@ -36,7 +36,7 @@ func (h *FileUploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var serverName string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&serverName)
+	err = h.db.QueryRow("SELECT sanitized_name FROM servers WHERE id = ?", id).Scan(&serverName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -188,7 +188,7 @@ func (h *FileUploadHandler) UploadProxy(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var proxyName string
-	err = h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", id).Scan(&proxyName)
+	err = h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", id).Scan(&proxyName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)

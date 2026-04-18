@@ -90,7 +90,7 @@ func (h *JarUpdateHandler) UpdateServerJar(w http.ResponseWriter, r *http.Reques
 	var serverType, serverVersion, serverName, status string
 
 	err := h.db.QueryRow(
-		"SELECT type, version, name, status FROM servers WHERE id = ?",
+		"SELECT type, version, sanitized_name, status FROM servers WHERE id = ?",
 		serverID,
 	).Scan(&serverType, &serverVersion, &serverName, &status)
 	if err != nil {
@@ -228,7 +228,7 @@ func (h *JarUpdateHandler) UpdateProxyJar(w http.ResponseWriter, r *http.Request
 	var status, proxyName string
 
 	err := h.db.QueryRow(
-		"SELECT status, name FROM proxies WHERE id = ?",
+		"SELECT status, sanitized_name FROM proxies WHERE id = ?",
 		proxyID,
 	).Scan(&status, &proxyName)
 	if err != nil {

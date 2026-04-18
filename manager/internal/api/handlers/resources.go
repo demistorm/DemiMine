@@ -90,7 +90,7 @@ func (h *ResourceHandler) CanStartServer(w http.ResponseWriter, r *http.Request)
 	}
 
 	var ramMB int
-	err := h.db.QueryRow("SELECT ram_mb FROM servers WHERE name = ?", serverName).Scan(&ramMB)
+	err := h.db.QueryRow("SELECT ram_mb FROM servers WHERE sanitized_name = ?", serverName).Scan(&ramMB)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)

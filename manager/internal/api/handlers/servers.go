@@ -23,6 +23,7 @@ import (
 	"github.com/demimine/manager/internal/minimotd"
 	"github.com/demimine/manager/internal/models"
 	"github.com/demimine/manager/internal/spark"
+	"github.com/demimine/manager/internal/util"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -58,7 +59,7 @@ func nullStringToPtr(ns sql.NullString) *string {
 
 func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
+		SELECT s.id, s.name, s.sanitized_name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2, s.start_on_boot,
@@ -79,8 +80,9 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 	servers := []models.ServerResponse{}
 	for rows.Next() {
 		var s models.ServerResponse
+		var sanitizedName string
 		var proxyID sql.NullInt64
-		var proxyName sql.NullString
+		var proxySanitizedName sql.NullString
 		var domain sql.NullString
 		var scheduledStart sql.NullString
 		var scheduledStop sql.NullString
@@ -91,7 +93,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		var javaOverride sql.NullString
 
 		err := rows.Scan(
-			&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
+			&s.ID, &s.Name, &sanitizedName, &s.Type, &s.Version, &proxyID, &proxySanitizedName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 			&minimotdLine1, &minimotdLine2, &s.StartOnBoot,
@@ -105,7 +107,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 			pid := int64(proxyID.Int64)
 			s.ProxyID = &pid
 		}
-		s.ProxyName = nullStringToPtr(proxyName)
+		s.ProxyName = nullStringToPtr(proxySanitizedName)
 		s.Domain = nullStringToPtr(domain)
 		s.ScheduledStart = nullStringToPtr(scheduledStart)
 		s.ScheduledStop = nullStringToPtr(scheduledStop)
@@ -113,7 +115,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 			hp := int(hostPort.Int64)
 			s.HostPort = &hp
 		}
-		s.IconPath = h.getIconPath(s.ID, s.Name)
+		s.IconPath = h.getIconPath(s.ID, sanitizedName)
 		s.MinimotdLine1 = nullStringToPtr(minimotdLine1)
 		s.MinimotdLine2 = nullStringToPtr(minimotdLine2)
 		s.JVMFlags = nullStringToPtr(jvmFlags)
@@ -182,26 +184,36 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var proxyName string
-		err = h.db.QueryRow("SELECT name FROM proxies WHERE host_port = ?", *req.HostPort).Scan(&proxyName)
+		var proxySanitizedName string
+		err = h.db.QueryRow("SELECT name FROM proxies WHERE host_port = ?", *req.HostPort).Scan(&proxySanitizedName)
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"error":   "port_in_use",
 				"port":    *req.HostPort,
-				"used_by": proxyName,
+				"used_by": proxySanitizedName,
 			})
 			return
 		}
 	}
 
 	var existingID int
-	err := h.db.QueryRow("SELECT id FROM servers WHERE name = ?", req.Name).Scan(&existingID)
+	sanitizedName := util.SanitizeName(req.Name)
+	err := h.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", sanitizedName).Scan(&existingID)
 	if err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": "server name already exists"})
+		return
+	}
+
+	var existingProxyID int
+	err = h.db.QueryRow("SELECT id FROM proxies WHERE sanitized_name = ?", sanitizedName).Scan(&existingProxyID)
+	if err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "a proxy with this name already exists"})
 		return
 	}
 
@@ -256,9 +268,9 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.db.Exec(`
-		INSERT INTO servers (name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y, minimotd_line1, minimotd_line2, start_on_boot)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?, ?)
-	`, req.Name, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop, minimotdLine1, minimotdLine2, req.StartOnBoot)
+		INSERT INTO servers (name, sanitized_name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y, minimotd_line1, minimotd_line2, start_on_boot)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?, ?)
+	`, req.Name, sanitizedName, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop, minimotdLine1, minimotdLine2, req.StartOnBoot)
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -269,7 +281,7 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	id, _ := result.LastInsertId()
 
-	serverPath := filepath.Join(h.cfg.ServersDir, req.Name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	if err := os.MkdirAll(serverPath, 0755); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -337,9 +349,9 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.ProxyID != nil {
 		var forwardingSecret string
-		var proxyName string
+		var proxySanitizedName string
 		var proxyHostPort int
-		err := h.db.QueryRow("SELECT forwarding_secret, name, host_port FROM proxies WHERE id = ?", *req.ProxyID).Scan(&forwardingSecret, &proxyName, &proxyHostPort)
+		err := h.db.QueryRow("SELECT forwarding_secret, sanitized_name, host_port FROM proxies WHERE id = ?", *req.ProxyID).Scan(&forwardingSecret, &proxySanitizedName, &proxyHostPort)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -366,8 +378,8 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if strings.ToLower(req.Type) == "nanolimbo" && isAuthServer(req.Name, req.Type) {
-			proxyPath := filepath.Join(h.cfg.ServersDir, proxyName)
-			if err := updateDemiAuthLoginServer(proxyPath, req.Name); err != nil {
+			proxyPath := filepath.Join(h.cfg.ServersDir, proxySanitizedName)
+			if err := updateDemiAuthLoginServer(proxyPath, sanitizedName); err != nil {
 				fmt.Printf("Warning: failed to update DemiAuth config: %v\n", err)
 			}
 		}
@@ -388,14 +400,14 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 				hasIcon = true
 			}
 
-			if err := h.minimotdMgr.CreateExtraConfig(proxyName, req.Name, line1, line2, hasIcon); err != nil {
+			if err := h.minimotdMgr.CreateExtraConfig(proxySanitizedName, sanitizedName, line1, line2, hasIcon); err != nil {
 				fmt.Printf("Failed to create MiniMOTD extra config: %v\n", err)
 			}
 
 			if hasIcon {
 				iconData, err := os.ReadFile(iconPath)
 				if err == nil {
-					if err := h.minimotdMgr.CopyIcon(proxyName, req.Name, iconData); err != nil {
+					if err := h.minimotdMgr.CopyIcon(proxySanitizedName, sanitizedName, iconData); err != nil {
 						fmt.Printf("Failed to copy icon to MiniMOTD: %v\n", err)
 					}
 				}
@@ -403,7 +415,7 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if req.Domain != nil && *req.Domain != "" {
-			if err := h.minimotdMgr.AddVirtualHost(proxyName, *req.Domain, fmt.Sprintf("%d", proxyHostPort), req.Name); err != nil {
+			if err := h.minimotdMgr.AddVirtualHost(proxySanitizedName, *req.Domain, fmt.Sprintf("%d", proxyHostPort), sanitizedName); err != nil {
 				fmt.Printf("Failed to add virtual host to MiniMOTD: %v\n", err)
 			}
 		}
@@ -426,7 +438,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	var s models.ServerResponse
 	var proxyID sql.NullInt64
-	var proxyName sql.NullString
+	var proxySanitizedName sql.NullString
 	var domain sql.NullString
 	var scheduledStart sql.NullString
 	var scheduledStop sql.NullString
@@ -436,8 +448,9 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var jvmFlags sql.NullString
 	var javaOverride sql.NullString
 
+	var getSanitizedName string
 	err = h.db.QueryRow(`
-		SELECT s.id, s.name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
+		SELECT s.id, s.name, s.sanitized_name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.start_on_boot,
 		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
@@ -447,7 +460,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN proxies p ON s.proxy_id = p.id
 		WHERE s.id = ?
 	`, id).Scan(
-		&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &proxyName, &s.RAMMB, &domain,
+		&s.ID, &s.Name, &getSanitizedName, &s.Type, &s.Version, &proxyID, &proxySanitizedName, &s.RAMMB, &domain,
 		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 		&s.StartOnBoot,
 		&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
@@ -472,7 +485,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		pid := proxyID.Int64
 		s.ProxyID = &pid
 	}
-	s.ProxyName = nullStringToPtr(proxyName)
+	s.ProxyName = nullStringToPtr(proxySanitizedName)
 	s.Domain = nullStringToPtr(domain)
 	s.ScheduledStart = nullStringToPtr(scheduledStart)
 	s.ScheduledStop = nullStringToPtr(scheduledStop)
@@ -480,7 +493,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		hp := int(hostPort.Int64)
 		s.HostPort = &hp
 	}
-	s.IconPath = h.getIconPath(s.ID, s.Name)
+	s.IconPath = h.getIconPath(s.ID, getSanitizedName)
 	s.JVMFlags = nullStringToPtr(jvmFlags)
 	s.JavaOverride = nullStringToPtr(javaOverride)
 
@@ -498,11 +511,11 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
+	var name, sanitizedName string
 	var status string
 	var proxyID sql.NullInt64
 	var domain sql.NullString
-	err = h.db.QueryRow("SELECT name, status, proxy_id, domain FROM servers WHERE id = ?", id).Scan(&name, &status, &proxyID, &domain)
+	err = h.db.QueryRow("SELECT name, sanitized_name, status, proxy_id, domain FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName, &status, &proxyID, &domain)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -513,14 +526,14 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	if status == "running" {
 		timeout := 10
-		_ = h.docker.StopContainer(ctx, name, &timeout)
+		_ = h.docker.StopContainer(ctx, sanitizedName, &timeout)
 	}
 
-	if exists, _ := h.docker.ContainerExists(ctx, name); exists {
-		_ = h.docker.RemoveContainer(ctx, name)
+	if exists, _ := h.docker.ContainerExists(ctx, sanitizedName); exists {
+		_ = h.docker.RemoveContainer(ctx, sanitizedName)
 	}
 
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	_ = os.RemoveAll(serverPath)
 
 	result, err := h.db.Exec("DELETE FROM servers WHERE id = ?", id)
@@ -542,13 +555,13 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if proxyID.Valid {
 		_ = SyncProxyConfig(h.db, proxyID.Int64, h.cfg.ServersDir)
 
-		var proxyName string
+		var proxySanitizedName string
 		var proxyHostPort int
-		if err := h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxyName, &proxyHostPort); err == nil {
-			_ = h.minimotdMgr.DeleteExtraConfig(proxyName, name)
-			_ = h.minimotdMgr.DeleteIcon(proxyName, name)
+		if err := h.db.QueryRow("SELECT sanitized_name, host_port FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxySanitizedName, &proxyHostPort); err == nil {
+			_ = h.minimotdMgr.DeleteExtraConfig(proxySanitizedName, sanitizedName)
+			_ = h.minimotdMgr.DeleteIcon(proxySanitizedName, sanitizedName)
 			if domain.Valid {
-				_ = h.minimotdMgr.RemoveVirtualHost(proxyName, domain.String, fmt.Sprintf("%d", proxyHostPort))
+				_ = h.minimotdMgr.RemoveVirtualHost(proxySanitizedName, domain.String, fmt.Sprintf("%d", proxyHostPort))
 			}
 		}
 	}
@@ -603,18 +616,19 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var currentName sql.NullString
+	var currentSanitizedName sql.NullString
 	var currentProxyID sql.NullInt64
 	var currentDomain sql.NullString
 	var currentType sql.NullString
 	var currentRAMMB sql.NullInt64
 	var status string
 	var proxyHostPort int
-	var proxyName string
+	var proxySanitizedName string
 
-	h.db.QueryRow("SELECT name, proxy_id, domain, status, type, ram_mb FROM servers WHERE id = ?", id).Scan(&currentName, &currentProxyID, &currentDomain, &status, &currentType, &currentRAMMB)
+	h.db.QueryRow("SELECT name, sanitized_name, proxy_id, domain, status, type, ram_mb FROM servers WHERE id = ?", id).Scan(&currentName, &currentSanitizedName, &currentProxyID, &currentDomain, &status, &currentType, &currentRAMMB)
 
 	if currentProxyID.Valid {
-		h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", currentProxyID.Int64).Scan(&proxyName, &proxyHostPort)
+		h.db.QueryRow("SELECT sanitized_name, host_port FROM proxies WHERE id = ?", currentProxyID.Int64).Scan(&proxySanitizedName, &proxyHostPort)
 	}
 
 	if req.Name != nil && currentName.String != *req.Name {
@@ -625,8 +639,28 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		oldPath := filepath.Join(h.cfg.ServersDir, currentName.String)
-		newPath := filepath.Join(h.cfg.ServersDir, *req.Name)
+		newSanitizedName := util.SanitizeName(*req.Name)
+
+		var existingID int
+		err := h.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ? AND id != ?", newSanitizedName, id).Scan(&existingID)
+		if err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "a server with a similar name already exists"})
+			return
+		}
+
+		var existingProxyID int
+		err = h.db.QueryRow("SELECT id FROM proxies WHERE sanitized_name = ?", newSanitizedName).Scan(&existingProxyID)
+		if err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "a proxy with a similar name already exists"})
+			return
+		}
+
+		oldPath := filepath.Join(h.cfg.ServersDir, currentSanitizedName.String)
+		newPath := filepath.Join(h.cfg.ServersDir, newSanitizedName)
 
 		if _, err := os.Stat(oldPath); err == nil {
 			if _, err := os.Stat(newPath); err == nil {
@@ -645,7 +679,7 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Name != nil {
-		h.db.Exec("UPDATE servers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, id)
+		h.db.Exec("UPDATE servers SET name = ?, sanitized_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.Name, util.SanitizeName(*req.Name), id)
 	}
 	if req.RAMMB != nil {
 		h.db.Exec("UPDATE servers SET ram_mb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.RAMMB, id)
@@ -685,7 +719,7 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// write user_jvm_args.txt for Forge/NeoForge when RAM or JVM flags change
-	if currentType.Valid && (currentType.String == "forge" || currentType.String == "neoforge") && currentName.Valid {
+	if currentType.Valid && (currentType.String == "forge" || currentType.String == "neoforge") && currentSanitizedName.Valid {
 		needsWrite := req.RAMMB != nil || req.JVMFlags != nil
 		if needsWrite {
 			ramMB := int(currentRAMMB.Int64)
@@ -702,7 +736,7 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 					jvmFlags = flags.String
 				}
 			}
-			serverPath := filepath.Join(h.cfg.ServersDir, currentName.String)
+			serverPath := filepath.Join(h.cfg.ServersDir, currentSanitizedName.String)
 			if err := mc.WriteUserJVMArgs(serverPath, ramMB, jvmFlags); err != nil {
 				fmt.Printf("Failed to write user_jvm_args.txt for server %d: %v\n", id, err)
 			}
@@ -717,22 +751,22 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.ProxyID != nil {
 		if *req.ProxyID == 0 {
 			if currentProxyID.Valid && hasConfig {
-				_ = h.minimotdMgr.DeleteExtraConfig(proxyName, currentName.String)
+				_ = h.minimotdMgr.DeleteExtraConfig(proxySanitizedName, currentSanitizedName.String)
 				if currentDomain.Valid {
-					_ = h.minimotdMgr.RemoveVirtualHost(proxyName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
+					_ = h.minimotdMgr.RemoveVirtualHost(proxySanitizedName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
 				}
 			}
 			_ = RemoveServerFromProxy(h.db, id, h.cfg.ServersDir)
 		} else {
-			var newProxyName string
+			var newProxySanitizedName string
 			var newProxyHostPort int
-			err := h.db.QueryRow("SELECT name, host_port FROM proxies WHERE id = ?", *req.ProxyID).Scan(&newProxyName, &newProxyHostPort)
+			err := h.db.QueryRow("SELECT sanitized_name, host_port FROM proxies WHERE id = ?", *req.ProxyID).Scan(&newProxySanitizedName, &newProxyHostPort)
 			if err == nil {
 				if hasConfig {
-					_ = h.minimotdMgr.DeleteExtraConfig(proxyName, currentName.String)
-					_ = h.minimotdMgr.DeleteIcon(proxyName, currentName.String)
+					_ = h.minimotdMgr.DeleteExtraConfig(proxySanitizedName, currentSanitizedName.String)
+					_ = h.minimotdMgr.DeleteIcon(proxySanitizedName, currentSanitizedName.String)
 					if currentDomain.Valid {
-						_ = h.minimotdMgr.RemoveVirtualHost(proxyName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
+						_ = h.minimotdMgr.RemoveVirtualHost(proxySanitizedName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
 					}
 
 					line1 := ""
@@ -744,28 +778,28 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 						line2 = minimotdLine2.String
 					}
 
-					serverPath := filepath.Join(h.cfg.ServersDir, currentName.String)
+					serverPath := filepath.Join(h.cfg.ServersDir, currentSanitizedName.String)
 					iconPath := filepath.Join(serverPath, "server-icon.png")
 					hasIcon := false
 					if _, err := os.Stat(iconPath); err == nil {
 						hasIcon = true
 					}
 
-					if err := h.minimotdMgr.CreateExtraConfig(newProxyName, currentName.String, line1, line2, hasIcon); err != nil {
+					if err := h.minimotdMgr.CreateExtraConfig(newProxySanitizedName, currentSanitizedName.String, line1, line2, hasIcon); err != nil {
 						fmt.Printf("Failed to create MiniMOTD extra config: %v\n", err)
 					}
 
 					if hasIcon {
 						iconData, err := os.ReadFile(iconPath)
 						if err == nil {
-							if err := h.minimotdMgr.CopyIcon(newProxyName, currentName.String, iconData); err != nil {
+							if err := h.minimotdMgr.CopyIcon(newProxySanitizedName, currentSanitizedName.String, iconData); err != nil {
 								fmt.Printf("Failed to copy icon to MiniMOTD: %v\n", err)
 							}
 						}
 					}
 
 					if currentDomain.Valid {
-						if err := h.minimotdMgr.AddVirtualHost(newProxyName, currentDomain.String, fmt.Sprintf("%d", newProxyHostPort), currentName.String); err != nil {
+						if err := h.minimotdMgr.AddVirtualHost(newProxySanitizedName, currentDomain.String, fmt.Sprintf("%d", newProxyHostPort), currentSanitizedName.String); err != nil {
 							fmt.Printf("Failed to add virtual host to MiniMOTD: %v\n", err)
 						}
 					}
@@ -782,11 +816,11 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 			_ = SyncProxyConfig(h.db, proxyID.Int64, h.cfg.ServersDir)
 
 			if currentDomain.Valid {
-				_ = h.minimotdMgr.RemoveVirtualHost(proxyName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
+				_ = h.minimotdMgr.RemoveVirtualHost(proxySanitizedName, currentDomain.String, fmt.Sprintf("%d", proxyHostPort))
 			}
 
 			if *req.Domain != "" && hasConfig {
-				if err := h.minimotdMgr.AddVirtualHost(proxyName, *req.Domain, fmt.Sprintf("%d", proxyHostPort), currentName.String); err != nil {
+				if err := h.minimotdMgr.AddVirtualHost(proxySanitizedName, *req.Domain, fmt.Sprintf("%d", proxyHostPort), currentSanitizedName.String); err != nil {
 					fmt.Printf("Failed to add virtual host to MiniMOTD: %v\n", err)
 				}
 			}
@@ -799,7 +833,8 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 			domain = currentDomain.String
 		}
 
-		if err := h.minimotdMgr.RenameServer(proxyName, currentName.String, *req.Name, domain, fmt.Sprintf("%d", proxyHostPort)); err != nil {
+		newSanitizedName := util.SanitizeName(*req.Name)
+		if err := h.minimotdMgr.RenameServer(proxySanitizedName, currentSanitizedName.String, newSanitizedName, domain, fmt.Sprintf("%d", proxyHostPort)); err != nil {
 			fmt.Printf("Failed to rename MiniMOTD config: %v\n", err)
 		}
 	}
@@ -824,7 +859,7 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 			line2 = minimotdLine2.String
 		}
 
-		serverPath := filepath.Join(h.cfg.ServersDir, currentName.String)
+		serverPath := filepath.Join(h.cfg.ServersDir, currentSanitizedName.String)
 		iconPath := filepath.Join(serverPath, "server-icon.png")
 		hasIcon := false
 		if _, err := os.Stat(iconPath); err == nil {
@@ -832,11 +867,11 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if line1 != "" || line2 != "" {
-			if err := h.minimotdMgr.UpdateExtraConfig(proxyName, currentName.String, line1, line2, hasIcon); err != nil {
+			if err := h.minimotdMgr.UpdateExtraConfig(proxySanitizedName, currentSanitizedName.String, line1, line2, hasIcon); err != nil {
 				fmt.Printf("Failed to update MiniMOTD extra config: %v\n", err)
 			}
 		} else {
-			_ = h.minimotdMgr.DeleteExtraConfig(proxyName, currentName.String)
+			_ = h.minimotdMgr.DeleteExtraConfig(proxySanitizedName, currentSanitizedName.String)
 		}
 	}
 
@@ -855,14 +890,14 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name, serverType, version string
+	var name, sanitizedName, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
 	var jvmFlags sql.NullString
 	var javaOverride sql.NullString
 	err = h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
+		SELECT name, sanitized_name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -886,19 +921,19 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := &docker.ServerContainerConfig{
-		Name:         name,
+		Name:         sanitizedName,
 		ServerType:   serverType,
 		Version:      version,
 		RAMMB:        ramMB,
 		JVMFlags:     jvmFlagsStr,
 		JavaOverride: javaOverrideStr,
-		ServerPath:   filepath.Join(h.cfg.HostServersDir, name),
+		ServerPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
 	}
 
 	ctx := context.Background()
-	if err := h.docker.StartContainer(ctx, name, cfg); err != nil {
+	if err := h.docker.StartContainer(ctx, sanitizedName, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to start server: %v", err)})
@@ -924,8 +959,8 @@ func (h *ServerHandler) Stop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -935,7 +970,7 @@ func (h *ServerHandler) Stop(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	timeout := 30
-	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
+	if err := h.docker.StopContainer(ctx, sanitizedName, &timeout); err != nil {
 		if strings.Contains(err.Error(), "No such container") {
 			h.db.Exec("UPDATE servers SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
 			w.Header().Set("Content-Type", "application/json")
@@ -964,14 +999,14 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name, serverType, version string
+	var name, sanitizedName, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
 	var jvmFlags sql.NullString
 	var javaOverride sql.NullString
 	err = h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
+		SELECT name, sanitized_name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -982,7 +1017,7 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	timeout := 30
 
-	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
+	if err := h.docker.StopContainer(ctx, sanitizedName, &timeout); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to stop server: %v", err)})
@@ -991,7 +1026,7 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 
 	h.db.Exec("UPDATE servers SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
 
-	containerID, err := h.docker.GetContainerID(ctx, name)
+	containerID, err := h.docker.GetContainerID(ctx, sanitizedName)
 	if err == nil && containerID != "" {
 		if err := h.docker.WaitForContainer(ctx, containerID, 45*time.Second); err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -1017,18 +1052,18 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := &docker.ServerContainerConfig{
-		Name:         name,
+		Name:         sanitizedName,
 		ServerType:   serverType,
 		Version:      version,
 		RAMMB:        ramMB,
 		JVMFlags:     jvmFlagsStr,
 		JavaOverride: javaOverrideStr,
-		ServerPath:   filepath.Join(h.cfg.HostServersDir, name),
+		ServerPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
 	}
 
-	if err := h.docker.StartContainer(ctx, name, cfg); err != nil {
+	if err := h.docker.StartContainer(ctx, sanitizedName, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to restart server: %v", err)})
@@ -1051,8 +1086,8 @@ func (h *ServerHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1068,7 +1103,7 @@ func (h *ServerHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	logs, err := h.docker.GetContainerLogs(ctx, name, lines)
+	logs, err := h.docker.GetContainerLogs(ctx, sanitizedName, lines)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -1186,8 +1221,8 @@ func (h *ServerHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1201,7 +1236,7 @@ func (h *ServerHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(serverPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, serverPath) {
@@ -1269,8 +1304,8 @@ func (h *ServerHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1287,7 +1322,7 @@ func (h *ServerHandler) GetFileContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(serverPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, serverPath) {
@@ -1381,8 +1416,8 @@ func (h *ServerHandler) WriteFileContent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1407,7 +1442,7 @@ func (h *ServerHandler) WriteFileContent(w http.ResponseWriter, r *http.Request)
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(serverPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, serverPath) {
@@ -1438,8 +1473,8 @@ func (h *ServerHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1456,7 +1491,7 @@ func (h *ServerHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(serverPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, serverPath) {
@@ -1487,8 +1522,8 @@ func (h *ServerHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1505,7 +1540,7 @@ func (h *ServerHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relativePath = filepath.Clean("/" + relativePath)
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	fullPath := filepath.Join(serverPath, relativePath)
 
 	if !strings.HasPrefix(fullPath, serverPath) {
@@ -1571,8 +1606,8 @@ func (h *ServerHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1595,7 +1630,7 @@ func (h *ServerHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	oldPath := filepath.Join(serverPath, filepath.Clean("/"+req.OldPath))
 	newPath := filepath.Join(filepath.Dir(oldPath), req.NewName)
 
@@ -1627,8 +1662,8 @@ func (h *ServerHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1674,7 +1709,7 @@ func (h *ServerHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	iconPath := filepath.Join(serverPath, "server-icon.png")
 
 	if err := os.WriteFile(iconPath, content, 0644); err != nil {
@@ -1689,9 +1724,9 @@ func (h *ServerHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow("SELECT proxy_id, minimotd_line1, minimotd_line2 FROM servers WHERE id = ?", id).Scan(&proxyID, &minimotdLine1, &minimotdLine2)
 
 	if proxyID.Valid && (minimotdLine1.Valid || minimotdLine2.Valid) {
-		var proxyName string
-		if err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxyName); err == nil {
-			if err := h.minimotdMgr.CopyIcon(proxyName, name, content); err != nil {
+		var proxySanitizedName string
+		if err := h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxySanitizedName); err == nil {
+			if err := h.minimotdMgr.CopyIcon(proxySanitizedName, sanitizedName, content); err != nil {
 				fmt.Printf("Failed to copy icon to MiniMOTD: %v\n", err)
 			}
 		}
@@ -1711,8 +1746,8 @@ func (h *ServerHandler) GetIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
-	err = h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err = h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1720,7 +1755,7 @@ func (h *ServerHandler) GetIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	iconPath := filepath.Join(serverPath, "server-icon.png")
 
 	content, err := os.ReadFile(iconPath)
@@ -1746,9 +1781,9 @@ func (h *ServerHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name string
+	var name, sanitizedName string
 	var proxyID sql.NullInt64
-	err = h.db.QueryRow("SELECT name, proxy_id FROM servers WHERE id = ?", id).Scan(&name, &proxyID)
+	err = h.db.QueryRow("SELECT name, sanitized_name, proxy_id FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName, &proxyID)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1756,7 +1791,7 @@ func (h *ServerHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	iconPath := filepath.Join(serverPath, "server-icon.png")
 
 	if _, err := os.Stat(iconPath); os.IsNotExist(err) {
@@ -1774,9 +1809,9 @@ func (h *ServerHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if proxyID.Valid {
-		var proxyName string
-		if err := h.db.QueryRow("SELECT name FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxyName); err == nil {
-			_ = h.minimotdMgr.DeleteIcon(proxyName, name)
+		var proxySanitizedName string
+		if err := h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxySanitizedName); err == nil {
+			_ = h.minimotdMgr.DeleteIcon(proxySanitizedName, sanitizedName)
 		}
 	}
 
@@ -1806,8 +1841,8 @@ func isValidPNGIcon(content []byte) bool {
 	return width == 64 && height == 64
 }
 
-func (h *ServerHandler) getIconPath(id int64, name string) *string {
-	serverPath := filepath.Join(h.cfg.ServersDir, name)
+func (h *ServerHandler) getIconPath(id int64, sanitizedName string) *string {
+	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	iconPath := filepath.Join(serverPath, "server-icon.png")
 
 	if _, err := os.Stat(iconPath); err == nil {
@@ -1879,15 +1914,15 @@ func (h *ServerHandler) ListAll() ([]models.Server, error) {
 }
 
 func (h *ServerHandler) StopByID(id int64) error {
-	var name string
-	err := h.db.QueryRow("SELECT name FROM servers WHERE id = ?", id).Scan(&name)
+	var name, sanitizedName string
+	err := h.db.QueryRow("SELECT name, sanitized_name FROM servers WHERE id = ?", id).Scan(&name, &sanitizedName)
 	if err != nil {
 		return err
 	}
 
 	ctx := context.Background()
 	timeout := 30
-	if err := h.docker.StopContainer(ctx, name, &timeout); err != nil {
+	if err := h.docker.StopContainer(ctx, sanitizedName, &timeout); err != nil {
 		if !strings.Contains(err.Error(), "No such container") {
 			return err
 		}
@@ -1898,14 +1933,14 @@ func (h *ServerHandler) StopByID(id int64) error {
 }
 
 func (h *ServerHandler) StartByID(id int64) error {
-	var name, serverType, version string
+	var name, sanitizedName, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
 	var jvmFlags sql.NullString
 	var javaOverride sql.NullString
 	err := h.db.QueryRow(`
-		SELECT name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
-		Scan(&name, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
+		SELECT name, sanitized_name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
 	if err != nil {
 		return err
 	}
@@ -1926,19 +1961,19 @@ func (h *ServerHandler) StartByID(id int64) error {
 	}
 
 	cfg := &docker.ServerContainerConfig{
-		Name:         name,
+		Name:         sanitizedName,
 		ServerType:   serverType,
 		Version:      version,
 		RAMMB:        ramMB,
 		JVMFlags:     jvmFlagsStr,
 		JavaOverride: javaOverrideStr,
-		ServerPath:   filepath.Join(h.cfg.HostServersDir, name),
+		ServerPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
 	}
 
 	ctx := context.Background()
-	if err := h.docker.StartContainer(ctx, name, cfg); err != nil {
+	if err := h.docker.StartContainer(ctx, sanitizedName, cfg); err != nil {
 		return err
 	}
 
