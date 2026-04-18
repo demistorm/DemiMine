@@ -50,7 +50,7 @@ func (h *FileUploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(100 << 20); err != nil {
+	if err := r.ParseMultipartForm(1 << 30); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to parse multipart form"})
@@ -81,9 +81,11 @@ func (h *FileUploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	var uploaded []string
 
+	fileRelativePath := r.FormValue("relative_path")
+
 	for _, files := range r.MultipartForm.File {
 		for _, fileHeader := range files {
-			uploaded = append(uploaded, h.processUploadedFile(fileHeader, targetDir)...)
+			uploaded = append(uploaded, h.processUploadedFile(fileHeader, targetDir, fileRelativePath)...)
 		}
 	}
 
@@ -94,7 +96,7 @@ func (h *FileUploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *FileUploadHandler) processUploadedFile(fileHeader *multipart.FileHeader, targetDir string) []string {
+func (h *FileUploadHandler) processUploadedFile(fileHeader *multipart.FileHeader, targetDir string, fileRelativePath string) []string {
 	var uploaded []string
 
 	file, err := fileHeader.Open()
@@ -113,7 +115,21 @@ func (h *FileUploadHandler) processUploadedFile(fileHeader *multipart.FileHeader
 		extracted := extractZip(tempPath, targetDir)
 		uploaded = append(uploaded, extracted...)
 	} else {
-		destPath := filepath.Join(targetDir, fileHeader.Filename)
+		filename := fileRelativePath
+		if filename == "" {
+			filename = fileHeader.Filename
+		}
+		destPath := filepath.Join(targetDir, filepath.Clean(filename))
+		cleanTargetDir := filepath.Clean(targetDir)
+
+		if !strings.HasPrefix(destPath, cleanTargetDir+string(os.PathSeparator)) {
+			return uploaded
+		}
+
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return uploaded
+		}
+
 		if err := saveMultipartFile(file, destPath); err == nil {
 			uploaded = append(uploaded, fileHeader.Filename)
 		}
@@ -202,7 +218,7 @@ func (h *FileUploadHandler) UploadProxy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := r.ParseMultipartForm(100 << 20); err != nil {
+	if err := r.ParseMultipartForm(1 << 30); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to parse multipart form"})
@@ -233,9 +249,11 @@ func (h *FileUploadHandler) UploadProxy(w http.ResponseWriter, r *http.Request) 
 
 	var uploaded []string
 
+	fileRelativePath := r.FormValue("relative_path")
+
 	for _, files := range r.MultipartForm.File {
 		for _, fileHeader := range files {
-			uploaded = append(uploaded, h.processUploadedFile(fileHeader, targetDir)...)
+			uploaded = append(uploaded, h.processUploadedFile(fileHeader, targetDir, fileRelativePath)...)
 		}
 	}
 

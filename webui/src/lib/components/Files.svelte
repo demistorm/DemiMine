@@ -212,34 +212,112 @@
 		isDragging = false;
 	}
 
+	interface UploadItem {
+		file: File;
+		path: string;
+	}
+
 	async function handleDrop(e: DragEvent) {
 		e.preventDefault();
 		isDragging = false;
 
-		const files = e.dataTransfer?.files;
-		if (!files || files.length === 0) return;
+		const dataTransfer = e.dataTransfer;
+		if (!dataTransfer) return;
 
-		await uploadFiles(files);
+		const items = dataTransfer.items;
+		if (items && items.length > 0 && typeof (items[0] as any).webkitGetAsEntry === 'function') {
+			const collected: UploadItem[] = [];
+			for (let i = 0; i < items.length; i++) {
+				const entry = (items[i] as any).webkitGetAsEntry();
+				if (entry) {
+					await collectFilesFromEntry(entry, '', collected);
+				}
+			}
+			if (collected.length > 0) {
+				await uploadFiles(collected);
+				return;
+			}
+		}
+
+		const files = dataTransfer.files;
+		if (files && files.length > 0) {
+			await uploadFiles(files);
+		}
 	}
 
-	async function uploadFiles(fileList: FileList) {
+	async function collectFilesFromEntry(entry: any, path: string, items: UploadItem[]): Promise<void> {
+		if (entry.isFile) {
+			await new Promise<void>((resolve) => {
+				entry.file(
+					(file: File) => {
+						items.push({ file, path: path + file.name });
+						resolve();
+					},
+					() => resolve()
+				);
+			});
+		} else if (entry.isDirectory) {
+			const reader = entry.createReader();
+			await new Promise<void>((resolve) => {
+				const readBatch = () => {
+					reader.readEntries(async (entries: any[]) => {
+						if (entries.length === 0) {
+							resolve();
+							return;
+						}
+						for (const e of entries) {
+							await collectFilesFromEntry(e, path + entry.name + '/', items);
+						}
+						readBatch();
+					}, () => resolve());
+				};
+				readBatch();
+			});
+		}
+	}
+
+	async function uploadFiles(fileList: FileList | UploadItem[]) {
 		uploadLoading = true;
 		error = '';
 
 		try {
-			for (const file of fileList) {
-				const formData = new FormData();
-				formData.append('file', file);
-				
-				const token = localStorage.getItem('token');
-				const response = await fetch(`${apiPrefix}/${id}/files/upload?path=${encodeURIComponent(currentPath)}`, {
-					method: 'POST',
-					headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-					body: formData
-				});
+			if (fileList instanceof FileList) {
+				for (let i = 0; i < fileList.length; i++) {
+					const file = fileList[i];
+					const formData = new FormData();
+					const relativePath = (file as any).webkitRelativePath || '';
+					formData.append('file', file);
+					if (relativePath) {
+						formData.append('relative_path', relativePath);
+					}
+					
+					const token = localStorage.getItem('token');
+					const response = await fetch(`${apiPrefix}/${id}/files/upload?path=${encodeURIComponent(currentPath)}`, {
+						method: 'POST',
+						headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+						body: formData
+					});
 
-				if (!response.ok) {
-					throw new Error('Upload failed');
+					if (!response.ok) {
+						throw new Error('Upload failed');
+					}
+				}
+			} else {
+				for (const item of fileList) {
+					const formData = new FormData();
+					formData.append('file', item.file);
+					formData.append('relative_path', item.path);
+					
+					const token = localStorage.getItem('token');
+					const response = await fetch(`${apiPrefix}/${id}/files/upload?path=${encodeURIComponent(currentPath)}`, {
+						method: 'POST',
+						headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+						body: formData
+					});
+
+					if (!response.ok) {
+						throw new Error('Upload failed');
+					}
 				}
 			}
 			loadFiles();
@@ -254,6 +332,20 @@
 	function handleFilePicker() {
 		const input = document.createElement('input');
 		input.type = 'file';
+		input.multiple = true;
+		input.onchange = (e) => {
+			const target = e.target as HTMLInputElement;
+			if (target.files) {
+				uploadFiles(target.files);
+			}
+		};
+		input.click();
+	}
+
+	function handleFolderPicker() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		(input as any).webkitdirectory = true;
 		input.multiple = true;
 		input.onchange = (e) => {
 			const target = e.target as HTMLInputElement;
@@ -333,6 +425,9 @@
 			<div class="actions">
 				<button class="btn" on:click={handleFilePicker} disabled={uploadLoading}>
 					{uploadLoading ? 'Uploading...' : 'Upload'}
+				</button>
+				<button class="btn" on:click={handleFolderPicker} disabled={uploadLoading}>
+					Upload Folder
 				</button>
 				<button class="btn" on:click={navigateUp} disabled={currentPath === '/'}>
 					↑ Up
