@@ -141,7 +141,7 @@ func (m *Manager) DeleteIcon(proxyName, serverName string) error {
 	return nil
 }
 
-func (m *Manager) RenameServer(proxyName, oldName, newName, domain, proxyPort string) error {
+func (m *Manager) RenameServer(proxyName, oldName, newName, domain, proxyPort, line1, line2 string, hasIcon bool) error {
 	oldConfigPath := m.getExtraConfigPath(proxyName, oldName)
 	newConfigPath := m.getExtraConfigPath(proxyName, newName)
 
@@ -153,7 +153,7 @@ func (m *Manager) RenameServer(proxyName, oldName, newName, domain, proxyPort st
 			return fmt.Errorf("failed to rename config: %w", err)
 		}
 
-		config := m.generateExtraConfig(newName, "", "", false)
+		config := m.generateExtraConfig(newName, line1, line2, hasIcon)
 		if err := os.WriteFile(newConfigPath, []byte(config), 0644); err != nil {
 			return fmt.Errorf("failed to update config with new name: %w", err)
 		}
@@ -418,7 +418,7 @@ player-count-settings {
         #  - random: A random number of fake players in this range will be added
         #      ex: fake-players="3:6"
         #  - percent: The player count will be inflated by this much, rounding up
-        #      ex: fake-players="25%"
+        #      ex: fake-players="25%%"
         fake-players="25%%"
     }
     # Changes the Max Players to be X more than the online players

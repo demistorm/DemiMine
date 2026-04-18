@@ -834,7 +834,23 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 
 		newSanitizedName := util.SanitizeName(*req.Name)
-		if err := h.minimotdMgr.RenameServer(proxySanitizedName, currentSanitizedName.String, newSanitizedName, domain, fmt.Sprintf("%d", proxyHostPort)); err != nil {
+
+		line1 := ""
+		line2 := ""
+		if minimotdLine1.Valid {
+			line1 = minimotdLine1.String
+		}
+		if minimotdLine2.Valid {
+			line2 = minimotdLine2.String
+		}
+
+		serverPath := filepath.Join(h.cfg.ServersDir, currentSanitizedName.String)
+		hasIcon := false
+		if _, err := os.Stat(filepath.Join(serverPath, "server-icon.png")); err == nil {
+			hasIcon = true
+		}
+
+		if err := h.minimotdMgr.RenameServer(proxySanitizedName, currentSanitizedName.String, newSanitizedName, domain, fmt.Sprintf("%d", proxyHostPort), line1, line2, hasIcon); err != nil {
 			fmt.Printf("Failed to rename MiniMOTD config: %v\n", err)
 		}
 	}
@@ -1729,6 +1745,18 @@ func (h *ServerHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 			if err := h.minimotdMgr.CopyIcon(proxySanitizedName, sanitizedName, content); err != nil {
 				fmt.Printf("Failed to copy icon to MiniMOTD: %v\n", err)
 			}
+
+			line1 := ""
+			line2 := ""
+			if minimotdLine1.Valid {
+				line1 = minimotdLine1.String
+			}
+			if minimotdLine2.Valid {
+				line2 = minimotdLine2.String
+			}
+			if err := h.minimotdMgr.UpdateExtraConfig(proxySanitizedName, sanitizedName, line1, line2, true); err != nil {
+				fmt.Printf("Failed to update MiniMOTD extra config with icon: %v\n", err)
+			}
 		}
 	}
 
@@ -1812,6 +1840,23 @@ func (h *ServerHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 		var proxySanitizedName string
 		if err := h.db.QueryRow("SELECT sanitized_name FROM proxies WHERE id = ?", proxyID.Int64).Scan(&proxySanitizedName); err == nil {
 			_ = h.minimotdMgr.DeleteIcon(proxySanitizedName, sanitizedName)
+
+			var minimotdLine1, minimotdLine2 sql.NullString
+			h.db.QueryRow("SELECT minimotd_line1, minimotd_line2 FROM servers WHERE id = ?", id).Scan(&minimotdLine1, &minimotdLine2)
+
+			if minimotdLine1.Valid || minimotdLine2.Valid {
+				line1 := ""
+				line2 := ""
+				if minimotdLine1.Valid {
+					line1 = minimotdLine1.String
+				}
+				if minimotdLine2.Valid {
+					line2 = minimotdLine2.String
+				}
+				if err := h.minimotdMgr.UpdateExtraConfig(proxySanitizedName, sanitizedName, line1, line2, false); err != nil {
+					fmt.Printf("Failed to update MiniMOTD extra config after icon deletion: %v\n", err)
+				}
+			}
 		}
 	}
 
