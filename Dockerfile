@@ -2,7 +2,7 @@ ARG VERSION=dev
 ARG COMMIT=none
 
 # Stage 1: Build Velocity plugins (DemiAuth + DemiDynamic)
-FROM eclipse-temurin:21-jdk-alpine AS plugin-builder
+FROM eclipse-temurin:21-jdk-noble AS plugin-builder
 
 WORKDIR /plugins
 

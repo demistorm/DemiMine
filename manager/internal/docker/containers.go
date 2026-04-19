@@ -70,14 +70,14 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 	if cfg.JavaOverride != "" {
 		javaVersion = cfg.JavaOverride
 	}
-	javaImage := "eclipse-temurin:21-jre-alpine"
+	javaImage := "eclipse-temurin:21-jre-noble"
 	switch javaVersion {
 	case "8":
-		javaImage = "eclipse-temurin:8-jre-alpine"
+		javaImage = "eclipse-temurin:8-jre-noble"
 	case "17":
-		javaImage = "eclipse-temurin:17-jre-alpine"
+		javaImage = "eclipse-temurin:17-jre-noble"
 	case "25":
-		javaImage = "eclipse-temurin:25.0.2_10-jre-alpine"
+		javaImage = "eclipse-temurin:25-jre-noble"
 	}
 
 	_, _, err = c.cli.ImageInspectWithRaw(ctx, javaImage)

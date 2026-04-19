@@ -40,7 +40,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 		})
 	}
 
-	javaImage := "eclipse-temurin:21-jre-alpine"
+	javaImage := "eclipse-temurin:21-jre-noble"
 
 	_, _, err = c.cli.ImageInspectWithRaw(ctx, javaImage)
 	if err != nil {
