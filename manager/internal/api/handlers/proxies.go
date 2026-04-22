@@ -53,7 +53,7 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT p.id, p.name, p.sanitized_name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.motd_line1, p.motd_line2, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop, p.jvm_flags,
+		SELECT p.id, p.name, p.sanitized_name, p.host_port, p.ram_mb, p.forwarding_secret, p.status, p.canvas_x, p.canvas_y, p.motd_line1, p.motd_line2, p.jar_version, p.jar_build, p.created_at, p.start_on_boot, p.scheduled_start, p.scheduled_stop, p.jvm_flags, p.udp_port,
 		       COALESCE(s.name, '') as server_name
 		FROM proxies p
 		LEFT JOIN servers s ON s.proxy_id = p.id
@@ -85,9 +85,10 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 		var scheduledStop sql.NullString
 		var serverName sql.NullString
 		var jvmFlags sql.NullString
+		var udpPort sql.NullInt64
 
 		err := rows.Scan(
-			&proxyID, &name, &sanitizedName, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &motdLine1, &motdLine2, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &jvmFlags, &serverName,
+			&proxyID, &name, &sanitizedName, &hostPort, &ramMB, &forwardingSecret, &status, &canvasX, &canvasY, &motdLine1, &motdLine2, &jarVersion, &jarBuild, &createdAt, &startOnBoot, &scheduledStart, &scheduledStop, &jvmFlags, &udpPort, &serverName,
 		)
 		if err != nil {
 			continue
@@ -129,6 +130,10 @@ func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 			if jvmFlags.Valid {
 				proxy.JVMFlags = &jvmFlags.String
+			}
+			if udpPort.Valid {
+				up := int(udpPort.Int64)
+				proxy.UDPPort = &up
 			}
 			proxyMap[proxyID] = proxy
 			proxyOrder = append(proxyOrder, proxyID)
@@ -430,12 +435,13 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var motdLine1 sql.NullString
 	var motdLine2 sql.NullString
 	var jvmFlags sql.NullString
+	var udpPort sql.NullInt64
 	var sanitizedName string
 
 	err = h.db.QueryRow(`
-		SELECT id, name, sanitized_name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop, jvm_flags
+		SELECT id, name, sanitized_name, host_port, ram_mb, forwarding_secret, status, canvas_x, canvas_y, motd_line1, motd_line2, jar_version, jar_build, created_at, start_on_boot, scheduled_start, scheduled_stop, jvm_flags, udp_port
 		FROM proxies WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &sanitizedName, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &motdLine1, &motdLine2, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop, &jvmFlags)
+	`, id).Scan(&p.ID, &p.Name, &sanitizedName, &p.HostPort, &p.RAMMB, &forwardingSecret, &p.Status, &p.CanvasX, &p.CanvasY, &motdLine1, &motdLine2, &jarVersion, &p.JarBuild, &p.CreatedAt, &p.StartOnBoot, &scheduledStart, &scheduledStop, &jvmFlags, &udpPort)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -477,6 +483,11 @@ func (h *ProxyHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	if jvmFlags.Valid {
 		p.JVMFlags = &jvmFlags.String
+	}
+
+	if udpPort.Valid {
+		up := int(udpPort.Int64)
+		p.UDPPort = &up
 	}
 
 	serverRows, err := h.db.Query("SELECT name FROM servers WHERE proxy_id = ?", p.ID)
@@ -563,6 +574,7 @@ type UpdateProxyRequest struct {
 	StartOnBoot    *int    `json:"start_on_boot"`
 	ScheduledStart *string `json:"scheduled_start"`
 	ScheduledStop  *string `json:"scheduled_stop"`
+	UDPPort        *int    `json:"udp_port"`
 }
 
 func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -658,6 +670,58 @@ func (h *ProxyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.JVMFlags != nil {
 		h.db.Exec("UPDATE proxies SET jvm_flags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.JVMFlags, id)
 	}
+	if req.UDPPort != nil {
+		if *req.UDPPort > 0 {
+			var conflictingName string
+			err := h.db.QueryRow("SELECT name FROM proxies WHERE udp_port = ? AND id != ?", *req.UDPPort, id).Scan(&conflictingName)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":   "udp_port_in_use",
+					"port":    *req.UDPPort,
+					"used_by": conflictingName,
+				})
+				return
+			}
+			err = h.db.QueryRow("SELECT name FROM servers WHERE udp_port = ?", *req.UDPPort).Scan(&conflictingName)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":   "udp_port_in_use",
+					"port":    *req.UDPPort,
+					"used_by": conflictingName,
+				})
+				return
+			}
+			err = h.db.QueryRow("SELECT name FROM proxies WHERE host_port = ?", *req.UDPPort).Scan(&conflictingName)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":   "udp_port_in_use",
+					"port":    *req.UDPPort,
+					"used_by": conflictingName,
+				})
+				return
+			}
+			err = h.db.QueryRow("SELECT name FROM servers WHERE host_port = ?", *req.UDPPort).Scan(&conflictingName)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":   "udp_port_in_use",
+					"port":    *req.UDPPort,
+					"used_by": conflictingName,
+				})
+				return
+			}
+			h.db.Exec("UPDATE proxies SET udp_port = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.UDPPort, id)
+		} else {
+			h.db.Exec("UPDATE proxies SET udp_port = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+		}
+	}
 
 	if req.MotdLine1 != nil || req.MotdLine2 != nil {
 		var name string
@@ -722,7 +786,8 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 	var sanitizedName string
 	var hostPort, ramMB int
 	var jvmFlags sql.NullString
-	err = h.db.QueryRow("SELECT name, sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?", id).Scan(&name, &sanitizedName, &hostPort, &ramMB, &jvmFlags)
+	var udpPort sql.NullInt64
+	err = h.db.QueryRow("SELECT name, sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags, udp_port FROM proxies WHERE id = ?", id).Scan(&name, &sanitizedName, &hostPort, &ramMB, &jvmFlags, &udpPort)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -735,9 +800,15 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 		jvmFlagsStr = jvmFlags.String
 	}
 
+	udpPortVal := 0
+	if udpPort.Valid {
+		udpPortVal = int(udpPort.Int64)
+	}
+
 	cfg := &docker.ProxyContainerConfig{
 		Name:        sanitizedName,
 		HostPort:    hostPort,
+		UDPPort:     udpPortVal,
 		ProxyPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
@@ -1740,9 +1811,10 @@ func (h *ProxyHandler) StartByID(id int64) error {
 	var sanitizedName string
 	var hostPort, ramMB int
 	var jvmFlags sql.NullString
+	var udpPort sql.NullInt64
 	err := h.db.QueryRow(`
-		SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?`, id).
-		Scan(&sanitizedName, &hostPort, &ramMB, &jvmFlags)
+		SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags, udp_port FROM proxies WHERE id = ?`, id).
+		Scan(&sanitizedName, &hostPort, &ramMB, &jvmFlags, &udpPort)
 	if err != nil {
 		return err
 	}
@@ -1752,9 +1824,15 @@ func (h *ProxyHandler) StartByID(id int64) error {
 		jvmFlagsStr = jvmFlags.String
 	}
 
+	udpPortVal := 0
+	if udpPort.Valid {
+		udpPortVal = int(udpPort.Int64)
+	}
+
 	cfg := docker.ProxyContainerConfig{
 		Name:        sanitizedName,
 		HostPort:    hostPort,
+		UDPPort:     udpPortVal,
 		ProxyPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,

@@ -28,6 +28,7 @@
 	let jvmFlagsOpen = false;
 	let javaOverride = server.java_override || '';
 	let detectedJavaVersion = '';
+	let udpPort = server.udp_port || '';
 
 	const javaVersions = [
 		{ value: '', label: 'Auto (detected)' },
@@ -157,6 +158,10 @@
 				body.java_override = javaOverride || null;
 			}
 
+			if (udpPort !== (server.udp_port || '')) {
+				body.udp_port = udpPort || null;
+			}
+
 			await api.patch(`/api/servers/${server.id}`, body);
 			
 			success = 'Settings saved successfully';
@@ -170,7 +175,8 @@
 					start_on_boot: startOnBoot ? 1 : 0,
 					scheduled_start: scheduleEnabled ? `${scheduledStartHour.toString().padStart(2, '0')}:${scheduledStartMinute.toString().padStart(2, '0')}` : null,
 					scheduled_stop: scheduleEnabled ? `${scheduledStopHour.toString().padStart(2, '0')}:${scheduledStopMinute.toString().padStart(2, '0')}` : null,
-					jvm_flags: jvmFlags
+					jvm_flags: jvmFlags,
+					udp_port: udpPort || null
 				} : s)
 			);
 			
@@ -529,6 +535,21 @@
 				value={server.proxy_name || 'Standalone (no proxy)'} 
 				disabled 
 			/>
+		</div>
+
+		<div class="field">
+			<label for="udp_port">UDP Port</label>
+			<input 
+				type="number" 
+				id="udp_port" 
+				bind:value={udpPort}
+				placeholder="None"
+				min="1"
+				max="65535"
+			/>
+			<span class="hint">
+				Optional UDP port to expose (e.g., for voice chat plugins). Requires a restart to take effect.
+			</span>
 		</div>
 	</div>
 

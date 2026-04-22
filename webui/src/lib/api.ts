@@ -244,6 +244,7 @@ export interface Server {
 	ram_mb: number;
 	domain: string | null;
 	host_port: number | null;
+	udp_port: number | null;
 	status: string;
 	player_count: number;
 	canvas_x: number;
@@ -282,6 +283,7 @@ export interface Proxy {
 	id: number;
 	name: string;
 	host_port: number;
+	udp_port: number | null;
 	ram_mb: number;
 	forwarding_secret: string;
 	status: string;

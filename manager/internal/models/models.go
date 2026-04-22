@@ -6,6 +6,7 @@ type Proxy struct {
 	ID               int64     `json:"id"`
 	Name             string    `json:"name" binding:"required"`
 	HostPort         int       `json:"host_port" binding:"required"`
+	UDPPort          *int      `json:"udp_port"`
 	RAMMB            int       `json:"ram_mb"`
 	ForwardingSecret string    `json:"forwarding_secret"`
 	Status           string    `json:"status"`
@@ -28,6 +29,7 @@ type Server struct {
 	Version             string    `json:"version" binding:"required"`
 	ProxyID             *int64    `json:"proxy_id"`
 	HostPort            *int      `json:"host_port"`
+	UDPPort             *int      `json:"udp_port"`
 	RAMMB               int       `json:"ram_mb" binding:"required"`
 	Domain              *string   `json:"domain"`
 	BackupIntervalDays  int       `json:"backup_interval_days"`
@@ -115,6 +117,7 @@ type ServerResponse struct {
 	ScheduledStart      *string `json:"scheduled_start"`
 	ScheduledStop       *string `json:"scheduled_stop"`
 	HostPort            *int    `json:"host_port"`
+	UDPPort             *int    `json:"udp_port"`
 	Status              string  `json:"status"`
 	PlayerCount         int     `json:"player_count"`
 	CanvasX             int     `json:"canvas_x"`
@@ -133,6 +136,7 @@ type ProxyResponse struct {
 	ID               int64    `json:"id"`
 	Name             string   `json:"name"`
 	HostPort         int      `json:"host_port"`
+	UDPPort          *int     `json:"udp_port"`
 	RAMMB            int      `json:"ram_mb"`
 	ForwardingSecret string   `json:"forwarding_secret"`
 	Status           string   `json:"status"`

@@ -216,6 +216,10 @@ func RunMigrations(db *sql.DB) error {
 			{`ALTER TABLE servers ADD COLUMN sanitized_name TEXT`, "add servers.sanitized_name"},
 			{`ALTER TABLE proxies ADD COLUMN sanitized_name TEXT`, "add proxies.sanitized_name"},
 		},
+		6: {
+			{`ALTER TABLE servers ADD COLUMN udp_port INTEGER`, "add servers.udp_port"},
+			{`ALTER TABLE proxies ADD COLUMN udp_port INTEGER`, "add proxies.udp_port"},
+		},
 	}
 
 	var alterVersions []int

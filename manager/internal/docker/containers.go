@@ -40,6 +40,7 @@ type ServerContainerConfig struct {
 	ServerPath   string
 	NetworkName  string
 	HostPort     int
+	UDPPort      int
 }
 
 func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerConfig) (string, error) {
@@ -135,6 +136,17 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 			containerPort: []nat.PortBinding{
 				{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.HostPort)},
 			},
+		}
+	}
+
+	if cfg.UDPPort > 0 {
+		udpPort := nat.Port(fmt.Sprintf("%d/udp", cfg.UDPPort))
+		config.ExposedPorts[udpPort] = struct{}{}
+		if hostConfig.PortBindings == nil {
+			hostConfig.PortBindings = nat.PortMap{}
+		}
+		hostConfig.PortBindings[udpPort] = []nat.PortBinding{
+			{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.UDPPort)},
 		}
 	}
 

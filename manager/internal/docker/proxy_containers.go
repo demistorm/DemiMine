@@ -16,6 +16,7 @@ import (
 type ProxyContainerConfig struct {
 	Name        string
 	HostPort    int
+	UDPPort     int
 	ProxyPath   string
 	NetworkName string
 	RAMMB       int
@@ -100,6 +101,14 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 				{HostIP: "0.0.0.0", HostPort: proxyPort},
 			},
 		},
+	}
+
+	if cfg.UDPPort > 0 {
+		udpPort := nat.Port(fmt.Sprintf("%d/udp", cfg.UDPPort))
+		config.ExposedPorts[udpPort] = struct{}{}
+		hostConfig.PortBindings[udpPort] = []nat.PortBinding{
+			{HostIP: "0.0.0.0", HostPort: fmt.Sprintf("%d", cfg.UDPPort)},
+		}
 	}
 
 	networkingConfig := &network.NetworkingConfig{

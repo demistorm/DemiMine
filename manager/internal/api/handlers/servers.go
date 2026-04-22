@@ -57,11 +57,18 @@ func nullStringToPtr(ns sql.NullString) *string {
 	return &ns.String
 }
 
+func getUDPPort(ns sql.NullInt64) int {
+	if ns.Valid {
+		return int(ns.Int64)
+	}
+	return 0
+}
+
 func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
 		SELECT s.id, s.name, s.sanitized_name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
-		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
+		       s.host_port, s.udp_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2, s.start_on_boot,
 		       s.jvm_flags, s.java_override
 		FROM servers s
@@ -87,6 +94,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		var scheduledStart sql.NullString
 		var scheduledStop sql.NullString
 		var hostPort sql.NullInt64
+		var udpPort sql.NullInt64
 		var minimotdLine1 sql.NullString
 		var minimotdLine2 sql.NullString
 		var jvmFlags sql.NullString
@@ -95,7 +103,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(
 			&s.ID, &s.Name, &sanitizedName, &s.Type, &s.Version, &proxyID, &proxySanitizedName, &s.RAMMB, &domain,
 			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
-			&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
+			&hostPort, &udpPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 			&minimotdLine1, &minimotdLine2, &s.StartOnBoot,
 			&jvmFlags, &javaOverride,
 		)
@@ -114,6 +122,10 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 		if hostPort.Valid {
 			hp := int(hostPort.Int64)
 			s.HostPort = &hp
+		}
+		if udpPort.Valid {
+			up := int(udpPort.Int64)
+			s.UDPPort = &up
 		}
 		s.IconPath = h.getIconPath(s.ID, sanitizedName)
 		s.MinimotdLine1 = nullStringToPtr(minimotdLine1)
@@ -443,6 +455,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var scheduledStart sql.NullString
 	var scheduledStop sql.NullString
 	var hostPort sql.NullInt64
+	var udpPort sql.NullInt64
 	var minimotdLine1 sql.NullString
 	var minimotdLine2 sql.NullString
 	var jvmFlags sql.NullString
@@ -453,7 +466,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		SELECT s.id, s.name, s.sanitized_name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
 		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
 		       s.start_on_boot,
-		       s.host_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
+		       s.host_port, s.udp_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count,
 		       s.minimotd_line1, s.minimotd_line2, s.jvm_flags, s.java_override
 		FROM servers s
@@ -463,7 +476,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		&s.ID, &s.Name, &getSanitizedName, &s.Type, &s.Version, &proxyID, &proxySanitizedName, &s.RAMMB, &domain,
 		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
 		&s.StartOnBoot,
-		&hostPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
+		&hostPort, &udpPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 		&minimotdLine1, &minimotdLine2, &jvmFlags, &javaOverride,
 	)
 
@@ -492,6 +505,10 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if hostPort.Valid {
 		hp := int(hostPort.Int64)
 		s.HostPort = &hp
+	}
+	if udpPort.Valid {
+		up := int(udpPort.Int64)
+		s.UDPPort = &up
 	}
 	s.IconPath = h.getIconPath(s.ID, getSanitizedName)
 	s.JVMFlags = nullStringToPtr(jvmFlags)
@@ -586,6 +603,7 @@ type UpdateServerRequest struct {
 	JVMFlags            *string `json:"jvm_flags"`
 	JavaOverride        *string `json:"java_override"`
 	StartOnBoot         *int    `json:"start_on_boot"`
+	UDPPort             *int    `json:"udp_port"`
 }
 
 func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -716,6 +734,58 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.JavaOverride != nil {
 		h.db.Exec("UPDATE servers SET java_override = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.JavaOverride, id)
+	}
+	if req.UDPPort != nil {
+		if *req.UDPPort > 0 {
+			var conflictingName string
+			err := h.db.QueryRow("SELECT name FROM servers WHERE udp_port = ? AND id != ?", *req.UDPPort, id).Scan(&conflictingName)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":   "udp_port_in_use",
+					"port":    *req.UDPPort,
+					"used_by": conflictingName,
+				})
+				return
+			}
+			err = h.db.QueryRow("SELECT name FROM proxies WHERE udp_port = ?", *req.UDPPort).Scan(&conflictingName)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":   "udp_port_in_use",
+					"port":    *req.UDPPort,
+					"used_by": conflictingName,
+				})
+				return
+			}
+			err = h.db.QueryRow("SELECT name FROM servers WHERE host_port = ?", *req.UDPPort).Scan(&conflictingName)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":   "udp_port_in_use",
+					"port":    *req.UDPPort,
+					"used_by": conflictingName,
+				})
+				return
+			}
+			err = h.db.QueryRow("SELECT name FROM proxies WHERE host_port = ?", *req.UDPPort).Scan(&conflictingName)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":   "udp_port_in_use",
+					"port":    *req.UDPPort,
+					"used_by": conflictingName,
+				})
+				return
+			}
+			h.db.Exec("UPDATE servers SET udp_port = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.UDPPort, id)
+		} else {
+			h.db.Exec("UPDATE servers SET udp_port = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+		}
 	}
 
 	// write user_jvm_args.txt for Forge/NeoForge when RAM or JVM flags change
@@ -909,11 +979,12 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 	var name, sanitizedName, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
+	var udpPort sql.NullInt64
 	var jvmFlags sql.NullString
 	var javaOverride sql.NullString
 	err = h.db.QueryRow(`
-		SELECT name, sanitized_name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
-		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
+		SELECT name, sanitized_name, type, version, ram_mb, host_port, udp_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &udpPort, &jvmFlags, &javaOverride)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -946,6 +1017,7 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		ServerPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
+		UDPPort:      getUDPPort(udpPort),
 	}
 
 	ctx := context.Background()
@@ -1981,11 +2053,12 @@ func (h *ServerHandler) StartByID(id int64) error {
 	var name, sanitizedName, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
+	var udpPort sql.NullInt64
 	var jvmFlags sql.NullString
 	var javaOverride sql.NullString
 	err := h.db.QueryRow(`
-		SELECT name, sanitized_name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
-		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
+		SELECT name, sanitized_name, type, version, ram_mb, host_port, udp_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &udpPort, &jvmFlags, &javaOverride)
 	if err != nil {
 		return err
 	}
@@ -2015,6 +2088,7 @@ func (h *ServerHandler) StartByID(id int64) error {
 		ServerPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
+		UDPPort:      getUDPPort(udpPort),
 	}
 
 	ctx := context.Background()
