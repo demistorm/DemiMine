@@ -314,7 +314,7 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("Failed to create plugins directory for proxy %d: %v\n", id, err)
 		}
 
-		demiauthJar := filepath.Join(pluginsDir, "DemiAuth-1.0.0.jar")
+		demiauthJar := filepath.Join(pluginsDir, "DemiAuth.jar")
 		demiauthResource := "/app/resources/DemiAuth.jar"
 
 		srcFile, err := os.Open(demiauthResource)
@@ -348,7 +348,7 @@ func (h *ProxyHandler) Create(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("Failed to create plugins directory for proxy %d: %v\n", id, err)
 		}
 
-		demidynamicJar := filepath.Join(pluginsDir, "DemiDynamic-1.0.3.jar")
+		demidynamicJar := filepath.Join(pluginsDir, "DemiDynamic.jar")
 		demidynamicResource := "/app/resources/DemiDynamic.jar"
 
 		srcFile, err := os.Open(demidynamicResource)

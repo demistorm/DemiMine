@@ -29,20 +29,33 @@ public class DisconnectHandler {
 
     @com.velocitypowered.api.event.Subscribe
     public EventTask onPlayerDisconnect(DisconnectEvent event) {
+        Player player = event.getPlayer();
+        Optional<ServerConnection> lastServer = player.getCurrentServer();
+        String serverName = lastServer.map(sc -> sc.getServerInfo().getName()).orElse(null);
+
         return EventTask.async(() -> {
-            Player player = event.getPlayer();
             logger.info(player.getUsername() + " disconnected");
 
-            Optional<ServerConnection> lastServer = player.getCurrentServer();
-            if (lastServer.isPresent()) {
-                String serverName = lastServer.get().getServerInfo().getName();
+            if (serverName != null) {
                 autoStopManager.removePlayerFromServer(player, serverName);
                 apiClient.reportPlayerLeave(player.getUniqueId().toString(), serverName);
 
                 ApiClient.ServerStatus status = apiClient.getServerStatus(serverName);
-                if (status != null && status.auto_shutdown_minutes > 0 && autoStopManager.isServerEmpty(serverName) && !config.configVar.excludedServers.contains(serverName) && !serverName.equals(config.configVar.loginServer)) {
+                if (status == null) {
+                    logger.warn("Could not get status for " + serverName + ", skipping auto-stop check");
+                } else if (status.auto_shutdown_minutes <= 0) {
+                    logger.debug("Skipping auto-stop for " + serverName + " (auto_shutdown_minutes=" + status.auto_shutdown_minutes + ")");
+                } else if (!autoStopManager.isServerEmpty(serverName)) {
+                    logger.debug("Skipping auto-stop for " + serverName + " (players still present)");
+                } else if (config.configVar.excludedServers.contains(serverName)) {
+                    logger.debug("Skipping auto-stop for " + serverName + " (excluded)");
+                } else if (serverName.equals(config.configVar.loginServer)) {
+                    logger.debug("Skipping auto-stop for " + serverName + " (login server)");
+                } else {
                     autoStopManager.scheduleStopTimer(serverName);
                 }
+            } else {
+                logger.warn(player.getUsername() + " had no server connection at disconnect, skipping auto-stop check");
             }
         });
     }

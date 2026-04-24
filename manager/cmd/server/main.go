@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -78,6 +79,8 @@ func main() {
 		log.Fatal("Docker client is nil after successful initialization")
 	}
 	log.Println("Docker client initialized successfully")
+
+	updateBundledPlugins(database, cfg)
 
 	dockerClient.SyncServerStatus(context.Background(), database)
 
@@ -321,4 +324,105 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 
 	wg.Wait()
 	log.Println("All start_on_boot servers and proxies started")
+}
+
+func updateBundledPlugins(database *sql.DB, cfg *config.Config) {
+	type pluginInfo struct {
+		name        string
+		resource    string
+		globPattern string
+	}
+
+	plugins := []pluginInfo{
+		{name: "DemiAuth", resource: "/app/resources/DemiAuth.jar", globPattern: "DemiAuth*.jar"},
+		{name: "DemiDynamic", resource: "/app/resources/DemiDynamic.jar", globPattern: "DemiDynamic*.jar"},
+	}
+
+	rows, err := database.Query("SELECT sanitized_name FROM proxies")
+	if err != nil {
+		log.Printf("Plugin update: failed to query proxies: %v", err)
+		return
+	}
+	var proxyNames []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil {
+			proxyNames = append(proxyNames, name)
+		}
+	}
+	rows.Close()
+
+	if len(proxyNames) == 0 {
+		return
+	}
+
+	updated := 0
+	for _, proxyName := range proxyNames {
+		pluginsDir := filepath.Join(cfg.ServersDir, proxyName, "plugins")
+		if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+			log.Printf("Plugin update: failed to create plugins dir for %s: %v", proxyName, err)
+			continue
+		}
+
+		for _, p := range plugins {
+			matches, _ := filepath.Glob(filepath.Join(pluginsDir, p.globPattern))
+
+			resourceInfo, err := os.Stat(p.resource)
+			if err != nil {
+				continue
+			}
+
+			targetName := p.name + ".jar"
+			targetPath := filepath.Join(pluginsDir, targetName)
+			needsUpdate := false
+
+			if len(matches) == 0 {
+				needsUpdate = true
+			} else {
+				for _, m := range matches {
+					if filepath.Base(m) != targetName {
+						os.Remove(m)
+						needsUpdate = true
+					} else {
+						if fi, err := os.Stat(m); err == nil && fi.Size() != resourceInfo.Size() {
+							os.Remove(m)
+							needsUpdate = true
+						}
+					}
+				}
+			}
+
+			if !needsUpdate {
+				continue
+			}
+
+			src, err := os.Open(p.resource)
+			if err != nil {
+				log.Printf("Plugin update: failed to open %s: %v", p.resource, err)
+				continue
+			}
+
+			dst, err := os.Create(targetPath)
+			if err != nil {
+				src.Close()
+				log.Printf("Plugin update: failed to create %s: %v", targetPath, err)
+				continue
+			}
+
+			_, err = io.Copy(dst, src)
+			src.Close()
+			dst.Close()
+			if err != nil {
+				log.Printf("Plugin update: failed to copy %s: %v", p.name, err)
+				continue
+			}
+
+			log.Printf("Plugin update: updated %s for proxy %s", p.name, proxyName)
+			updated++
+		}
+	}
+
+	if updated > 0 {
+		log.Printf("Plugin update: %d plugin(s) updated across %d proxy/ies", updated, len(proxyNames))
+	}
 }

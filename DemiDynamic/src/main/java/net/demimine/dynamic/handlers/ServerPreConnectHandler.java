@@ -218,7 +218,6 @@ public class ServerPreConnectHandler {
                             if (inHub) {
                                 queueManager.startCountdown(player, serverName, () -> {
                                     player.createConnectionRequest(targetServer.get()).fireAndForget();
-                                    apiClient.reportPlayerJoin(player.getUniqueId().toString(), player.getUsername(), serverName);
                                     queueManager.removeFromQueue(player);
                                 });
                             } else {

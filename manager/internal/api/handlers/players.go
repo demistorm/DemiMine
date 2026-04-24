@@ -177,7 +177,7 @@ func (h *PlayerHandler) GetServerPlayers(w http.ResponseWriter, r *http.Request)
 
 func (h *PlayerHandler) GetAutoShutdownServers(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT id, name, ram_mb
+		SELECT id, sanitized_name, ram_mb
 		FROM servers
 		WHERE status = 'running' AND auto_shutdown_minutes > 0
 		ORDER BY auto_shutdown_minutes ASC
