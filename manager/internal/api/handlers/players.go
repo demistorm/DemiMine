@@ -33,10 +33,9 @@ type AutoShutdownServer struct {
 }
 
 type ServerStatusResponse struct {
-	Name                string `json:"name"`
-	Status              string `json:"status"`
-	AutoShutdownMinutes int    `json:"auto_shutdown_minutes"`
-	PlayerCount         int    `json:"player_count"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	PlayerCount int    `json:"player_count"`
 }
 
 type PlayerJoinRequest struct {
@@ -179,8 +178,8 @@ func (h *PlayerHandler) GetAutoShutdownServers(w http.ResponseWriter, r *http.Re
 	rows, err := h.db.Query(`
 		SELECT id, sanitized_name, ram_mb
 		FROM servers
-		WHERE status = 'running' AND auto_shutdown_minutes > 0
-		ORDER BY auto_shutdown_minutes ASC
+		WHERE status = 'running'
+		ORDER BY id ASC
 	`)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -214,13 +213,12 @@ func (h *PlayerHandler) GetServerStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var status string
-	var autoShutdownMinutes int
 	var hostPort sql.NullInt64
 	err := h.db.QueryRow(`
-		SELECT status, auto_shutdown_minutes, host_port
+		SELECT status, host_port
 		FROM servers
 		WHERE sanitized_name = ?
-	`, serverName).Scan(&status, &autoShutdownMinutes, &hostPort)
+	`, serverName).Scan(&status, &hostPort)
 
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
@@ -256,10 +254,9 @@ func (h *PlayerHandler) GetServerStatus(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ServerStatusResponse{
-		Name:                serverName,
-		Status:              status,
-		AutoShutdownMinutes: autoShutdownMinutes,
-		PlayerCount:         playerCount,
+		Name:        serverName,
+		Status:      status,
+		PlayerCount: playerCount,
 	})
 }
 

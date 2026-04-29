@@ -67,7 +67,7 @@ func getUDPPort(ns sql.NullInt64) int {
 func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
 		SELECT s.id, s.name, s.sanitized_name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
-		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
+		       s.backup_interval_days, s.scheduled_start, s.scheduled_stop,
 		       s.host_port, s.udp_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE(pc.cnt, 0) as player_count, s.minimotd_line1, s.minimotd_line2, s.start_on_boot,
 		       s.jvm_flags, s.java_override
@@ -102,7 +102,7 @@ func (h *ServerHandler) List(w http.ResponseWriter, r *http.Request) {
 
 		err := rows.Scan(
 			&s.ID, &s.Name, &sanitizedName, &s.Type, &s.Version, &proxyID, &proxySanitizedName, &s.RAMMB, &domain,
-			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
+			&s.BackupIntervalDays, &scheduledStart, &scheduledStop,
 			&hostPort, &udpPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 			&minimotdLine1, &minimotdLine2, &s.StartOnBoot,
 			&jvmFlags, &javaOverride,
@@ -149,7 +149,6 @@ type CreateServerRequest struct {
 	RAMMB               int     `json:"ram_mb"`
 	Domain              *string `json:"domain"`
 	BackupIntervalDays  int     `json:"backup_interval_days"`
-	AutoShutdownMinutes int     `json:"auto_shutdown_minutes"`
 	ScheduledStart      *string `json:"scheduled_start"`
 	ScheduledStop       *string `json:"scheduled_stop"`
 	MinimotdLine1       *string `json:"minimotd_line1"`
@@ -280,9 +279,9 @@ func (h *ServerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.db.Exec(`
-		INSERT INTO servers (name, sanitized_name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop, status, canvas_x, canvas_y, minimotd_line1, minimotd_line2, start_on_boot)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?, ?)
-	`, req.Name, sanitizedName, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.AutoShutdownMinutes, req.ScheduledStart, req.ScheduledStop, minimotdLine1, minimotdLine2, req.StartOnBoot)
+		INSERT INTO servers (name, sanitized_name, type, version, proxy_id, host_port, ram_mb, domain, backup_interval_days, scheduled_start, scheduled_stop, status, canvas_x, canvas_y, minimotd_line1, minimotd_line2, start_on_boot)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stopped', 4000, 4000, ?, ?, ?)
+	`, req.Name, sanitizedName, req.Type, req.Version, req.ProxyID, hostPortValue, req.RAMMB, req.Domain, req.BackupIntervalDays, req.ScheduledStart, req.ScheduledStop, minimotdLine1, minimotdLine2, req.StartOnBoot)
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -464,7 +463,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var getSanitizedName string
 	err = h.db.QueryRow(`
 		SELECT s.id, s.name, s.sanitized_name, s.type, s.version, s.proxy_id, p.name, s.ram_mb, s.domain,
-		       s.backup_interval_days, s.auto_shutdown_minutes, s.scheduled_start, s.scheduled_stop,
+		       s.backup_interval_days, s.scheduled_start, s.scheduled_stop,
 		       s.start_on_boot,
 		       s.host_port, s.udp_port, s.status, s.canvas_x, s.canvas_y, s.jar_build, s.created_at,
 		       COALESCE((SELECT COUNT(*) FROM players WHERE server_id = s.id), 0) as player_count,
@@ -474,7 +473,7 @@ func (h *ServerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		WHERE s.id = ?
 	`, id).Scan(
 		&s.ID, &s.Name, &getSanitizedName, &s.Type, &s.Version, &proxyID, &proxySanitizedName, &s.RAMMB, &domain,
-		&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
+		&s.BackupIntervalDays, &scheduledStart, &scheduledStop,
 		&s.StartOnBoot,
 		&hostPort, &udpPort, &s.Status, &s.CanvasX, &s.CanvasY, &s.JarBuild, &s.CreatedAt, &s.PlayerCount,
 		&minimotdLine1, &minimotdLine2, &jvmFlags, &javaOverride,
@@ -590,7 +589,6 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 type UpdateServerRequest struct {
 	Name                *string `json:"name"`
 	RAMMB               *int    `json:"ram_mb"`
-	AutoShutdownMinutes *int    `json:"auto_shutdown_minutes"`
 	BackupIntervalDays  *int    `json:"backup_interval_days"`
 	ScheduledStart      *string `json:"scheduled_start"`
 	ScheduledStop       *string `json:"scheduled_stop"`
@@ -701,9 +699,6 @@ func (h *ServerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.RAMMB != nil {
 		h.db.Exec("UPDATE servers SET ram_mb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.RAMMB, id)
-	}
-	if req.AutoShutdownMinutes != nil {
-		h.db.Exec("UPDATE servers SET auto_shutdown_minutes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.AutoShutdownMinutes, id)
 	}
 	if req.BackupIntervalDays != nil {
 		h.db.Exec("UPDATE servers SET backup_interval_days = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *req.BackupIntervalDays, id)
@@ -1990,7 +1985,7 @@ func isTextFile(content []byte) bool {
 func (h *ServerHandler) ListAll() ([]models.Server, error) {
 	rows, err := h.db.Query(`
 		SELECT id, name, type, version, proxy_id, host_port, ram_mb, domain,
-		       backup_interval_days, auto_shutdown_minutes, scheduled_start, scheduled_stop,
+		       backup_interval_days, scheduled_start, scheduled_stop,
 		       status, canvas_x, canvas_y, start_on_boot, created_at, updated_at
 		FROM servers`)
 	if err != nil {
@@ -2005,7 +2000,7 @@ func (h *ServerHandler) ListAll() ([]models.Server, error) {
 		var hostPort sql.NullInt64
 		var proxyID sql.NullInt64
 		if err := rows.Scan(&s.ID, &s.Name, &s.Type, &s.Version, &proxyID, &hostPort, &s.RAMMB, &domain,
-			&s.BackupIntervalDays, &s.AutoShutdownMinutes, &scheduledStart, &scheduledStop,
+			&s.BackupIntervalDays, &scheduledStart, &scheduledStop,
 			&s.Status, &s.CanvasX, &s.CanvasY, &s.StartOnBoot, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, err
 		}

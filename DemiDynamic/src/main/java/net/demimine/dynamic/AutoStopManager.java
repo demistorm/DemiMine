@@ -69,7 +69,7 @@ public class AutoStopManager {
                 logger.info("Auto-stopping " + serverName);
                 apiClient.stopServerByName(serverName);
             } else {
-                logger.debug("Auto-stop canceled for " + serverName + " - players present");
+                logger.info("Auto-stop canceled for " + serverName + " - players present");
             }
             stopTimers.remove(serverName);
         }, config.configVar.autoStopTimeoutMinutes, TimeUnit.MINUTES);

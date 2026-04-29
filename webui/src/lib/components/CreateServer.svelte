@@ -114,7 +114,6 @@
 				version,
 				ram_mb: ram,
 				backup_interval_days: 7,
-				auto_shutdown_minutes: 15
 			};
 
 			if (proxyId !== null) {

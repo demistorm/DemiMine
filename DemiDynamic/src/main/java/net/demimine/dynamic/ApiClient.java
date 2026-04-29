@@ -32,7 +32,6 @@ public class ApiClient {
     public static class ServerStatus {
         public String name;
         public String status;
-        public int auto_shutdown_minutes;
         public int player_count;
     }
 

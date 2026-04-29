@@ -85,7 +85,6 @@ func RunMigrations(db *sql.DB) error {
 			ram_mb INTEGER NOT NULL,
 			domain TEXT,
 			backup_interval_days INTEGER DEFAULT 0,
-			auto_shutdown_minutes INTEGER DEFAULT 15,
 			scheduled_start TEXT,
 			scheduled_stop TEXT,
 			status TEXT DEFAULT 'stopped',
@@ -219,6 +218,9 @@ func RunMigrations(db *sql.DB) error {
 		6: {
 			{`ALTER TABLE servers ADD COLUMN udp_port INTEGER`, "add servers.udp_port"},
 			{`ALTER TABLE proxies ADD COLUMN udp_port INTEGER`, "add proxies.udp_port"},
+		},
+		7: {
+			{`ALTER TABLE servers DROP COLUMN auto_shutdown_minutes`, "drop servers.auto_shutdown_minutes"},
 		},
 	}
 

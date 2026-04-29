@@ -33,7 +33,6 @@ type Server struct {
 	RAMMB               int       `json:"ram_mb" binding:"required"`
 	Domain              *string   `json:"domain"`
 	BackupIntervalDays  int       `json:"backup_interval_days"`
-	AutoShutdownMinutes int       `json:"auto_shutdown_minutes"`
 	ScheduledStart      *string   `json:"scheduled_start"`
 	ScheduledStop       *string   `json:"scheduled_stop"`
 	Status              string    `json:"status"`
@@ -113,7 +112,6 @@ type ServerResponse struct {
 	RAMMB               int     `json:"ram_mb"`
 	Domain              *string `json:"domain"`
 	BackupIntervalDays  int     `json:"backup_interval_days"`
-	AutoShutdownMinutes int     `json:"auto_shutdown_minutes"`
 	ScheduledStart      *string `json:"scheduled_start"`
 	ScheduledStop       *string `json:"scheduled_stop"`
 	HostPort            *int    `json:"host_port"`

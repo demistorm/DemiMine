@@ -43,14 +43,12 @@ public class DisconnectHandler {
                 ApiClient.ServerStatus status = apiClient.getServerStatus(serverName);
                 if (status == null) {
                     logger.warn("Could not get status for " + serverName + ", skipping auto-stop check");
-                } else if (status.auto_shutdown_minutes <= 0) {
-                    logger.debug("Skipping auto-stop for " + serverName + " (auto_shutdown_minutes=" + status.auto_shutdown_minutes + ")");
                 } else if (!autoStopManager.isServerEmpty(serverName)) {
-                    logger.debug("Skipping auto-stop for " + serverName + " (players still present)");
+                    logger.info("Skipping auto-stop for " + serverName + " (players still present)");
                 } else if (config.configVar.excludedServers.contains(serverName)) {
-                    logger.debug("Skipping auto-stop for " + serverName + " (excluded)");
+                    logger.info("Skipping auto-stop for " + serverName + " (excluded)");
                 } else if (serverName.equals(config.configVar.loginServer)) {
-                    logger.debug("Skipping auto-stop for " + serverName + " (login server)");
+                    logger.info("Skipping auto-stop for " + serverName + " (login server)");
                 } else {
                     autoStopManager.scheduleStopTimer(serverName);
                 }

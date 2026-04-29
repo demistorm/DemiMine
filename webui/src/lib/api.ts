@@ -251,7 +251,6 @@ export interface Server {
 	canvas_y: number;
 	icon_path: string | null;
 	backup_interval_days: number;
-	auto_shutdown_minutes: number;
 	scheduled_start: string | null;
 	scheduled_stop: string | null;
 	minimotd_line1: string | null;
