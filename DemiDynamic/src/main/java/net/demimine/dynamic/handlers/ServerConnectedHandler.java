@@ -11,6 +11,7 @@ import net.demimine.dynamic.Config;
 import org.slf4j.Logger;
 
 import java.util.Optional;
+import java.util.UUID;
 
 public class ServerConnectedHandler {
     private final ProxyServer server;
@@ -31,6 +32,7 @@ public class ServerConnectedHandler {
     public EventTask onServerConnected(ServerConnectedEvent event) {
         return EventTask.async(() -> {
             Player player = event.getPlayer();
+            UUID playerId = player.getUniqueId();
             String serverName = event.getServer().getServerInfo().getName();
 
             logger.info(player.getUsername() + " connected to " + serverName);
@@ -39,8 +41,8 @@ public class ServerConnectedHandler {
             if (previousServer.isPresent()) {
                 String previousServerName = previousServer.get().getServerInfo().getName();
                 logger.info(player.getUsername() + " transferred from " + previousServerName);
-                autoStopManager.removePlayerFromServer(player, previousServerName);
-                apiClient.reportPlayerLeave(player.getUniqueId().toString(), previousServerName);
+                autoStopManager.removePlayerFromServer(playerId, previousServerName);
+                apiClient.reportPlayerLeave(playerId.toString(), previousServerName);
 
                 ApiClient.ServerStatus status = apiClient.getServerStatus(previousServerName);
                 if (status != null && autoStopManager.isServerEmpty(previousServerName) && !config.configVar.excludedServers.contains(previousServerName) && !previousServerName.equals(config.configVar.loginServer)) {
@@ -48,7 +50,7 @@ public class ServerConnectedHandler {
                 }
             }
 
-            autoStopManager.addPlayerToServer(player, serverName);
+            autoStopManager.addPlayerToServer(playerId, serverName);
         });
     }
 }

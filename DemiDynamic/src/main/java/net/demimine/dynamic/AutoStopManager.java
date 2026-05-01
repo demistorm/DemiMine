@@ -16,7 +16,7 @@ public class AutoStopManager {
     private final DemiDynamic plugin;
     private final ApiClient apiClient;
 
-    private final Map<String, Set<Player>> serverPlayers = new ConcurrentHashMap<>();
+    private final Map<String, Set<UUID>> serverPlayers = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> stopTimers = new ConcurrentHashMap<>();
 
     public AutoStopManager(ProxyServer server, Config config, Logger logger, QueueManager queueManager, DemiDynamic plugin, ApiClient apiClient) {
@@ -29,26 +29,28 @@ public class AutoStopManager {
         this.scheduler = Executors.newScheduledThreadPool(4);
     }
 
-    public void addPlayerToServer(Player player, String serverName) {
-        Set<Player> players = serverPlayers.computeIfAbsent(serverName, k -> ConcurrentHashMap.newKeySet());
-        players.add(player);
+    public void addPlayerToServer(UUID playerId, String serverName) {
+        Set<UUID> players = serverPlayers.computeIfAbsent(serverName, k -> ConcurrentHashMap.newKeySet());
+        players.add(playerId);
         cancelStopTimer(serverName);
-        logger.debug("Added " + player.getUsername() + " to " + serverName + " (now " + players.size() + " players)");
+        logger.debug("Added " + playerId + " to " + serverName + " (now " + players.size() + " players)");
     }
 
-    public void removePlayerFromServer(Player player, String serverName) {
-        Set<Player> players = serverPlayers.get(serverName);
-        if (players != null && players.remove(player)) {
-            logger.debug("Removed " + player.getUsername() + " from " + serverName + " (now " + players.size() + " players)");
+    public void removePlayerFromServer(UUID playerId, String serverName) {
+        Set<UUID> players = serverPlayers.get(serverName);
+        if (players != null) {
+            if (players.remove(playerId)) {
+                logger.debug("Removed " + playerId + " from " + serverName + " (now " + players.size() + " players)");
+            } else {
+                logger.warn("Failed to remove " + playerId + " from " + serverName + " (not found in set, current players: " + players + ")");
+            }
+        } else {
+            logger.warn("No player set for server " + serverName + " when trying to remove " + playerId);
         }
     }
 
-    public Set<Player> getServerPlayers(String serverName) {
-        return serverPlayers.getOrDefault(serverName, Collections.emptySet());
-    }
-
     public boolean isServerEmpty(String serverName) {
-        Set<Player> players = serverPlayers.get(serverName);
+        Set<UUID> players = serverPlayers.get(serverName);
         return players == null || players.isEmpty();
     }
 

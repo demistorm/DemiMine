@@ -11,6 +11,7 @@ import net.demimine.dynamic.Config;
 import org.slf4j.Logger;
 
 import java.util.Optional;
+import java.util.UUID;
 
 public class DisconnectHandler {
     private final ProxyServer server;
@@ -32,13 +33,14 @@ public class DisconnectHandler {
         Player player = event.getPlayer();
         Optional<ServerConnection> lastServer = player.getCurrentServer();
         String serverName = lastServer.map(sc -> sc.getServerInfo().getName()).orElse(null);
+        UUID playerId = player.getUniqueId();
 
         return EventTask.async(() -> {
             logger.info(player.getUsername() + " disconnected");
 
             if (serverName != null) {
-                autoStopManager.removePlayerFromServer(player, serverName);
-                apiClient.reportPlayerLeave(player.getUniqueId().toString(), serverName);
+                autoStopManager.removePlayerFromServer(playerId, serverName);
+                apiClient.reportPlayerLeave(playerId.toString(), serverName);
 
                 ApiClient.ServerStatus status = apiClient.getServerStatus(serverName);
                 if (status == null) {

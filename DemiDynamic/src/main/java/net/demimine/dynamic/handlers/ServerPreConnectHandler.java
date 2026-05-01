@@ -1,7 +1,6 @@
 package net.demimine.dynamic.handlers;
 
 import com.velocitypowered.api.event.EventTask;
-import com.velocitypowered.api.event.connection.PreLoginEvent;
 import com.velocitypowered.api.event.player.ServerPreConnectEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -12,14 +11,11 @@ import net.demimine.dynamic.AutoStopManager;
 import net.demimine.dynamic.Config;
 import net.demimine.dynamic.DemiDynamic;
 import net.demimine.dynamic.QueueManager;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.slf4j.Logger;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 
 public class ServerPreConnectHandler {
     private final ProxyServer server;
@@ -29,6 +25,8 @@ public class ServerPreConnectHandler {
     private final AutoStopManager autoStopManager;
     private final ApiClient apiClient;
     private final DemiDynamic plugin;
+
+    private final Set<String> startingServers = ConcurrentHashMap.newKeySet();
 
     public ServerPreConnectHandler(ProxyServer server, Config config, Logger logger, QueueManager queueManager, AutoStopManager autoStopManager, ApiClient apiClient, DemiDynamic plugin) {
         this.server = server;
@@ -107,12 +105,20 @@ public class ServerPreConnectHandler {
 
         if (queueManager.addToQueue(player, serverName)) {
             event.setResult(ServerPreConnectEvent.ServerResult.denied());
-            
+
             sendStartingMessage(player);
 
-            server.getScheduler().buildTask(plugin, () -> {
-                startServerAndQueue(player, serverName, currentServerName, true);
-            }).schedule();
+            if (startingServers.contains(serverName)) {
+                logger.info("Server " + serverName + " is already starting, waiting for ready (hub path)");
+                server.getScheduler().buildTask(plugin, () -> {
+                    waitForServerReady(player, serverName, currentServerName, true);
+                }).schedule();
+            } else {
+                startingServers.add(serverName);
+                server.getScheduler().buildTask(plugin, () -> {
+                    startServerAndQueue(player, serverName, currentServerName, true);
+                }).schedule();
+            }
         }
     }
 
@@ -143,9 +149,17 @@ public class ServerPreConnectHandler {
 
             sendStartingMessage(player);
 
-            server.getScheduler().buildTask(plugin, () -> {
-                startServerAndQueue(player, serverName, config.configVar.queueServer, false);
-            }).schedule();
+            if (startingServers.contains(serverName)) {
+                logger.info("Server " + serverName + " is already starting, waiting for ready (direct path)");
+                server.getScheduler().buildTask(plugin, () -> {
+                    waitForServerReady(player, serverName, config.configVar.queueServer, false);
+                }).schedule();
+            } else {
+                startingServers.add(serverName);
+                server.getScheduler().buildTask(plugin, () -> {
+                    startServerAndQueue(player, serverName, config.configVar.queueServer, false);
+                }).schedule();
+            }
         }
     }
 
@@ -161,6 +175,7 @@ public class ServerPreConnectHandler {
                 player.disconnect(mm.deserialize(message));
             }
             queueManager.removeFromQueue(player);
+            startingServers.remove(serverName);
             return;
         }
 
@@ -169,14 +184,14 @@ public class ServerPreConnectHandler {
             if (!toStop.isEmpty()) {
                 logger.info("Insufficient RAM, stopping " + toStop.size() + " idle servers");
 
-                for (String server : toStop) {
-                    logger.info("Stopping idle server: " + server);
-                    apiClient.stopServerByName(server);
+                for (String srv : toStop) {
+                    logger.info("Stopping idle server: " + srv);
+                    apiClient.stopServerByName(srv);
                 }
 
-                for (String server : toStop) {
-                    logger.info("Waiting for container removal: " + server);
-                    apiClient.waitForContainerRemoval(server);
+                for (String srv : toStop) {
+                    logger.info("Waiting for container removal: " + srv);
+                    apiClient.waitForContainerRemoval(srv);
                 }
 
                 canStart = apiClient.canStartServer(serverName);
@@ -189,9 +204,11 @@ public class ServerPreConnectHandler {
                 waitForServerReady(player, serverName, currentServerName, inHub);
             } else {
                 sendResourceExceededMessage(player, currentServerName, inHub);
+                startingServers.remove(serverName);
             }
         } else {
             sendResourceExceededMessage(player, currentServerName, inHub);
+            startingServers.remove(serverName);
         }
     }
 
@@ -214,6 +231,7 @@ public class ServerPreConnectHandler {
                     try {
                         targetServer.get().ping().get(2, TimeUnit.SECONDS);
                         logger.info("Server " + serverName + " is responsive (ping success)");
+                        startingServers.remove(serverName);
                         if (queueManager.isInQueue(player, serverName)) {
                             if (inHub) {
                                 queueManager.startCountdown(player, serverName, () -> {
@@ -239,6 +257,7 @@ public class ServerPreConnectHandler {
             }
 
             logger.warn("Server " + serverName + " did not start in time");
+            startingServers.remove(serverName);
             queueManager.removeFromQueue(player);
             MiniMessage mm = MiniMessage.miniMessage();
             player.sendMessage(mm.deserialize("<red>Server failed to start. Please try again later."));
