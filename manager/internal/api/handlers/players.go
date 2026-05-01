@@ -318,9 +318,12 @@ func (h *PlayerHandler) StartServerByName(w http.ResponseWriter, r *http.Request
 	var name, sanitizedName, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
+	var udpPort sql.NullInt64
+	var jvmFlags sql.NullString
+	var javaOverride sql.NullString
 	err := h.db.QueryRow(`
-		SELECT id, name, sanitized_name, type, version, ram_mb, host_port FROM servers WHERE sanitized_name = ?`, serverName).
-		Scan(&id, &name, &sanitizedName, &serverType, &version, &ramMB, &hostPort)
+		SELECT id, name, sanitized_name, type, version, ram_mb, host_port, udp_port, jvm_flags, java_override FROM servers WHERE sanitized_name = ?`, serverName).
+		Scan(&id, &name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &udpPort, &jvmFlags, &javaOverride)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -339,14 +342,27 @@ func (h *PlayerHandler) StartServerByName(w http.ResponseWriter, r *http.Request
 		port = int(hostPort.Int64)
 	}
 
+	jvmFlagsStr := ""
+	if jvmFlags.Valid {
+		jvmFlagsStr = jvmFlags.String
+	}
+
+	javaOverrideStr := ""
+	if javaOverride.Valid {
+		javaOverrideStr = javaOverride.String
+	}
+
 	cfg := &docker.ServerContainerConfig{
-		Name:        sanitizedName,
-		ServerType:  serverType,
-		Version:     version,
-		RAMMB:       ramMB,
-		ServerPath:  filepath.Join(h.cfg.HostServersDir, sanitizedName),
-		NetworkName: h.cfg.NetworkName,
-		HostPort:    port,
+		Name:         sanitizedName,
+		ServerType:   serverType,
+		Version:      version,
+		RAMMB:        ramMB,
+		JVMFlags:     jvmFlagsStr,
+		JavaOverride: javaOverrideStr,
+		ServerPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
+		NetworkName:  h.cfg.NetworkName,
+		HostPort:     port,
+		UDPPort:      getUDPPort(udpPort),
 	}
 
 	ctx := context.Background()
