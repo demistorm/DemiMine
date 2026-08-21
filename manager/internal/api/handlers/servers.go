@@ -1085,11 +1085,12 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	var name, sanitizedName, serverType, version string
 	var ramMB int
 	var hostPort sql.NullInt64
+	var udpPort sql.NullInt64
 	var jvmFlags sql.NullString
 	var javaOverride sql.NullString
 	err = h.db.QueryRow(`
-		SELECT name, sanitized_name, type, version, ram_mb, host_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
-		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &jvmFlags, &javaOverride)
+		SELECT name, sanitized_name, type, version, ram_mb, host_port, udp_port, jvm_flags, java_override FROM servers WHERE id = ?`, id).
+		Scan(&name, &sanitizedName, &serverType, &version, &ramMB, &hostPort, &udpPort, &jvmFlags, &javaOverride)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -1144,7 +1145,12 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		ServerPath:   filepath.Join(h.cfg.HostServersDir, sanitizedName),
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
+		UDPPort:      getUDPPort(udpPort),
 	}
+
+	// AutoRemove is async, so the old container may still exist here with stale
+	// port config — force it away so StartContainer recreates with fresh config
+	_ = h.docker.RemoveContainer(ctx, "demimine-"+sanitizedName)
 
 	if err := h.docker.StartContainer(ctx, sanitizedName, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")

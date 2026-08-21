@@ -135,11 +135,14 @@ func main() {
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:    addr,
+		Handler: mux,
+		// read/write deadlines would silently kill hijacked WebSocket conns,
+		// so zero them out and keep ReadHeaderTimeout for slowloris protection
+		ReadTimeout:       0,
+		WriteTimeout:      0,
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {
@@ -228,13 +231,27 @@ func gracefulShutdown(database *sql.DB, dockerClient *docker.Client, ctx context
 	log.Println("All servers and proxies stopped")
 }
 
+func nullInt(ns sql.NullInt64) int {
+	if ns.Valid {
+		return int(ns.Int64)
+	}
+	return 0
+}
+
+func nullStr(ns sql.NullString) string {
+	if ns.Valid {
+		return ns.String
+	}
+	return ""
+}
+
 func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Config) {
 	log.Println("Starting servers and proxies with start_on_boot enabled...")
 
 	var wg sync.WaitGroup
 
 	proxyRows, err := database.Query(
-		"SELECT id, sanitized_name, host_port, COALESCE(ram_mb, 512) FROM proxies WHERE start_on_boot = 1")
+		"SELECT id, sanitized_name, host_port, COALESCE(ram_mb, 512), udp_port, jvm_flags FROM proxies WHERE start_on_boot = 1")
 	if err != nil {
 		log.Printf("Error querying start_on_boot proxies: %v", err)
 	} else {
@@ -243,11 +260,13 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 			sanitizedName string
 			hostPort      int
 			ramMB         int
+			udpPort       sql.NullInt64
+			jvmFlags      sql.NullString
 		}
 		var proxies []proxyInfo
 		for proxyRows.Next() {
 			var p proxyInfo
-			if err := proxyRows.Scan(&p.id, &p.sanitizedName, &p.hostPort, &p.ramMB); err != nil {
+			if err := proxyRows.Scan(&p.id, &p.sanitizedName, &p.hostPort, &p.ramMB, &p.udpPort, &p.jvmFlags); err != nil {
 				log.Printf("Failed to scan proxy row: %v", err)
 				continue
 			}
@@ -266,6 +285,8 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 					ProxyPath:   filepath.Join(cfg.HostServersDir, p.sanitizedName),
 					NetworkName: cfg.NetworkName,
 					RAMMB:       p.ramMB,
+					UDPPort:     nullInt(p.udpPort),
+					JVMFlags:    nullStr(p.jvmFlags),
 				}
 				if err := dockerClient.StartProxyContainer(context.Background(), p.sanitizedName, proxyCfg); err != nil {
 					log.Printf("Failed to start proxy %s: %v", p.sanitizedName, err)
@@ -279,7 +300,7 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 	wg.Wait()
 
 	serverRows, err := database.Query(
-		"SELECT id, sanitized_name, type, version, ram_mb, host_port FROM servers WHERE start_on_boot = 1")
+		"SELECT id, sanitized_name, type, version, ram_mb, host_port, udp_port, jvm_flags, java_override FROM servers WHERE start_on_boot = 1")
 	if err != nil {
 		log.Printf("Error querying start_on_boot servers: %v", err)
 	} else {
@@ -290,11 +311,14 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 			version       string
 			ramMB         int
 			hostPort      sql.NullInt64
+			udpPort       sql.NullInt64
+			jvmFlags      sql.NullString
+			javaOverride  sql.NullString
 		}
 		var servers []serverInfo
 		for serverRows.Next() {
 			var s serverInfo
-			if err := serverRows.Scan(&s.id, &s.sanitizedName, &s.serverType, &s.version, &s.ramMB, &s.hostPort); err != nil {
+			if err := serverRows.Scan(&s.id, &s.sanitizedName, &s.serverType, &s.version, &s.ramMB, &s.hostPort, &s.udpPort, &s.jvmFlags, &s.javaOverride); err != nil {
 				log.Printf("Failed to scan server row: %v", err)
 				continue
 			}
@@ -312,13 +336,16 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 					port = int(s.hostPort.Int64)
 				}
 				serverCfg := &docker.ServerContainerConfig{
-					Name:        s.sanitizedName,
-					ServerType:  s.serverType,
-					Version:     s.version,
-					RAMMB:       s.ramMB,
-					ServerPath:  filepath.Join(cfg.HostServersDir, s.sanitizedName),
-					NetworkName: cfg.NetworkName,
-					HostPort:    port,
+					Name:         s.sanitizedName,
+					ServerType:   s.serverType,
+					Version:      s.version,
+					RAMMB:        s.ramMB,
+					ServerPath:   filepath.Join(cfg.HostServersDir, s.sanitizedName),
+					NetworkName:  cfg.NetworkName,
+					HostPort:     port,
+					UDPPort:      nullInt(s.udpPort),
+					JVMFlags:     nullStr(s.jvmFlags),
+					JavaOverride: nullStr(s.javaOverride),
 				}
 				if err := dockerClient.StartContainer(context.Background(), s.sanitizedName, serverCfg); err != nil {
 					log.Printf("Failed to start server %s: %v", s.sanitizedName, err)

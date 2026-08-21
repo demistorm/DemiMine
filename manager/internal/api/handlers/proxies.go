@@ -884,8 +884,9 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 
 	var sanitizedName string
 	var hostPort, ramMB int
+	var udpPort sql.NullInt64
 	var jvmFlags sql.NullString
-	err = h.db.QueryRow("SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags FROM proxies WHERE id = ?", id).Scan(&sanitizedName, &hostPort, &ramMB, &jvmFlags)
+	err = h.db.QueryRow("SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), udp_port, jvm_flags FROM proxies WHERE id = ?", id).Scan(&sanitizedName, &hostPort, &ramMB, &udpPort, &jvmFlags)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -927,7 +928,12 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
+		UDPPort:     getUDPPort(udpPort),
 	}
+
+	// AutoRemove is async, so the old container may still exist here with stale
+	// port config — force it away so StartProxyContainer recreates with fresh config
+	_ = h.docker.RemoveContainer(ctx, "demimine-proxy-"+sanitizedName)
 
 	if err := h.docker.StartProxyContainer(ctx, sanitizedName, cfg); err != nil {
 		w.Header().Set("Content-Type", "application/json")

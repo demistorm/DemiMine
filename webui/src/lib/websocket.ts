@@ -32,12 +32,18 @@ class WebSocketClient {
 	private reconnectDelay = 2000;
 	private handlers: Map<string, Set<MessageHandler>> = new Map();
 	private connectionPromise: Promise<void> | null = null;
+	private intentionalClose = false;
 
 	constructor() {
 	}
 
 	connect(): Promise<void> {
-		if (this.connectionPromise) {
+		// already connected or connecting — reuse instead of stacking sockets
+		if (
+			this.ws &&
+			this.connectionPromise &&
+			(this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+		) {
 			return this.connectionPromise;
 		}
 
@@ -52,25 +58,32 @@ class WebSocketClient {
 			const wsHost = API_BASE || `${window.location.host}`;
 			const wsUrl = `${wsProtocol}//${wsHost}/api/ws?token=${token}`;
 
-			this.ws = new WebSocket(wsUrl);
+			this.intentionalClose = false;
+			const socket = (this.ws = new WebSocket(wsUrl));
 
-			this.ws.onopen = () => {
+			socket.onopen = () => {
+				if (socket !== this.ws) return;
 				console.log('WebSocket connected');
 				this.reconnectAttempts = 0;
 				resolve();
 			};
 
-			this.ws.onerror = (error) => {
+			socket.onerror = (error) => {
+				if (socket !== this.ws) return;
 				console.error('WebSocket error:', error);
 				reject(error);
 			};
 
-			this.ws.onclose = () => {
+			socket.onclose = () => {
+				// stale socket (already replaced) or deliberate close — never reconnect from here
+				if (socket !== this.ws || this.intentionalClose) return;
 				console.log('WebSocket disconnected');
 				this.handleReconnect();
 			};
 
-			this.ws.onmessage = (event) => {
+			socket.onmessage = (event) => {
+				// stale socket must not double-dispatch into the handlers
+				if (socket !== this.ws) return;
 				try {
 					const message: Message = JSON.parse(event.data);
 					this.handleMessage(message);
@@ -93,6 +106,7 @@ class WebSocketClient {
 		const delay = this.reconnectDelay * this.reconnectAttempts;
 
 		setTimeout(() => {
+			if (this.intentionalClose) return;
 			console.log(`Reconnecting... Attempt ${this.reconnectAttempts}`);
 			this.connectionPromise = null;
 			this.connect().catch(console.error);
@@ -177,7 +191,12 @@ class WebSocketClient {
 	}
 
 	disconnect() {
+		this.intentionalClose = true;
 		if (this.ws) {
+			// detach handlers first so close() can't fire a ghost reconnect
+			this.ws.onclose = null;
+			this.ws.onmessage = null;
+			this.ws.onerror = null;
 			this.ws.close();
 			this.ws = null;
 		}

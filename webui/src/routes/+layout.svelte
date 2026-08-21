@@ -72,14 +72,15 @@
 		const authToken = getToken();
 		if (!authToken) return;
 
+		// set synchronously so concurrent calls can't double-connect
+		wsSetup = true;
 		try {
-			ws.disconnect();
 			await ws.connect();
 			setupBackupStatusHandler();
 			setupProxyStatusHandler();
-			wsSetup = true;
 		} catch (e) {
 			console.error('WebSocket connection failed:', e);
+			wsSetup = false;
 		}
 	}
 
@@ -105,7 +106,6 @@
 	});
 
 	$: if ($token && !wsSetup) {
-		wsSetup = false;
 		connectWebSocket();
 	}
 
