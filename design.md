@@ -1124,7 +1124,7 @@ func EnsureJavaVersion(version string) (string, error) {
 
 | Type | Version API | Notes |
 |------|-------------|-------|
-| Paper | `https://api.papermc.io/v2/projects/paper` | Direct jar download |
+| Paper | `https://fill.papermc.io/v3/projects/paper` | Direct jar download |
 | Purpur | `https://api.purpurmc.org/v2/purpur` | Direct jar download |
 | Fabric | `https://meta.fabricmc.net/v2/versions/game` | Requires installer (existing examples available) |
 | NeoForge | `https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge` | Requires installer (existing examples available) |

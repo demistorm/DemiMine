@@ -53,20 +53,6 @@ var (
 	forgeCache     = &cachedVersions{}
 )
 
-type PaperVersionResponse struct {
-	ProjectID     string   `json:"project_id"`
-	ProjectName   string   `json:"project_name"`
-	VersionGroups []string `json:"version_groups"`
-	Versions      []string `json:"versions"`
-}
-
-type PaperBuildResponse struct {
-	ProjectID   string `json:"project_id"`
-	ProjectName string `json:"project_name"`
-	Version     string `json:"version"`
-	Builds      []int  `json:"builds"`
-}
-
 type PurpurVersionResponse struct {
 	Versions []string `json:"versions"`
 }
@@ -89,47 +75,37 @@ func GetPaperVersions(includeAll bool) ([]VersionInfo, error) {
 		}
 	}
 
-	resp, err := httpClient.Get("https://api.papermc.io/v2/projects/paper")
+	resp, err := fillGet(fmt.Sprintf("%s/projects/paper", fillAPIBaseURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch paper versions: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var data PaperVersionResponse
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("paper version API returned status %d", resp.StatusCode)
+	}
+
+	var data FillProjectResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("failed to decode paper response: %w", err)
 	}
 
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	versions := make([]VersionInfo, 0, len(data.Versions))
-
-	for _, v := range data.Versions {
-		wg.Add(1)
-		go func(version string) {
-			defer wg.Done()
-
-			buildResp, err := httpClient.Get(fmt.Sprintf("https://api.papermc.io/v2/projects/paper/versions/%s", version))
-			if err != nil {
-				return
-			}
-			defer buildResp.Body.Close()
-
-			var buildData PaperBuildResponse
-			if err := json.NewDecoder(buildResp.Body).Decode(&buildData); err != nil {
-				return
-			}
-
-			mu.Lock()
-			versions = append(versions, VersionInfo{
-				Version: version,
-				Stable:  true,
-				Builds:  len(buildData.Builds),
-			})
-			mu.Unlock()
-		}(v)
+	// Fill groups versions by mc release ("1.21" -> ["1.21.3", ...]), we just want a flat list
+	versionSet := make(map[string]bool)
+	for _, group := range data.Versions {
+		for _, v := range group {
+			versionSet[v] = true
+		}
 	}
-	wg.Wait()
+
+	versions := make([]VersionInfo, 0, len(versionSet))
+	for v := range versionSet {
+		versions = append(versions, VersionInfo{
+			Version: v,
+			Stable:  !hasPreReleaseSuffix(v),
+			Builds:  1,
+		})
+	}
 
 	sort.Slice(versions, func(i, j int) bool {
 		return compareVersions(versions[i].Version, versions[j].Version) > 0
