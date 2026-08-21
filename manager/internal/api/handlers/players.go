@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,7 +48,7 @@ type PlayerJoinRequest struct {
 
 type PlayerLeaveRequest struct {
 	UUID       string `json:"uuid" binding:"required"`
-	ServerName string `json:"server_name" binding:"required"`
+	ServerName string `json:"server_name"`
 }
 
 type PlayerInfo struct {
@@ -109,27 +111,40 @@ func (h *PlayerHandler) Leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var serverID int64
-	err := h.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", req.ServerName).Scan(&serverID)
-	if err != nil {
-		if err == sql.ErrNoRows {
+	// server_name optional: without it we clear the player wherever they are,
+	// which the proxy uses when a player drops before fully connecting
+	var result sql.Result
+	var err error
+	if req.ServerName == "" {
+		result, err = h.db.Exec("DELETE FROM players WHERE uuid = ?", req.UUID)
+	} else {
+		var serverID int64
+		err = h.db.QueryRow("SELECT id FROM servers WHERE sanitized_name = ?", req.ServerName).Scan(&serverID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "server not found"})
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "database error"})
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "database error"})
-		return
+		result, err = h.db.Exec("DELETE FROM players WHERE uuid = ? AND server_id = ?", req.UUID, serverID)
 	}
 
-	_, err = h.db.Exec("DELETE FROM players WHERE uuid = ? AND server_id = ?", req.UUID, serverID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to record player leave"})
 		return
+	}
+
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		// nothing to remove, player wasn't tracked anyway
+		log.Printf("Player leave for %s (server %q) matched no rows", req.UUID, req.ServerName)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -171,7 +186,10 @@ func (h *PlayerHandler) GetServerPlayers(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"server_id": serverID})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"server_id": serverID,
+		"players":   players,
+	})
 }
 
 func (h *PlayerHandler) GetAutoShutdownServers(w http.ResponseWriter, r *http.Request) {
@@ -243,7 +261,7 @@ func (h *PlayerHandler) GetServerStatus(w http.ResponseWriter, r *http.Request) 
 
 	if status == "running" && hostPort.Valid {
 		containerName := "demimine-" + serverName
-		address := fmt.Sprintf("%s:%d", containerName, int(hostPort.Int64))
+		address := net.JoinHostPort(containerName, strconv.Itoa(int(hostPort.Int64)))
 		conn, err := net.DialTimeout("tcp", address, 2*time.Second)
 		if err != nil {
 			status = "starting"

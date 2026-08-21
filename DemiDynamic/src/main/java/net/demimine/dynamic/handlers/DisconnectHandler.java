@@ -55,7 +55,10 @@ public class DisconnectHandler {
                     autoStopManager.scheduleStopTimer(serverName);
                 }
             } else {
-                logger.warn(player.getUsername() + " had no server connection at disconnect, skipping auto-stop check");
+                // join was reported optimistically at pre-connect, so the player may
+                // still be tracked on the login server — clear them wherever they are
+                apiClient.reportPlayerLeave(playerId.toString(), null);
+                logger.warn(player.getUsername() + " had no server connection at disconnect, cleared tracking and skipped auto-stop check");
             }
         });
     }

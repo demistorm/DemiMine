@@ -115,6 +115,14 @@ func (em *EventManager) broadcastStatusChange(serverID int64, action events.Acti
 		log.Printf("Failed to update server %d status in database: %v", serverID, err)
 	}
 
+	// Server's gone, nobody can be playing on it anymore. Clears rows stranded
+	// by missed leave reports (proxy crash, manager downtime, dropped logins).
+	if status == "stopped" {
+		if _, err := em.db.Exec("DELETE FROM players WHERE server_id = ?", serverID); err != nil {
+			log.Printf("Failed to clear players for stopped server %d: %v", serverID, err)
+		}
+	}
+
 	msg := map[string]interface{}{
 		"type":      "server_status",
 		"server_id": serverID,

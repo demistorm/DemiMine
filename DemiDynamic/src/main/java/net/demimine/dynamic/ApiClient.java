@@ -164,7 +164,9 @@ public class ApiClient {
         String url = config.configVar.managerUrl + "/api/players/leave";
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("uuid", uuid);
-        requestBody.addProperty("server_name", serverName);
+        if (serverName != null) {
+            requestBody.addProperty("server_name", serverName);
+        }
 
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create(url))

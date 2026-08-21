@@ -84,6 +84,13 @@ func main() {
 
 	dockerClient.SyncServerStatus(context.Background(), database)
 
+	// heal stale player rows — anyone left on a server that isn't running is a ghost
+	if result, err := database.Exec("DELETE FROM players WHERE server_id IN (SELECT id FROM servers WHERE status != 'running')"); err != nil {
+		log.Printf("Failed to prune players for non-running servers: %v", err)
+	} else if rows, _ := result.RowsAffected(); rows > 0 {
+		log.Printf("Pruned %d stale player rows for non-running servers", rows)
+	}
+
 	startOnBoot(database, dockerClient, cfg)
 
 	consoleManager := docker.NewConsoleManager(dockerClient, database)
