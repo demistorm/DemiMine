@@ -3,7 +3,6 @@ package mc
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,61 +23,25 @@ type VelocityConfig struct {
 }
 
 func DownloadVelocityJar(destPath string) (string, int, error) {
-	resp, err := fillGet(fmt.Sprintf("%s/projects/velocity", fillAPIBaseURL))
+	// same resolver CheckVelocityUpdate uses, so what the updater offers is
+	// exactly what lands on disk
+	best, err := latestVelocityBuild()
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to get velocity versions: %w", err)
+		return "", 0, err
 	}
-	defer resp.Body.Close()
-
-	var data FillProjectResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return "", 0, fmt.Errorf("failed to decode velocity versions: %w", err)
+	if best == nil {
+		return "", 0, fmt.Errorf("no velocity builds available")
 	}
 
-	versions, ok := data.Versions["3.0.0"]
-	if !ok || len(versions) == 0 {
-		return "", 0, fmt.Errorf("no velocity versions available")
+	downloadURL := best.build.Downloads["server:default"].URL
+	if downloadURL == "" {
+		return "", 0, fmt.Errorf("no server download for velocity %s build %d", best.version, best.build.ID)
+	}
+	if err := downloadFillFile(downloadURL, destPath); err != nil {
+		return "", 0, err
 	}
 
-	for _, version := range versions {
-		buildResp, err := fillGet(fmt.Sprintf("%s/projects/velocity/versions/%s/builds", fillAPIBaseURL, version))
-		if err != nil {
-			continue
-		}
-
-		var builds []FillBuild
-		if err := json.NewDecoder(buildResp.Body).Decode(&builds); err != nil {
-			buildResp.Body.Close()
-			continue
-		}
-		buildResp.Body.Close()
-
-		if len(builds) == 0 {
-			continue
-		}
-
-		var latestBuild *FillBuild
-		for i := range builds {
-			if latestBuild == nil || builds[i].ID > latestBuild.ID {
-				if builds[i].Channel == "STABLE" {
-					latestBuild = &builds[i]
-				}
-			}
-		}
-
-		if latestBuild == nil {
-			latestBuild = &builds[0]
-		}
-
-		downloadURL := latestBuild.Downloads["server:default"].URL
-		if err := downloadFillFile(downloadURL, destPath); err != nil {
-			return "", 0, err
-		}
-
-		return version, latestBuild.ID, nil
-	}
-
-	return "", 0, fmt.Errorf("no stable builds available for velocity")
+	return best.version, best.build.ID, nil
 }
 
 func GenerateForwardingSecret() (string, error) {

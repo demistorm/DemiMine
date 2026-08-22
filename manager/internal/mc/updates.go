@@ -97,6 +97,73 @@ func ClearVelocityCache(version string, build int) {
 	velocityUpdateCacheMu.Unlock()
 }
 
+type velocityBuildPick struct {
+	version  string
+	build    FillBuild
+	priority int
+}
+
+// fill channels rank how "shippable" a build is — RECOMMENDED is what
+// papermc actually points people at, STABLE is fine, everything else is a
+// gamble. within a tier, higher build id = newer (ids are global).
+func channelPriority(channel string) int {
+	switch channel {
+	case "RECOMMENDED":
+		return 3
+	case "STABLE":
+		return 2
+	default:
+		return 1
+	}
+}
+
+// the single source of truth for "what is the latest velocity build" — both
+// CheckVelocityUpdate and DownloadVelocityJar go through here so they can
+// never disagree again. the fill versions array comes back in random order,
+// so we have to scan every version and rank builds ourselves.
+func latestVelocityBuild() (*velocityBuildPick, error) {
+	resp, err := fillGet(fmt.Sprintf("%s/projects/velocity", fillAPIBaseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get velocity versions: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var data FillProjectResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("failed to decode velocity versions: %w", err)
+	}
+
+	versions, ok := data.Versions["3.0.0"]
+	if !ok || len(versions) == 0 {
+		return nil, nil
+	}
+
+	var best *velocityBuildPick
+	for _, version := range versions {
+		buildResp, err := fillGet(fmt.Sprintf("%s/projects/velocity/versions/%s/builds", fillAPIBaseURL, version))
+		if err != nil {
+			continue
+		}
+
+		var builds []FillBuild
+		if err := json.NewDecoder(buildResp.Body).Decode(&builds); err != nil {
+			buildResp.Body.Close()
+			continue
+		}
+		buildResp.Body.Close()
+
+		for _, build := range builds {
+			p := &velocityBuildPick{version: version, build: build, priority: channelPriority(build.Channel)}
+			if best == nil || p.priority > best.priority || (p.priority == best.priority && p.build.ID > best.build.ID) {
+				best = p
+			}
+		}
+	}
+
+	return best, nil
+}
+
+
 func CheckPaperUpdate(version string, currentBuild int) (*JarUpdateInfo, error) {
 	cacheKey := getPaperCacheKey(version, currentBuild)
 	paperUpdateCacheMu.RLock()
@@ -258,63 +325,12 @@ func CheckVelocityUpdate(currentVersion string, currentBuild int) (*JarUpdateInf
 		cached.mu.RUnlock()
 	}
 
-	resp, err := fillGet(fmt.Sprintf("%s/projects/velocity", fillAPIBaseURL))
+	best, err := latestVelocityBuild()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get velocity versions: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var data FillProjectResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("failed to decode velocity versions: %w", err)
+		return nil, err
 	}
 
-	versions, ok := data.Versions["3.0.0"]
-	if !ok || len(versions) == 0 {
-		return &JarUpdateInfo{
-			HasUpdate:      false,
-			CurrentBuild:   currentBuild,
-			LatestBuild:    currentBuild,
-			CurrentVersion: currentVersion,
-			LatestVersion:  currentVersion,
-		}, nil
-	}
-
-	var latestVersion string
-	var latestBuildID int
-	var latestBuildChannel string
-
-	for _, version := range versions {
-		buildResp, err := fillGet(fmt.Sprintf("%s/projects/velocity/versions/%s/builds", fillAPIBaseURL, version))
-		if err != nil {
-			continue
-		}
-
-		var builds []FillBuild
-		if err := json.NewDecoder(buildResp.Body).Decode(&builds); err != nil {
-			buildResp.Body.Close()
-			continue
-		}
-		buildResp.Body.Close()
-
-		if len(builds) == 0 {
-			continue
-		}
-
-		for _, build := range builds {
-			if build.Channel == "STABLE" && (latestBuildChannel != "STABLE" || build.ID > latestBuildID) {
-				latestVersion = version
-				latestBuildID = build.ID
-				latestBuildChannel = "STABLE"
-			} else if latestBuildChannel == "" && build.ID > latestBuildID {
-				latestVersion = version
-				latestBuildID = build.ID
-				latestBuildChannel = build.Channel
-			}
-		}
-	}
-
-	if latestVersion == "" {
+	if best == nil {
 		return &JarUpdateInfo{
 			HasUpdate:      false,
 			CurrentBuild:   currentBuild,
@@ -325,18 +341,18 @@ func CheckVelocityUpdate(currentVersion string, currentBuild int) (*JarUpdateInf
 	}
 
 	hasUpdate := false
-	if latestVersion != currentVersion {
+	if best.version != currentVersion {
 		hasUpdate = true
-	} else if latestBuildID > currentBuild {
+	} else if best.build.ID > currentBuild {
 		hasUpdate = true
 	}
 
 	info := JarUpdateInfo{
 		HasUpdate:      hasUpdate,
 		CurrentBuild:   currentBuild,
-		LatestBuild:    latestBuildID,
+		LatestBuild:    best.build.ID,
 		CurrentVersion: currentVersion,
-		LatestVersion:  latestVersion,
+		LatestVersion:  best.version,
 	}
 
 	velocityUpdateCacheMu.Lock()
