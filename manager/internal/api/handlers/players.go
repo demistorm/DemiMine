@@ -381,6 +381,7 @@ func (h *PlayerHandler) StartServerByName(w http.ResponseWriter, r *http.Request
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
 		UDPPort:      getUDPPort(udpPort),
+		ExtraMounts:  LinksToMounts(h.db, h.cfg.ServersDir, h.cfg.HostServersDir, "server", id),
 	}
 
 	ctx := context.Background()
