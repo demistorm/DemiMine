@@ -1056,8 +1056,9 @@ func (h *ProxyHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 
 		if !isDir {
 			if info, err := entry.Info(); err == nil {
-				size = info.Size()
-				modified = info.ModTime().Format("2006-01-02T15:04:05Z")
+			size = info.Size()
+			// real offset, not a fake "Z" — the frontend converts from this
+			modified = info.ModTime().Format(time.RFC3339)
 			}
 		}
 
@@ -1607,8 +1608,33 @@ func (h *ProxyHandler) UploadIcon(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// servers without their own icon inherit the proxy's — bring their configs up to date
+	h.refreshIconFallbacks(id, sanitizedName)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// refreshIconFallbacks regenerates extra configs for servers on this proxy that
+// already have one, so icon-less servers pick up (or drop) the proxy icon
+func (h *ProxyHandler) refreshIconFallbacks(proxyID int64, proxySanitizedName string) {
+	rows, err := h.db.Query(`
+		SELECT sanitized_name, COALESCE(minimotd_line1, ''), COALESCE(minimotd_line2, '')
+		FROM servers WHERE proxy_id = ?`, proxyID)
+	if err != nil {
+		fmt.Printf("Failed to query servers for icon fallback sync on proxy %d: %v\n", proxyID, err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var serverSanitizedName, line1, line2 string
+		if err := rows.Scan(&serverSanitizedName, &line1, &line2); err != nil {
+			continue
+		}
+		serverPath := filepath.Join(h.cfg.ServersDir, serverSanitizedName)
+		h.minimotdMgr.SyncServerConfig(proxySanitizedName, serverSanitizedName, serverPath, line1, line2)
+	}
 }
 
 func (h *ProxyHandler) GetIcon(w http.ResponseWriter, r *http.Request) {
@@ -1692,6 +1718,9 @@ func (h *ProxyHandler) DeleteIcon(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("Failed to update MiniMOTD main config for proxy %d: %v\n", id, err)
 		}
 	}
+
+	// icon-less servers can no longer inherit — drop the icon line from their configs
+	h.refreshIconFallbacks(id, sanitizedName)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})

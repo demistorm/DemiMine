@@ -20,6 +20,7 @@ import (
 	"github.com/demimine/manager/internal/config"
 	"github.com/demimine/manager/internal/db"
 	"github.com/demimine/manager/internal/docker"
+	"github.com/demimine/manager/internal/minimotd"
 	"github.com/demimine/manager/internal/rcon"
 	"github.com/demimine/manager/internal/scheduler"
 	"github.com/demimine/manager/internal/spark"
@@ -90,6 +91,9 @@ func main() {
 	} else if rows, _ := result.RowsAffected(); rows > 0 {
 		log.Printf("Pruned %d stale player rows for non-running servers", rows)
 	}
+
+	// one-shot heal so existing extra configs pick up the proxy icon fallback
+	syncMiniMOTDConfigs(database, cfg)
 
 	startOnBoot(database, dockerClient, cfg)
 
@@ -243,6 +247,35 @@ func nullStr(ns sql.NullString) string {
 		return ns.String
 	}
 	return ""
+}
+
+// syncMiniMOTDConfigs regenerates every existing extra config once at boot so
+// icon-less servers inherit the proxy icon (and any drift gets healed)
+func syncMiniMOTDConfigs(database *sql.DB, cfg *config.Config) {
+	mgr := minimotd.NewManager(cfg.ServersDir)
+
+	rows, err := database.Query(`
+		SELECT s.sanitized_name, COALESCE(s.minimotd_line1, ''), COALESCE(s.minimotd_line2, ''), p.sanitized_name
+		FROM servers s JOIN proxies p ON s.proxy_id = p.id`)
+	if err != nil {
+		log.Printf("Failed to query servers for MiniMOTD sync: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	synced := 0
+	for rows.Next() {
+		var serverName, line1, line2, proxyName string
+		if err := rows.Scan(&serverName, &line1, &line2, &proxyName); err != nil {
+			continue
+		}
+		serverPath := filepath.Join(cfg.ServersDir, serverName)
+		mgr.SyncServerConfig(proxyName, serverName, serverPath, line1, line2)
+		synced++
+	}
+	if synced > 0 {
+		log.Printf("Synced MiniMOTD configs for %d proxied servers", synced)
+	}
 }
 
 func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Config) {

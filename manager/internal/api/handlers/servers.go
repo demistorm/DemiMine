@@ -1371,8 +1371,9 @@ func (h *ServerHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
 
 			if !isDir {
 				if info, err := e.Info(); err == nil {
-					size = info.Size()
-					modified = info.ModTime().Format("2006-01-02T15:04:05Z")
+				size = info.Size()
+				// real offset, not a fake "Z" — the frontend converts from this
+				modified = info.ModTime().Format(time.RFC3339)
 				}
 			}
 

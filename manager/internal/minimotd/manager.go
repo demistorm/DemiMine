@@ -70,6 +70,29 @@ func (m *Manager) GetMainConfigIconPath(proxyName string) string {
 	return filepath.Join(minimotdPath, iconsDir, proxyName+".png")
 }
 
+func (m *Manager) proxyHasIcon(proxyName string) bool {
+	_, err := os.Stat(m.GetMainConfigIconPath(proxyName))
+	return err == nil
+}
+
+// SyncServerConfig regenerates a server's extra config if one already exists,
+// picking the right icon (the server's own, else the proxy's). Skips servers
+// that never had an extra config so we don't change MOTD behavior uninvited.
+func (m *Manager) SyncServerConfig(proxyName, serverName, serverPath, line1, line2 string) {
+	if _, err := os.Stat(m.getExtraConfigPath(proxyName, serverName)); err != nil {
+		return
+	}
+
+	hasIcon := false
+	if _, err := os.Stat(filepath.Join(serverPath, "server-icon.png")); err == nil {
+		hasIcon = true
+	}
+
+	if err := m.UpdateExtraConfig(proxyName, serverName, line1, line2, hasIcon); err != nil {
+		fmt.Printf("Failed to sync MiniMOTD config for %s: %v\n", serverName, err)
+	}
+}
+
 func (m *Manager) CreateExtraConfig(proxyName, serverName, line1, line2 string, hasIcon bool) error {
 	minimotdPath := m.getMinimotdPluginsPath(proxyName)
 	extraConfigDir := filepath.Join(minimotdPath, extraConfigsDir)
@@ -79,7 +102,7 @@ func (m *Manager) CreateExtraConfig(proxyName, serverName, line1, line2 string, 
 	}
 
 	configPath := m.getExtraConfigPath(proxyName, serverName)
-	config := m.generateExtraConfig(serverName, line1, line2, hasIcon)
+	config := m.generateExtraConfig(proxyName, serverName, line1, line2, hasIcon)
 
 	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
 		return fmt.Errorf("failed to write extra config: %w", err)
@@ -95,7 +118,7 @@ func (m *Manager) UpdateExtraConfig(proxyName, serverName, line1, line2 string, 
 		return m.CreateExtraConfig(proxyName, serverName, line1, line2, hasIcon)
 	}
 
-	config := m.generateExtraConfig(serverName, line1, line2, hasIcon)
+	config := m.generateExtraConfig(proxyName, serverName, line1, line2, hasIcon)
 
 	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
 		return fmt.Errorf("failed to update extra config: %w", err)
@@ -153,7 +176,7 @@ func (m *Manager) RenameServer(proxyName, oldName, newName, domain, proxyPort, l
 			return fmt.Errorf("failed to rename config: %w", err)
 		}
 
-		config := m.generateExtraConfig(newName, line1, line2, hasIcon)
+		config := m.generateExtraConfig(proxyName, newName, line1, line2, hasIcon)
 		if err := os.WriteFile(newConfigPath, []byte(config), 0644); err != nil {
 			return fmt.Errorf("failed to update config with new name: %w", err)
 		}
@@ -288,10 +311,13 @@ func (m *Manager) updateVirtualHostConfig(proxyName, oldDomain, proxyPort, newDo
 	return nil
 }
 
-func (m *Manager) generateExtraConfig(serverName, line1, line2 string, hasIcon bool) string {
+func (m *Manager) generateExtraConfig(proxyName, serverName, line1, line2 string, hasIcon bool) string {
 	iconSetting := ""
 	if hasIcon {
 		iconSetting = fmt.Sprintf("        icon=%s-server\n", serverName)
+	} else if m.proxyHasIcon(proxyName) {
+		// no personal icon, inherit the proxy's
+		iconSetting = fmt.Sprintf("        icon=%s\n", proxyName)
 	}
 
 	return fmt.Sprintf(`# Extra MiniMOTD config '%s'
