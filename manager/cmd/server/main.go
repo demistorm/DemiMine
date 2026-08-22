@@ -251,7 +251,7 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 	var wg sync.WaitGroup
 
 	proxyRows, err := database.Query(
-		"SELECT id, sanitized_name, host_port, COALESCE(ram_mb, 512), udp_port, jvm_flags FROM proxies WHERE start_on_boot = 1")
+		"SELECT id, sanitized_name, host_port, COALESCE(ram_mb, 512), udp_port, jvm_flags, jar_version FROM proxies WHERE start_on_boot = 1")
 	if err != nil {
 		log.Printf("Error querying start_on_boot proxies: %v", err)
 	} else {
@@ -262,11 +262,12 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 			ramMB         int
 			udpPort       sql.NullInt64
 			jvmFlags      sql.NullString
+			jarVersion    sql.NullString
 		}
 		var proxies []proxyInfo
 		for proxyRows.Next() {
 			var p proxyInfo
-			if err := proxyRows.Scan(&p.id, &p.sanitizedName, &p.hostPort, &p.ramMB, &p.udpPort, &p.jvmFlags); err != nil {
+			if err := proxyRows.Scan(&p.id, &p.sanitizedName, &p.hostPort, &p.ramMB, &p.udpPort, &p.jvmFlags, &p.jarVersion); err != nil {
 				log.Printf("Failed to scan proxy row: %v", err)
 				continue
 			}
@@ -287,6 +288,7 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 					RAMMB:       p.ramMB,
 					UDPPort:     nullInt(p.udpPort),
 					JVMFlags:    nullStr(p.jvmFlags),
+					JarVersion:  p.jarVersion.String,
 				}
 				if err := dockerClient.StartProxyContainer(context.Background(), p.sanitizedName, proxyCfg); err != nil {
 					log.Printf("Failed to start proxy %s: %v", p.sanitizedName, err)

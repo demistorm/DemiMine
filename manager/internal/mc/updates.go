@@ -105,7 +105,7 @@ type velocityBuildPick struct {
 
 // fill channels rank how "shippable" a build is — RECOMMENDED is what
 // papermc actually points people at, STABLE is fine, everything else is a
-// gamble. within a tier, higher build id = newer (ids are global).
+// gamble. only used to pick between builds of the *same* version now.
 func channelPriority(channel string) int {
 	switch channel {
 	case "RECOMMENDED":
@@ -117,10 +117,51 @@ func channelPriority(channel string) int {
 	}
 }
 
+// velocity version compare: "4.1.0-SNAPSHOT" vs "4.0.0" vs "3.5.1" —
+// numeric dot parts, and a -SNAPSHOT suffix loses to the release of the
+// same base version but beats any lower version
+func velocityVersionLess(a, b string) bool {
+	split := func(v string) ([]int, bool) {
+		isSnap := strings.HasSuffix(v, "-SNAPSHOT")
+		base := strings.TrimSuffix(v, "-SNAPSHOT")
+		parts := strings.Split(base, ".")
+		nums := make([]int, len(parts))
+		for i, p := range parts {
+			fmt.Sscanf(p, "%d", &nums[i])
+		}
+		return nums, isSnap
+	}
+
+	aNums, aSnap := split(a)
+	bNums, bSnap := split(b)
+
+	maxLen := len(aNums)
+	if len(bNums) > maxLen {
+		maxLen = len(bNums)
+	}
+	for i := 0; i < maxLen; i++ {
+		var an, bn int
+		if i < len(aNums) {
+			an = aNums[i]
+		}
+		if i < len(bNums) {
+			bn = bNums[i]
+		}
+		if an != bn {
+			return an < bn
+		}
+	}
+	// same base version — release beats snapshot
+	return aSnap && !bSnap
+}
+
 // the single source of truth for "what is the latest velocity build" — both
 // CheckVelocityUpdate and DownloadVelocityJar go through here so they can
-// never disagree again. the fill versions array comes back in random order,
-// so we have to scan every version and rank builds ourselves.
+// never disagree. fill groups versions by major family under separate keys
+// ("3.0.0", "4.0.0", ...) with random ordering, so flatten everything, and
+// match what the papermc site serves as the primary download: the newest
+// version line, best build within it. RECOMMENDED tags on old majors must
+// NOT keep us pinned to 3.x forever.
 func latestVelocityBuild() (*velocityBuildPick, error) {
 	resp, err := fillGet(fmt.Sprintf("%s/projects/velocity", fillAPIBaseURL))
 	if err != nil {
@@ -133,12 +174,24 @@ func latestVelocityBuild() (*velocityBuildPick, error) {
 		return nil, fmt.Errorf("failed to decode velocity versions: %w", err)
 	}
 
-	versions, ok := data.Versions["3.0.0"]
-	if !ok || len(versions) == 0 {
+	// flatten every version group — 4.x lives under a different key than 3.x
+	var versions []string
+	for _, group := range data.Versions {
+		versions = append(versions, group...)
+	}
+	if len(versions) == 0 {
 		return nil, nil
 	}
 
-	var best *velocityBuildPick
+	// newest version first, then walk down until we find one with builds
+	for i := 0; i < len(versions); i++ {
+		for j := i + 1; j < len(versions); j++ {
+			if velocityVersionLess(versions[i], versions[j]) {
+				versions[i], versions[j] = versions[j], versions[i]
+			}
+		}
+	}
+
 	for _, version := range versions {
 		buildResp, err := fillGet(fmt.Sprintf("%s/projects/velocity/versions/%s/builds", fillAPIBaseURL, version))
 		if err != nil {
@@ -152,15 +205,22 @@ func latestVelocityBuild() (*velocityBuildPick, error) {
 		}
 		buildResp.Body.Close()
 
-		for _, build := range builds {
-			p := &velocityBuildPick{version: version, build: build, priority: channelPriority(build.Channel)}
-			if best == nil || p.priority > best.priority || (p.priority == best.priority && p.build.ID > best.build.ID) {
-				best = p
+		var best *FillBuild
+		bestPriority := 0
+		for j := range builds {
+			p := channelPriority(builds[j].Channel)
+			if best == nil || p > bestPriority || (p == bestPriority && builds[j].ID > best.ID) {
+				best = &builds[j]
+				bestPriority = p
 			}
+		}
+
+		if best != nil {
+			return &velocityBuildPick{version: version, build: *best, priority: bestPriority}, nil
 		}
 	}
 
-	return best, nil
+	return nil, nil
 }
 
 

@@ -787,7 +787,8 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 	var hostPort, ramMB int
 	var jvmFlags sql.NullString
 	var udpPort sql.NullInt64
-	err = h.db.QueryRow("SELECT name, sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags, udp_port FROM proxies WHERE id = ?", id).Scan(&name, &sanitizedName, &hostPort, &ramMB, &jvmFlags, &udpPort)
+	var jarVersion sql.NullString
+	err = h.db.QueryRow("SELECT name, sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags, udp_port, jar_version FROM proxies WHERE id = ?", id).Scan(&name, &sanitizedName, &hostPort, &ramMB, &jvmFlags, &udpPort, &jarVersion)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -813,6 +814,7 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
+		JarVersion:  jarVersion.String,
 	}
 
 	ctx := context.Background()
@@ -886,7 +888,8 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	var hostPort, ramMB int
 	var udpPort sql.NullInt64
 	var jvmFlags sql.NullString
-	err = h.db.QueryRow("SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), udp_port, jvm_flags FROM proxies WHERE id = ?", id).Scan(&sanitizedName, &hostPort, &ramMB, &udpPort, &jvmFlags)
+	var jarVersion sql.NullString
+	err = h.db.QueryRow("SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), udp_port, jvm_flags, jar_version FROM proxies WHERE id = ?", id).Scan(&sanitizedName, &hostPort, &ramMB, &udpPort, &jvmFlags, &jarVersion)
 	if err == sql.ErrNoRows {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -929,6 +932,7 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
 		UDPPort:     getUDPPort(udpPort),
+		JarVersion:  jarVersion.String,
 	}
 
 	// AutoRemove is async, so the old container may still exist here with stale
@@ -1818,9 +1822,10 @@ func (h *ProxyHandler) StartByID(id int64) error {
 	var hostPort, ramMB int
 	var jvmFlags sql.NullString
 	var udpPort sql.NullInt64
+	var jarVersion sql.NullString
 	err := h.db.QueryRow(`
-		SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags, udp_port FROM proxies WHERE id = ?`, id).
-		Scan(&sanitizedName, &hostPort, &ramMB, &jvmFlags, &udpPort)
+		SELECT sanitized_name, host_port, COALESCE(ram_mb, 512), jvm_flags, udp_port, jar_version FROM proxies WHERE id = ?`, id).
+		Scan(&sanitizedName, &hostPort, &ramMB, &jvmFlags, &udpPort, &jarVersion)
 	if err != nil {
 		return err
 	}
@@ -1843,6 +1848,7 @@ func (h *ProxyHandler) StartByID(id int64) error {
 		NetworkName: h.cfg.NetworkName,
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
+		JarVersion:  jarVersion.String,
 	}
 
 	ctx := context.Background()

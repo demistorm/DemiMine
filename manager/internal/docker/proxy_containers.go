@@ -21,6 +21,17 @@ type ProxyContainerConfig struct {
 	NetworkName string
 	RAMMB       int
 	JVMFlags    string
+	JarVersion  string
+}
+
+// velocity 4.x is compiled for java 25, 3.x is happy on 21
+func proxyJavaImage(jarVersion string) string {
+	major := 0
+	fmt.Sscanf(jarVersion, "%d", &major)
+	if major >= 4 {
+		return "eclipse-temurin:25-jre-noble"
+	}
+	return "eclipse-temurin:21-jre-noble"
 }
 
 func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerConfig) (string, error) {
@@ -41,7 +52,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 		})
 	}
 
-	javaImage := "eclipse-temurin:21-jre-noble"
+	javaImage := proxyJavaImage(cfg.JarVersion)
 
 	_, _, err = c.cli.ImageInspectWithRaw(ctx, javaImage)
 	if err != nil {
