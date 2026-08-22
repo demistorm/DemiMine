@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { api } from '$lib/api';
+	import { api, ApiError } from '$lib/api';
 	import { getAceMode } from '$lib/utils/ace-utils';
 	import { formatDate } from '$lib/utils';
 	import { globalSettings } from '$lib/stores/settings';
@@ -17,6 +17,27 @@
 		is_dir: boolean;
 		size: number;
 		modified: string;
+	}
+
+	interface LinkInfo {
+		id: number;
+		source_type: string;
+		source_id: number;
+		source_name: string;
+		source_path: string;
+		target_type: string;
+		target_id: number;
+		target_name: string;
+		target_path: string;
+		source_missing: boolean;
+		source_is_dir: boolean;
+	}
+
+	interface LinkCode {
+		t: 'server' | 'proxy';
+		id: number;
+		p: string;
+		n: string;
 	}
 
 	function isImageFile(filename: string): boolean {
@@ -41,8 +62,16 @@
 	let isImageFileOpen = false;
 	let imageUrl = '';
 
+	// file links
+	let links: LinkInfo[] = [];
+	let linkToast = '';
+	let showPasteModal = false;
+	let pendingPaste: LinkCode | null = null;
+	let pasteLoading = false;
+
 	onMount(() => {
 		loadFiles();
+		loadLinks();
 		window.addEventListener('dragend', resetDrag);
 		window.addEventListener('dragleave', handleWindowDragLeave);
 	});
@@ -113,7 +142,8 @@
 	}
 
 	async function openFile(file: FileEntry) {
-		if (file.is_dir) {
+		const link = linkFor(file);
+		if (file.is_dir || link?.source_is_dir) {
 			const newPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
 			navigateTo(newPath);
 			return;
@@ -180,15 +210,30 @@
 		imageUrl = '';
 	}
 
-	async function deleteFile(file: FileEntry) {
-		if (!confirm(`Delete ${file.name}?`)) return;
+	async function deleteFile(file: FileEntry, force = false) {
+		const link = linkFor(file);
+		if (link) {
+			await removeLink(link);
+			return;
+		}
+
+		if (!force && !confirm(`Delete ${file.name}?`)) return;
 
 		const filePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-		
+
 		try {
-			await api.delete(`${apiPrefix}/${id}/files?path=${encodeURIComponent(filePath)}`);
-			loadFiles();
+			await api.delete(
+				`${apiPrefix}/${id}/files?path=${encodeURIComponent(filePath)}${force ? '&force=true' : ''}`
+			);
+			await Promise.all([loadFiles(), loadLinks()]);
 		} catch (err) {
+			if (err instanceof ApiError && err.dependents && err.dependents.length > 0) {
+				const names = err.dependents.map((d) => `${d.target_name}:${d.target_path}`).join(', ');
+				if (force || confirm(`Other servers link from this (${names}). Delete anyway? This removes those links.`)) {
+					await deleteFile(file, true);
+				}
+				return;
+			}
 			error = err instanceof Error ? err.message : 'Failed to delete';
 			console.error('Failed to delete:', err);
 		}
@@ -200,6 +245,10 @@
 	}
 
 	function openRenameModal(file: FileEntry) {
+		if (linkFor(file)) {
+			error = 'Linked items can\'t be renamed — remove the link first';
+			return;
+		}
 		renameOldPath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
 		renameNewName = file.name;
 		showRenameModal = true;
@@ -218,6 +267,154 @@
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to rename';
 			console.error('Failed to rename:', err);
+		}
+	}
+
+	// ---- file links ----
+
+	function relPathFor(name: string): string {
+		const p = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
+		return p.replace(/^\//, '');
+	}
+
+	async function loadLinks() {
+		try {
+			const response = await api.get<{ links: LinkInfo[] }>(
+				`/api/links?target_type=${type}&target_id=${id}`
+			);
+			links = response.links || [];
+		} catch (err) {
+			console.error('Failed to load links:', err);
+		}
+	}
+
+	function linkFor(file: FileEntry): LinkInfo | undefined {
+		return links.find((l) => l.target_path === relPathFor(file.name));
+	}
+
+	function encodeLinkCode(code: LinkCode): string {
+		const json = JSON.stringify(code);
+		return 'demimine-link:v1:' + btoa(unescape(encodeURIComponent(json)));
+	}
+
+	function decodeLinkCode(text: string): LinkCode | null {
+		if (!text.startsWith('demimine-link:v1:')) return null;
+		try {
+			const json = decodeURIComponent(escape(atob(text.slice('demimine-link:v1:'.length))));
+			const parsed = JSON.parse(json);
+			if (
+				parsed &&
+				(parsed.t === 'server' || parsed.t === 'proxy') &&
+				typeof parsed.id === 'number' &&
+				typeof parsed.p === 'string'
+			) {
+				return parsed as LinkCode;
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	}
+
+	async function copyLink(file: FileEntry) {
+		try {
+			const entity = await api.get<{ name: string }>(`${apiPrefix}/${id}`);
+			const code = encodeLinkCode({ t: type, id, p: relPathFor(file.name), n: entity.name });
+			await navigator.clipboard.writeText(code);
+			linkToast = 'Link copied — paste it in another server/proxy Files tab';
+			setTimeout(() => (linkToast = ''), 3000);
+		} catch (err) {
+			error = 'Could not copy link to clipboard';
+			console.error('Failed to copy link:', err);
+		}
+	}
+
+	function handlePasteEvent(e: ClipboardEvent) {
+		if (editingFile) return;
+		const target = e.target as HTMLElement | null;
+		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+			return;
+		}
+		const text = e.clipboardData?.getData('text') || '';
+		const code = decodeLinkCode(text);
+		if (code) {
+			e.preventDefault();
+			pendingPaste = code;
+			showPasteModal = true;
+		}
+	}
+
+	async function pasteFromClipboardButton() {
+		try {
+			const text = await navigator.clipboard.readText();
+			const code = decodeLinkCode(text);
+			if (code) {
+				pendingPaste = code;
+				showPasteModal = true;
+			} else {
+				error = 'No file link found in clipboard';
+			}
+		} catch (err) {
+			error = 'Could not read clipboard — use Ctrl+V instead';
+			console.error('Failed to read clipboard:', err);
+		}
+	}
+
+	$: pendingPasteTargetPath =
+		pendingPaste && currentPath === '/'
+			? pendingPaste.p.split('/').pop()
+			: pendingPaste
+				? `${currentPath}/${pendingPaste.p.split('/').pop()}`
+				: '';
+
+	async function confirmPaste() {
+		if (!pendingPaste) return;
+		pasteLoading = true;
+		error = '';
+		try {
+			await api.post('/api/links', {
+				source_type: pendingPaste.t,
+				source_id: pendingPaste.id,
+				source_path: pendingPaste.p,
+				target_type: type,
+				target_id: id,
+				target_path: pendingPasteTargetPath
+			});
+			showPasteModal = false;
+			pendingPaste = null;
+			await Promise.all([loadFiles(), loadLinks()]);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to create link';
+			console.error('Failed to create link:', err);
+		} finally {
+			pasteLoading = false;
+		}
+	}
+
+	async function removeLink(link: LinkInfo) {
+		if (!confirm(`Remove the link '${link.target_path.split('/').pop()}'? The original in ${link.source_name} is not affected.`)) return;
+		try {
+			await api.delete(`/api/links/${link.id}`);
+			await Promise.all([loadFiles(), loadLinks()]);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to remove link';
+			console.error('Failed to remove link:', err);
+		}
+	}
+
+	async function unlinkLocalCopy(link: LinkInfo) {
+		if (
+			!confirm(
+				`Unlink '${link.target_path.split('/').pop()}'? A local copy of the current data will be kept here, and future changes won't sync with ${link.source_name}.`
+			)
+		)
+			return;
+		try {
+			await api.post(`/api/links/${link.id}/unlink`);
+			await Promise.all([loadFiles(), loadLinks()]);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to unlink';
+			console.error('Failed to unlink:', err);
 		}
 	}
 
@@ -395,7 +592,7 @@
 	$: pathSegments = currentPath.split('/').filter(Boolean);
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window on:keydown={handleKeydown} on:paste={handlePasteEvent} />
 
 {#if editingFile}
 	<div class="editor-container" class:mobile={$inputMode === 'mobile'}>
@@ -452,10 +649,13 @@
 					</button>
 				{/each}
 			</div>
-			<div class="actions">
-				<button class="btn" on:click={handleFilePicker} disabled={uploadLoading}>
-					{uploadLoading ? 'Uploading...' : 'Upload'}
-				</button>
+		<div class="actions">
+			<button class="btn" on:click={pasteFromClipboardButton} title="Paste a copied file link here (or Ctrl+V)">
+				Paste Link
+			</button>
+			<button class="btn" on:click={handleFilePicker} disabled={uploadLoading}>
+				{uploadLoading ? 'Uploading...' : 'Upload'}
+			</button>
 				<button class="btn" on:click={handleFolderPicker} disabled={uploadLoading}>
 					Upload Folder
 				</button>
@@ -478,27 +678,43 @@
 					<span class="col-modified">Modified</span>
 					<span class="col-actions">Actions</span>
 				</div>
-				{#each files as file}
-					<div class="file-item" class:folder={file.is_dir} class:compact={$inputMode === 'mobile'}>
-						<span class="col-icon">
-							{#if file.is_dir}📁{:else}📄{/if}
-						</span>
-						<span class="col-name" on:click={() => openFile(file)}>
-							{file.name}
-						</span>
-						{#if $inputMode === 'desktop'}
-							<span class="col-size">{file.is_dir ? '-' : formatSize(file.size)}</span>
-							<span class="col-modified">{formatDate(file.modified, $globalSettings.server_timezone)}</span>
+			{#each files as file}
+				{@const link = linkFor(file)}
+				{@const effDir = file.is_dir || link?.source_is_dir}
+				<div class="file-item" class:folder={effDir} class:compact={$inputMode === 'mobile'}>
+					<span class="col-icon">
+						{#if effDir}📁{:else}📄{/if}
+					</span>
+					<span class="col-name" on:click={() => openFile(file)}>
+						{file.name}
+						{#if link}
+							<span
+								class="link-badge"
+								class:missing={link.source_missing}
+								title={link.source_missing
+									? `Linked from ${link.source_name} — source missing!`
+									: `Linked from ${link.source_name} (${link.source_path})`}
+							>🔗</span>
 						{/if}
-						<span class="col-actions">
-							{#if !file.is_dir}
-								<button class="action-btn" on:click={() => downloadFile(file)} title="Download">⬇</button>
-							{/if}
-							<button class="action-btn" on:click={() => openRenameModal(file)} title="Rename">✎</button>
-							<button class="action-btn danger" on:click={() => deleteFile(file)} title="Delete">🗑</button>
-						</span>
-					</div>
-				{/each}
+					</span>
+					{#if $inputMode === 'desktop'}
+						<span class="col-size">{effDir ? '-' : formatSize(file.size)}</span>
+						<span class="col-modified">{formatDate(file.modified, $globalSettings.server_timezone)}</span>
+					{/if}
+					<span class="col-actions">
+						{#if link}
+							<button class="action-btn" on:click={() => unlinkLocalCopy(link)} title="Unlink (keep a local copy here)">⧉</button>
+						{:else}
+							<button class="action-btn" on:click={() => copyLink(file)} title="Copy link (paste in another server to share)">🔗</button>
+						{/if}
+						{#if !effDir}
+							<button class="action-btn" on:click={() => downloadFile(file)} title="Download">⬇</button>
+						{/if}
+						<button class="action-btn" on:click={() => openRenameModal(file)} title="Rename">✎</button>
+						<button class="action-btn danger" on:click={() => deleteFile(file)} title={link ? 'Remove link' : 'Delete'}>🗑</button>
+					</span>
+				</div>
+			{/each}
 			</div>
 		{/if}
 
@@ -521,6 +737,32 @@
 			</div>
 		</div>
 	</div>
+{/if}
+
+{#if showPasteModal && pendingPaste}
+	<div class="modal-overlay" on:click={() => (showPasteModal = false)}>
+		<div class="modal" on:click|stopPropagation>
+			<h3>Link File Here</h3>
+			<p class="paste-info">
+				Link <strong>{pendingPaste.p.split('/').pop()}</strong> from
+				<strong>{pendingPaste.t} {pendingPaste.n || pendingPaste.id}</strong> into this folder?
+			</p>
+			<p class="paste-detail">
+				Both servers will read and write the <em>same data</em>. It appears here after the next
+				start/restart. Avoid pointing two running servers at flatfile data — that can corrupt it.
+			</p>
+			<div class="modal-actions">
+				<button class="btn" on:click={confirmPaste} disabled={pasteLoading}>
+					{pasteLoading ? 'Linking...' : 'Link It'}
+				</button>
+				<button class="btn secondary" on:click={() => (showPasteModal = false)} disabled={pasteLoading}>Cancel</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if linkToast}
+	<div class="link-toast">{linkToast}</div>
 {/if}
 
 <style>
@@ -776,6 +1018,42 @@
 		background-color: rgba(245, 158, 11, 0.1);
 		color: #f59e0b;
 		border: 3px solid rgba(245, 158, 11, 0.3);
+	}
+
+	.link-badge {
+		margin-left: 0.5rem;
+		font-size: 0.75rem;
+		cursor: help;
+	}
+
+	.link-badge.missing {
+		filter: hue-rotate(-90deg);
+	}
+
+	.link-toast {
+		position: fixed;
+		bottom: 1.5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--bg-secondary);
+		border: 3px solid var(--accent);
+		color: var(--text-primary);
+		padding: 0.75rem 1.25rem;
+		font-size: 0.875rem;
+		z-index: 2000;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+	}
+
+	.paste-info {
+		color: var(--text-primary);
+		margin: 0 0 0.75rem;
+	}
+
+	.paste-detail {
+		color: var(--text-secondary);
+		font-size: 0.8125rem;
+		margin: 0 0 1rem;
+		line-height: 1.4;
 	}
 
 	.editor-actions {

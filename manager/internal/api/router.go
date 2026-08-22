@@ -55,6 +55,9 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 	pluginHandler := handlers.NewPluginHandler(database, cfg.ServersDir)
 	settingsHandler := handlers.NewSettingsHandler(database)
 	jarUpdateHandler := handlers.NewJarUpdateHandler(database, cfg)
+	fileLinkHandler := handlers.NewFileLinkHandler(database, cfg.HostServersDir, cfg.ServersDir)
+	serverHandler.SetFileLinkHandler(fileLinkHandler)
+	proxyHandler.SetFileLinkHandler(fileLinkHandler)
 	playerHandler := handlers.NewPlayerHandler(database, dockerClient, cfg)
 	apiKeyHandler := handlers.NewAPIKeyHandler(database)
 	backupsHandler := handlers.NewBackupsHandler(database, backupManager, serverHandler, proxyHandler, hub, consoleManager)
@@ -129,6 +132,14 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 			r.Get("/", apiKeyHandler.List)
 			r.Post("/", apiKeyHandler.Create)
 			r.Delete("/{id}", apiKeyHandler.Delete)
+		})
+
+		r.Route("/links", func(r chi.Router) {
+			r.Use(middleware.Auth(database, cfg.JWTSecret))
+			r.Get("/", fileLinkHandler.List)
+			r.Post("/", fileLinkHandler.Create)
+			r.Post("/{id}/unlink", fileLinkHandler.Unlink)
+			r.Delete("/{id}", fileLinkHandler.Delete)
 		})
 
 		r.Route("/backups", func(r chi.Router) {

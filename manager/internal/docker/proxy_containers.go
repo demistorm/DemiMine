@@ -22,6 +22,7 @@ type ProxyContainerConfig struct {
 	RAMMB       int
 	JVMFlags    string
 	JarVersion  string
+	ExtraMounts []MountSpec
 }
 
 // velocity 4.x is compiled for java 25, 3.x is happy on 21
@@ -99,7 +100,10 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 	}
 
 	hostConfig := &container.HostConfig{
-		Binds: []string{fmt.Sprintf("%s:/proxy:rw", cfg.ProxyPath)},
+		Binds: append(
+			[]string{fmt.Sprintf("%s:/proxy:rw", cfg.ProxyPath)},
+			mountsToBinds(cfg.ExtraMounts, "/proxy")...,
+		),
 		Resources: container.Resources{
 			Memory: int64(ramMB+256) * 1024 * 1024,
 		},

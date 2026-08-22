@@ -5,12 +5,14 @@ interface ApiErrorData {
 	message?: string;
 	port?: number;
 	used_by?: string;
+	dependents?: Array<{ source_name: string; source_path: string; target_name: string; target_path: string }>;
 }
 
 export class ApiError extends Error {
 	error: string;
 	port?: number;
 	used_by?: string;
+	dependents?: Array<{ source_name: string; source_path: string; target_name: string; target_path: string }>;
 
 	constructor(data: ApiErrorData) {
 		super(data.message || data.error);
@@ -18,6 +20,7 @@ export class ApiError extends Error {
 		this.error = data.error;
 		this.port = data.port;
 		this.used_by = data.used_by;
+		this.dependents = data.dependents;
 	}
 }
 

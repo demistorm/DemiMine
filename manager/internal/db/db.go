@@ -165,6 +165,18 @@ func RunMigrations(db *sql.DB) error {
 			installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (target_id) REFERENCES servers(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS file_links (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			source_type TEXT NOT NULL CHECK (source_type IN ('server','proxy')),
+			source_id INTEGER NOT NULL,
+			source_path TEXT NOT NULL,
+			target_type TEXT NOT NULL CHECK (target_type IN ('server','proxy')),
+			target_id INTEGER NOT NULL,
+			target_path TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE (target_type, target_id, target_path)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_file_links_source ON file_links (source_type, source_id)`,
 	}
 
 	for _, migration := range migrations {

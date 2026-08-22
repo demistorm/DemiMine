@@ -37,6 +37,7 @@ type ProxyHandler struct {
 	pluginManager  *plugin.Manager
 	minimotdMgr    *minimotd.Manager
 	sparkInstaller *spark.Installer
+	fileLinks      *FileLinkHandler
 }
 
 func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, pluginManager *plugin.Manager, minimotdMgr *minimotd.Manager, sparkInstaller *spark.Installer) *ProxyHandler {
@@ -49,6 +50,10 @@ func NewProxyHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *do
 		minimotdMgr:    minimotdMgr,
 		sparkInstaller: sparkInstaller,
 	}
+}
+
+func (h *ProxyHandler) SetFileLinkHandler(fl *FileLinkHandler) {
+	h.fileLinks = fl
 }
 
 func (h *ProxyHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -541,6 +546,11 @@ func (h *ProxyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	proxyPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	_ = os.RemoveAll(proxyPath)
 
+	// detach anything that linked from/to this proxy so nothing dangles
+	if h.fileLinks != nil {
+		h.fileLinks.CleanupEntityDeleted("proxy", id)
+	}
+
 	h.db.Exec("UPDATE servers SET proxy_id = NULL WHERE proxy_id = ?", id)
 
 	result, err := h.db.Exec("DELETE FROM proxies WHERE id = ?", id)
@@ -815,6 +825,7 @@ func (h *ProxyHandler) Start(w http.ResponseWriter, r *http.Request) {
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
 		JarVersion:  jarVersion.String,
+		ExtraMounts: LinksToMounts(h.db, h.cfg.ServersDir, h.cfg.HostServersDir, "proxy", id),
 	}
 
 	ctx := context.Background()
@@ -933,6 +944,7 @@ func (h *ProxyHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		JVMFlags:    jvmFlagsStr,
 		UDPPort:     getUDPPort(udpPort),
 		JarVersion:  jarVersion.String,
+		ExtraMounts: LinksToMounts(h.db, h.cfg.ServersDir, h.cfg.HostServersDir, "proxy", id),
 	}
 
 	// AutoRemove is async, so the old container may still exist here with stale
@@ -1251,11 +1263,39 @@ func (h *ProxyHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// linked items: delete just removes the link, never the source data
+	relPath := strings.TrimPrefix(relativePath, "/")
+	if h.fileLinks != nil {
+		if l := h.fileLinks.linkAt("proxy", id, relPath); l != nil {
+			h.fileLinks.db.Exec("DELETE FROM file_links WHERE id = ?", l.ID)
+		}
+		// deleting data others link FROM needs explicit force
+		dependents := h.fileLinks.dependentsOnSource("proxy", id, relPath)
+		if len(dependents) > 0 && r.URL.Query().Get("force") != "true" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":      "other servers link from this path",
+				"dependents": dependents,
+			})
+			return
+		}
+		for _, d := range dependents {
+			h.fileLinks.removeLinkOnDisk(&d)
+			h.fileLinks.db.Exec("DELETE FROM file_links WHERE id = ?", d.ID)
+		}
+	}
+
 	if err := os.RemoveAll(fullPath); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete"})
 		return
+	}
+
+	// any links that lived under the deleted path are gone with it
+	if h.fileLinks != nil {
+		h.fileLinks.sweepLinksUnderPath("proxy", id, relPath)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1384,6 +1424,23 @@ func (h *ProxyHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
 		return
+	}
+
+	// renames would strand link rows, so block them on linked paths
+	if h.fileLinks != nil {
+		relPath := strings.TrimPrefix(filepath.Clean("/"+req.OldPath), "/")
+		if h.fileLinks.linkUnder("proxy", id, relPath) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "linked items can't be renamed — remove the link first"})
+			return
+		}
+		if dependents := h.fileLinks.dependentsOnSource("proxy", id, relPath); len(dependents) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "other servers link from this path — remove those links before renaming"})
+			return
+		}
 	}
 
 	if err := os.Rename(oldPath, newPath); err != nil {
@@ -1849,6 +1906,7 @@ func (h *ProxyHandler) StartByID(id int64) error {
 		RAMMB:       ramMB,
 		JVMFlags:    jvmFlagsStr,
 		JarVersion:  jarVersion.String,
+		ExtraMounts: LinksToMounts(h.db, h.cfg.ServersDir, h.cfg.HostServersDir, "proxy", id),
 	}
 
 	ctx := context.Background()

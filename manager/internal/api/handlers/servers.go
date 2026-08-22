@@ -34,6 +34,7 @@ type ServerHandler struct {
 	cfg            *config.Config
 	minimotdMgr    *minimotd.Manager
 	sparkInstaller *spark.Installer
+	fileLinks      *FileLinkHandler
 }
 
 func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *docker.ConsoleManager, cfg *config.Config, minimotdMgr *minimotd.Manager, sparkInstaller *spark.Installer) *ServerHandler {
@@ -48,6 +49,10 @@ func NewServerHandler(db *sql.DB, dockerClient *docker.Client, consoleManager *d
 		minimotdMgr:    minimotdMgr,
 		sparkInstaller: sparkInstaller,
 	}
+}
+
+func (h *ServerHandler) SetFileLinkHandler(fl *FileLinkHandler) {
+	h.fileLinks = fl
 }
 
 func nullStringToPtr(ns sql.NullString) *string {
@@ -552,6 +557,11 @@ func (h *ServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	serverPath := filepath.Join(h.cfg.ServersDir, sanitizedName)
 	_ = os.RemoveAll(serverPath)
 
+	// detach anything that linked from/to this server so nothing dangles
+	if h.fileLinks != nil {
+		h.fileLinks.CleanupEntityDeleted("server", id)
+	}
+
 	result, err := h.db.Exec("DELETE FROM servers WHERE id = ?", id)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -1013,6 +1023,7 @@ func (h *ServerHandler) Start(w http.ResponseWriter, r *http.Request) {
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
 		UDPPort:      getUDPPort(udpPort),
+		ExtraMounts:  LinksToMounts(h.db, h.cfg.ServersDir, h.cfg.HostServersDir, "server", id),
 	}
 
 	ctx := context.Background()
@@ -1146,6 +1157,7 @@ func (h *ServerHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
 		UDPPort:      getUDPPort(udpPort),
+		ExtraMounts:  LinksToMounts(h.db, h.cfg.ServersDir, h.cfg.HostServersDir, "server", id),
 	}
 
 	// AutoRemove is async, so the old container may still exist here with stale
@@ -1590,11 +1602,39 @@ func (h *ServerHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// linked items: delete just removes the link, never the source data
+	relPath := strings.TrimPrefix(relativePath, "/")
+	if h.fileLinks != nil {
+		if l := h.fileLinks.linkAt("server", id, relPath); l != nil {
+			h.fileLinks.db.Exec("DELETE FROM file_links WHERE id = ?", l.ID)
+		}
+		// deleting data other servers link FROM needs explicit force
+		dependents := h.fileLinks.dependentsOnSource("server", id, relPath)
+		if len(dependents) > 0 && r.URL.Query().Get("force") != "true" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":      "other servers link from this path",
+				"dependents": dependents,
+			})
+			return
+		}
+		for _, d := range dependents {
+			h.fileLinks.removeLinkOnDisk(&d)
+			h.fileLinks.db.Exec("DELETE FROM file_links WHERE id = ?", d.ID)
+		}
+	}
+
 	if err := os.RemoveAll(fullPath); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete"})
 		return
+	}
+
+	// any links that lived under the deleted path are gone with it
+	if h.fileLinks != nil {
+		h.fileLinks.sweepLinksUnderPath("server", id, relPath)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1728,6 +1768,23 @@ func (h *ServerHandler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": "access denied"})
 		return
+	}
+
+	// renames would strand link rows, so block them on linked paths
+	if h.fileLinks != nil {
+		relPath := strings.TrimPrefix(filepath.Clean("/"+req.OldPath), "/")
+		if h.fileLinks.linkUnder("server", id, relPath) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "linked items can't be renamed — remove the link first"})
+			return
+		}
+		if dependents := h.fileLinks.dependentsOnSource("server", id, relPath); len(dependents) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "other servers link from this path — remove those links before renaming"})
+			return
+		}
 	}
 
 	if err := os.Rename(oldPath, newPath); err != nil {
@@ -2090,6 +2147,7 @@ func (h *ServerHandler) StartByID(id int64) error {
 		NetworkName:  h.cfg.NetworkName,
 		HostPort:     port,
 		UDPPort:      getUDPPort(udpPort),
+		ExtraMounts:  LinksToMounts(h.db, h.cfg.ServersDir, h.cfg.HostServersDir, "server", id),
 	}
 
 	ctx := context.Background()

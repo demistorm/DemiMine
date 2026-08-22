@@ -289,6 +289,7 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 					UDPPort:     nullInt(p.udpPort),
 					JVMFlags:    nullStr(p.jvmFlags),
 					JarVersion:  p.jarVersion.String,
+					ExtraMounts: handlers.LinksToMounts(database, cfg.ServersDir, cfg.HostServersDir, "proxy", p.id),
 				}
 				if err := dockerClient.StartProxyContainer(context.Background(), p.sanitizedName, proxyCfg); err != nil {
 					log.Printf("Failed to start proxy %s: %v", p.sanitizedName, err)
@@ -348,6 +349,7 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 					UDPPort:      nullInt(s.udpPort),
 					JVMFlags:     nullStr(s.jvmFlags),
 					JavaOverride: nullStr(s.javaOverride),
+					ExtraMounts:  handlers.LinksToMounts(database, cfg.ServersDir, cfg.HostServersDir, "server", s.id),
 				}
 				if err := dockerClient.StartContainer(context.Background(), s.sanitizedName, serverCfg); err != nil {
 					log.Printf("Failed to start server %s: %v", s.sanitizedName, err)

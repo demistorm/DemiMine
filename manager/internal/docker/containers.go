@@ -30,6 +30,16 @@ func getTZ() string {
 	return "America/Chicago"
 }
 
+// extra bind mount on top of the server dir — used for file links so a
+// linked path shows up as a real file/dir inside the container. HostPath is
+// what the docker daemon resolves; DiskPath is the manager-local path we can
+// stat to check the source still exists.
+type MountSpec struct {
+	HostPath      string
+	DiskPath      string
+	ContainerPath string
+}
+
 type ServerContainerConfig struct {
 	Name         string
 	ServerType   string
@@ -41,6 +51,29 @@ type ServerContainerConfig struct {
 	NetworkName  string
 	HostPort     int
 	UDPPort      int
+	ExtraMounts  []MountSpec
+}
+
+// turns validated MountSpecs into bind strings — skips anything fishy with a
+// log line rather than killing the whole server start
+func mountsToBinds(mounts []MountSpec, containerBase string) []string {
+	var binds []string
+	for _, m := range mounts {
+		if !strings.HasPrefix(m.ContainerPath, containerBase+"/") || m.ContainerPath == containerBase {
+			log.Printf("[links] skipping bad container path %q", m.ContainerPath)
+			continue
+		}
+		checkPath := m.DiskPath
+		if checkPath == "" {
+			checkPath = m.HostPath
+		}
+		if _, err := os.Stat(checkPath); err != nil {
+			log.Printf("[links] skipping missing host path %q for %q", checkPath, m.ContainerPath)
+			continue
+		}
+		binds = append(binds, fmt.Sprintf("%s:%s:rw", m.HostPath, m.ContainerPath))
+	}
+	return binds
 }
 
 func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerConfig) (string, error) {
@@ -120,7 +153,10 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 	}
 
 	hostConfig := &container.HostConfig{
-		Binds: []string{fmt.Sprintf("%s:/server:rw", cfg.ServerPath)},
+		Binds: append(
+			[]string{fmt.Sprintf("%s:/server:rw", cfg.ServerPath)},
+			mountsToBinds(cfg.ExtraMounts, "/server")...,
+		),
 		Resources: container.Resources{
 			Memory: int64(cfg.RAMMB+512) * 1024 * 1024,
 		},
