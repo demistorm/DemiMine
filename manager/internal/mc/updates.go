@@ -435,7 +435,7 @@ func CheckNanoLimboUpdate(currentVersion string) (*JarUpdateInfo, error) {
 	}
 	nanolimboUpdateMu.RUnlock()
 
-	resp, err := httpClient.Get("https://api.github.com/repos/BoomEaro/NanoLimbo/releases")
+	resp, err := httpClient.Get("https://api.github.com/repos/Nan1t/NanoLimbo/releases")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch nanolimbo releases: %w", err)
 	}

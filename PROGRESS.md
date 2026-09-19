@@ -83,7 +83,7 @@ The Forge/NeoForge installers are executed during server creation, which can tak
   - Cancel timer when players rejoin (with INFO logging)
   - Hub server support with direct connection fallback
   - Configuration with manager_url, api_key, queue_server, hub_server
-- ✅ NanoLimbo server type support (BoomEaro fork)
+- ✅ NanoLimbo server type support (Nan1t upstream)
 - ✅ LuckPerms auto-installation option for proxies
 - ✅ Proxy creation UI with DemiAuth/DemiDynamic/LuckPerms checkboxes
 - ✅ Server creation UI with NanoLimbo option

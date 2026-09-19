@@ -162,7 +162,7 @@ func DownloadForgeInstaller(version, serverDir string) error {
 }
 
 func DownloadNanoLimboJar(version, destPath string) (int, string, error) {
-	resp, err := httpClient.Get(fmt.Sprintf("https://api.github.com/repos/BoomEaro/NanoLimbo/releases/tags/%s", version))
+	resp, err := httpClient.Get(fmt.Sprintf("https://api.github.com/repos/Nan1t/NanoLimbo/releases/tags/%s", version))
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to get nanolimbo release info: %w", err)
 	}
