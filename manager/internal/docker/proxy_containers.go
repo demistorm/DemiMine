@@ -105,7 +105,7 @@ func (c *Client) CreateProxyContainer(ctx context.Context, cfg ProxyContainerCon
 			mountsToBinds(cfg.ExtraMounts, "/proxy")...,
 		),
 		Resources: container.Resources{
-			Memory: int64(ramMB+256) * 1024 * 1024,
+			Memory: ProxyMemoryLimitMB(ramMB) * 1024 * 1024,
 		},
 		AutoRemove: true,
 		RestartPolicy: container.RestartPolicy{

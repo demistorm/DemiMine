@@ -79,6 +79,39 @@ type CanStartResponse struct {
 	Reason           string `json:"reason,omitempty"`
 }
 
+// ProjectRAMUsage returns current live DemiMine memory usage plus what a
+// server with the given heap would add (heap + flat overhead). extraMB lets
+// callers account for containers already committed but not yet reporting
+// usage (e.g. concurrent boot starts).
+func ProjectRAMUsage(dockerClient *docker.Client, ramMB int, extraMB int64) (current int64, projected int64, err error) {
+	current, err = dockerClient.GetTotalDemimineMemoryUsage(context.Background())
+	if err != nil {
+		return 0, 0, err
+	}
+	projected = current + extraMB + docker.ServerMemoryLimitMB(ramMB)
+	return current, projected, nil
+}
+
+// CheckRAMBudget enforces DEMIMINE_MAX_RAM_MB (0 = unlimited) before a server
+// is automatically started. Used by the scheduler, post-backup restarts, and
+// start_on_boot so background starts stay within the budget. Manual UI starts
+// deliberately skip this — admins get to override.
+func CheckRAMBudget(dockerClient *docker.Client, cfg *config.Config, ramMB int, extraMB int64) (bool, string) {
+	maxMB := int64(cfg.MaxRAMMB)
+	if maxMB == 0 {
+		return true, ""
+	}
+
+	_, projected, err := ProjectRAMUsage(dockerClient, ramMB, extraMB)
+	if err != nil {
+		return false, fmt.Sprintf("failed to get current memory usage: %v", err)
+	}
+	if projected > maxMB {
+		return false, fmt.Sprintf("projecting %d MB usage would exceed maximum of %d MB", projected, maxMB)
+	}
+	return true, ""
+}
+
 func (h *ResourceHandler) CanStartServer(w http.ResponseWriter, r *http.Request) {
 	serverName := chi.URLParam(r, "name")
 
@@ -104,15 +137,12 @@ func (h *ResourceHandler) CanStartServer(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ctx := context.Background()
-	currentUsage, err := h.docker.GetTotalDemimineMemoryUsage(ctx)
+	currentUsage, projectedUsage, err := ProjectRAMUsage(h.docker, ramMB, 0)
 	if err != nil {
 		middleware.WriteJSONInternalError(w, err, "failed to get memory usage")
 		return
 	}
 
-	containerOverhead := int64(512)
-	projectedUsage := currentUsage + int64(ramMB) + containerOverhead
 	maxMB := h.cfg.MaxRAMMB
 
 	response := CanStartResponse{

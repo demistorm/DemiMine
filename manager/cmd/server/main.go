@@ -362,8 +362,16 @@ func startOnBoot(database *sql.DB, dockerClient *docker.Client, cfg *config.Conf
 		}
 		serverRows.Close()
 
-		for _, s := range servers {
-			wg.Add(1)
+	// Gate each boot start against the RAM budget. Servers launch concurrently
+	// so live usage lags — track committed limits as we go and count them as used.
+	var committedMB int64
+	for _, s := range servers {
+		if ok, reason := handlers.CheckRAMBudget(dockerClient, cfg, s.ramMB, committedMB); !ok {
+			log.Printf("Skipping start_on_boot server %s: %s", s.sanitizedName, reason)
+			continue
+		}
+		committedMB += docker.ServerMemoryLimitMB(s.ramMB)
+		wg.Add(1)
 			go func(s serverInfo) {
 				defer wg.Done()
 				log.Printf("Starting server: %s", s.sanitizedName)

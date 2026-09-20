@@ -30,6 +30,27 @@ func getTZ() string {
 	return "America/Chicago"
 }
 
+// Flat JVM off-heap headroom added on top of the heap (Xmx) when setting a
+// container's memory limit: metaspace, thread stacks, code cache, GC
+// structures, direct buffers, and page cache. Measured ~525-575MB on a Paper
+// 1.21 server with ~30 plugins under player load, so 768 leaves margin
+// without wasting much. Must stay in sync with the RAM budget checks in
+// handlers (CheckRAMBudget / CanStartServer).
+const ServerOverheadMB int64 = 768
+
+// Velocity proxies are much lighter (few classes, no world gen), 256 is plenty.
+const ProxyOverheadMB int64 = 256
+
+// Full memory limit for a server container: heap + flat headroom.
+func ServerMemoryLimitMB(ramMB int) int64 {
+	return int64(ramMB) + ServerOverheadMB
+}
+
+// Full memory limit for a proxy container.
+func ProxyMemoryLimitMB(ramMB int) int64 {
+	return int64(ramMB) + ProxyOverheadMB
+}
+
 // extra bind mount on top of the server dir — used for file links so a
 // linked path shows up as a real file/dir inside the container. HostPath is
 // what the docker daemon resolves; DiskPath is the manager-local path we can
@@ -158,7 +179,7 @@ func (c *Client) CreateServerContainer(ctx context.Context, cfg ServerContainerC
 			mountsToBinds(cfg.ExtraMounts, "/server")...,
 		),
 		Resources: container.Resources{
-			Memory: int64(cfg.RAMMB+512) * 1024 * 1024,
+			Memory: ServerMemoryLimitMB(cfg.RAMMB) * 1024 * 1024,
 		},
 		AutoRemove: true,
 		RestartPolicy: container.RestartPolicy{

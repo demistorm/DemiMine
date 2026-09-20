@@ -2137,6 +2137,10 @@ func (h *ServerHandler) StartByID(id int64) error {
 		javaOverrideStr = javaOverride.String
 	}
 
+	if ok, reason := CheckRAMBudget(h.docker, h.cfg, ramMB, 0); !ok {
+		return fmt.Errorf("cannot start %s: %s", name, reason)
+	}
+
 	cfg := &docker.ServerContainerConfig{
 		Name:         sanitizedName,
 		ServerType:   serverType,
