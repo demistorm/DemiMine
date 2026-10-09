@@ -452,12 +452,15 @@
 
 		const items = dataTransfer.items;
 		if (items && items.length > 0 && typeof (items[0] as any).webkitGetAsEntry === 'function') {
-			const collected: UploadItem[] = [];
+			// grab all entries synchronously — the DataTransferItemList dies after the first await
+			const entries: any[] = [];
 			for (let i = 0; i < items.length; i++) {
 				const entry = (items[i] as any).webkitGetAsEntry();
-				if (entry) {
-					await collectFilesFromEntry(entry, '', collected);
-				}
+				if (entry) entries.push(entry);
+			}
+			const collected: UploadItem[] = [];
+			for (const entry of entries) {
+				await collectFilesFromEntry(entry, '', collected);
 			}
 			if (collected.length > 0) {
 				await uploadFiles(collected);
