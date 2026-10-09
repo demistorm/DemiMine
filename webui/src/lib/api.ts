@@ -123,10 +123,13 @@ class ApiClient {
 	async upload<T>(endpoint: string, file: File): Promise<T> {
 		const formData = new FormData();
 		formData.append('file', file);
+		return this.uploadForm<T>(endpoint, formData);
+	}
 
+	async uploadForm<T>(endpoint: string, formData: FormData): Promise<T> {
 		const url = `${this.baseUrl}${endpoint}`;
 		const headers: HeadersInit = {};
-		
+
 		if (this.token) {
 			headers['Authorization'] = `Bearer ${this.token}`;
 		}
@@ -633,6 +636,19 @@ export const jarUpdateApi = {
 
 	updateServer: (id: number) =>
 		api.post<{ status: string; message: string }>(`/api/servers/${id}/jar-update`),
+
+	manualServerUpdate: (id: number, file: File, version: string, build?: number) => {
+		const formData = new FormData();
+		formData.append('file', file);
+		formData.append('version', version);
+		if (build !== undefined && !Number.isNaN(build)) {
+			formData.append('build', String(build));
+		}
+		return api.uploadForm<{ status: string; message: string; version: string; jar_build: number }>(
+			`/api/servers/${id}/jar-update/manual`,
+			formData
+		);
+	},
 
 	checkProxy: (id: number) =>
 		api.get<JarUpdateInfo>(`/api/proxies/${id}/jar-update`),

@@ -192,6 +192,7 @@ func NewRouter(database *sql.DB, cfg *config.Config, dockerClient *docker.Client
 
 					r.Get("/jar-update", jarUpdateHandler.CheckServerJarUpdate)
 					r.Post("/jar-update", jarUpdateHandler.UpdateServerJar)
+					r.Post("/jar-update/manual", jarUpdateHandler.ManualServerJarUpdate)
 					r.Get("/players", playerHandler.GetServerPlayers)
 
 					r.Post("/spark/profile/start", sparkHandler.StartServerProfiler)

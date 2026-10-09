@@ -3,6 +3,7 @@
 	import { api, type Server, jarUpdateApi, type JarUpdateInfo } from '$lib/api';
 	import { servers } from '$lib/stores/servers';
 	import { inputMode } from '$lib/stores/inputMode';
+	import ManualUpdate from '$lib/components/ManualUpdate.svelte';
 
 	export let server: Server;
 
@@ -41,6 +42,7 @@
 	let updateInfo: JarUpdateInfo | null = null;
 	let checkingUpdate = false;
 	let updatingJar = false;
+	let showManualUpdate = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -109,6 +111,23 @@
 		} finally {
 			updatingJar = false;
 		}
+	}
+
+	async function handleManualUpdated() {
+		success = 'JAR updated successfully';
+
+		try {
+			const updatedServer = await api.get<Server>(`/api/servers/${server.id}`);
+			servers.update(list =>
+				list.map(s => s.id === server.id ? updatedServer : s)
+			);
+			Object.assign(server, updatedServer);
+			checkJarUpdate();
+		} catch (err) {
+			console.error('Failed to refresh server after manual update:', err);
+		}
+
+		setTimeout(() => success = '', 3000);
 	}
 
 	onMount(async () => {
@@ -316,10 +335,10 @@
 		<div class="alert success">{success}</div>
 	{/if}
 
-	{#if server.type === 'paper' || server.type === 'purpur' || server.type === 'nanolimbo'}
-		<div class="section">
-			<h2>Software Updates</h2>
+	<div class="section">
+		<h2>Software Updates</h2>
 
+		{#if server.type === 'paper' || server.type === 'purpur' || server.type === 'nanolimbo'}
 			{#if checkingUpdate}
 				<div class="field">
 					<span>Checking for updates...</span>
@@ -363,8 +382,15 @@
 					</div>
 				</div>
 			{/if}
+		{/if}
+
+		<div class="field">
+			<button class="btn" on:click={() => (showManualUpdate = true)}>Manual Update</button>
+			<span class="hint">Upload a custom JAR and set its version — update checks and plugin updates follow the new version</span>
 		</div>
-	{/if}
+	</div>
+
+	<ManualUpdate bind:show={showManualUpdate} {server} on:updated={handleManualUpdated} />
 
 	<div class="section">
 		<h2>General Settings</h2>
@@ -432,7 +458,11 @@
 		<div class="field">
 			<label for="version">Minecraft Version</label>
 			<input type="text" id="version" value={server.version} disabled />
-			<span class="hint">Version cannot be changed after creation</span>
+			{#if server.type === 'nanolimbo'}
+				<span class="hint">Version can only be changed via a manual update</span>
+			{:else}
+				<span class="hint">Changed automatically by updates, or via a manual update</span>
+			{/if}
 		</div>
 	</div>
 
