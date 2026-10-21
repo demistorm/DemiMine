@@ -14,8 +14,8 @@ func TestDefaultServerProperties(t *testing.T) {
 		t.Errorf("Expected server-port=25565, got %s", props["server-port"])
 	}
 
-	if props["online-mode"] != "false" {
-		t.Errorf("Expected online-mode=false, got %s", props["online-mode"])
+	if props["online-mode"] != "true" {
+		t.Errorf("Expected online-mode=true, got %s", props["online-mode"])
 	}
 
 	if props["motd"] != "A DemiMine Server" {
